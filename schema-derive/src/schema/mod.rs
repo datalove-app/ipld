@@ -1,3 +1,12 @@
+#[macro_use]
+mod r#enum;
+#[macro_use]
+mod primitive;
+#[macro_use]
+mod r#struct;
+#[macro_use]
+mod union;
+
 /// Defines a native type with a standard IPLD Schema and Representation.
 ///
 /// ```edition2018
@@ -102,11 +111,11 @@ macro_rules! schema {
         innerDelim : $inner:expr,
         entryDelim : $entry:expr
     }) => {
-        typedef_map!($name { $key: $value } @stringpairs $inner, $entry);
+        typedef_map!(@stringpairs $name { $key: $value } $inner, $entry);
     };
     // TODO: listpairs map representation
     (type $name:ident { $key:ty : $value:ty } representation listpairs) => {
-        typedef_map!($name { $key: $value } @listpairs);
+        typedef_map!(@listpairs $name { $key: $value });
     };
 
     //////////////////////////////////////////////////////////////////////////
@@ -123,24 +132,24 @@ macro_rules! schema {
     };
     // TODO: struct tuple representation
     (type $name:ident struct { $($member:ident : $value_type:ty,)* } representation tuple) => {
-        typedef_struct!($name { $($member : $value_type)* } @tuple);
+        typedef_struct!(@tuple $name { $($member : $value_type)* });
     };
     // TODO: struct stringpairs representation
     (type $name:ident struct { $($member:ident : $value_type:ty,)* } representation stringpairs {
         innerDelim : $inner:expr,
         entryDelim : $entry:expr
     }) => {
-        typedef_struct!($name { $($member : $value_type)* } @stringpairs $inner, $entry);
+        typedef_struct!(@stringpairs $name { $($member : $value_type)* } $inner, $entry);
     };
     // TODO: struct stringjoin representation
     (type $name:ident struct { $($member:ident : $value_type:ty,)* } representation stringjoin {
         join : $joiner:expr
     }) => {
-        typedef_struct!($name { $($member : $value_type)* } @stringjoin $joiner);
+        typedef_struct!(@stringjoin $name { $($member : $value_type)* } $joiner);
     };
     // TODO: struct listpairs representation
     (type $name:ident struct { $($member:ident : $value_type:ty,)* } representation listpairs) => {
-        typedef_struct!($name { $($member : $value_type)* } @listpairs);
+        typedef_struct!(@listpairs $name { $($member : $value_type)* });
     };
 
     // TODO: Enum
@@ -149,11 +158,11 @@ macro_rules! schema {
     };
     // TODO: basic enum representation
     (type $name:ident enum { $(| $member:ident ($alias:expr),)* } representation string) => {
-        typedef_enum!($name { $($member $alias)* } @string);
+        typedef_enum!($name { $($member $alias)* });
     };
     // TODO: enum int representation
     (type $name:ident enum { $(| $member:ident, ($alias:expr),)* } representation int) => {
-        typedef_enum!($name { $($member $alias)* */} @int);
+        typedef_enum!(@int $name { $($member $alias)* });
     };
 
     // TODO: Union
@@ -162,27 +171,27 @@ macro_rules! schema {
     };
     // TODO: union keyed representation
     (type $name:ident union { $(| $member:ident $alias:expr,)* } representation keyed) => {
-        typedef_union!($name { $($member $alias)* } @keyed);
+        typedef_union!(@keyed $name { $($member $alias)* });
     };
     // TODO: union kinded representation
     (type $name:ident union { $(| $member:ident,)* } representation kinded) => {
-        typedef_union!($name { $($member)* } @kinded);
+        typedef_union!(@kinded $name { $($member)* });
     };
     // TODO: union envelope representation
     (type $name:ident union { $(| $member:ident $alias:expr,)* } representation envelope {
         discriminantKey : $discriminant:expr,
         contentKey      : $content:expr
     }) => {
-        typedef_union!($name { $($member $alias)* } @envelope $discriminant, $content);
+        typedef_union!(@envelope $name { $($member $alias)* } $discriminant, $content);
     };
     // TODO: union inline representation
     (type $name:ident union { $(| $member:ident $alias:expr,)* } representation inline {
         discriminantKey : $discriminant:expr
     }) => {
-        typedef_union!($name { $($member $alias)* } @inline $discriminant);
+        typedef_union!(@inline $name { $($member $alias)* } $discriminant);
     };
     // TODO: union byteprefix representation
     (type $name:ident union { $(| $member:ident $prefix:expr,)* } representation byteprefix) => {
-        typedef_union!($name { $($member $prefix)* } @byteprefix);
+        typedef_union!(@byteprefix $name { $($member $prefix)* });
     };
 }

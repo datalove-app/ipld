@@ -4,17 +4,14 @@
 //! - support pub/pub(crate) and additional #[derive(...)] statements
 //! - anything can have an advanced representation, so add support to all types
 
-#[macro_use]
-extern crate impls;
+// #[macro_use]
+// extern crate impls;
 
 #[macro_use]
-mod types;
-#[macro_use]
-mod typedef;
+mod schema;
 
 #[cfg(test)]
 mod tests {
-    #[macro_use]
     use crate::schema;
 
     //////////////////////////////////////////////////////////////////////////

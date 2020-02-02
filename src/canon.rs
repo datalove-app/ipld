@@ -264,7 +264,7 @@ macro_rules! derive_ipld_for_struct {
                 fn field(key: &str) -> Result<[<$name Field>], Error> {
                     match key {
                         $(::std::stringify!($member) => Ok([<$name Field>]::[<Field $member>]),)*
-                        _ => Err(Error::Codec(::failure::format_err!("missing key: {}", key).into())),
+                        _ => Err(Error::Codec(::failure::format_err!("Missing key: {}", key).into())),
                     }
                 }
 

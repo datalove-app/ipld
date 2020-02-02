@@ -1,6 +1,6 @@
 [package]
 name = "ipld"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["sunny-g <sunny.gonna@gmail.com>"]
 description = "IPLD types and interfaces"
 license = "ISC"
@@ -25,8 +25,8 @@ default = []
 members = [
   "dag-cbor",
   "dag-json",
-  "schema"
+  "schema",
+  "schema-derive"
 ]
 
 [patch.crates-io]
-cid = { git = "https://github.com/datalove-app/rust-cid", branch = "cli" }

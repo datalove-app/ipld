@@ -13,7 +13,7 @@ impls = "1"
 juniper = { version = "0.14", optional = true }
 
 [dev-dependencies]
-ipld-schema = { version = "0.0.1", path = "../schema", features = ["derive"] }
+ipld-schema = { path = "../schema", features = ["derive"] }
 
 [features]
 default = []

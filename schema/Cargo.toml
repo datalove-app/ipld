@@ -15,7 +15,8 @@ cid = "^0.3"
 derive_more = "0.99"
 failure = "0.1"
 lazy_static = "1.4"
-ipld-schema-derive = { version = "0.0.1", path = "../schema-derive", optional = true }
+ipld = { path = "../" }
+ipld-schema-derive = { path = "../schema-derive", optional = true }
 paste = "0.1.6"
 serde = { version = "^1.0", features = ["derive"] }
 

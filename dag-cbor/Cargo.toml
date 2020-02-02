@@ -1,7 +1,9 @@
 [package]
 name = "ipld-dag-cbor"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["sunny-g <sunny.gonna@gmail.com>"]
+description = "IPLD DagCBOR Codec"
+license = "ISC"
 edition = "2018"
 
 [lib]
@@ -9,7 +11,7 @@ name = "ipld_dag_cbor"
 path = "src/lib.rs"
 
 [dependencies]
-cid = "^0.3"
-ipld = { path = "../" }
+cid = { version = "^0.3", git = "https://github.com/datalove-app/rust-cid", branch = "cli" }
+ipld = { version = "^0.0.2", path = "../" }
 serde = { version = "^1.0", features = ["derive"] }
 serde_cbor = { version = "0.11", features = ["tags"] }

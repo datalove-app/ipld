@@ -2,8 +2,9 @@
 //!
 //!
 
-use crate::{dev::*, Ipld, Error};
-use libipld_base::error::IpldError;
+use crate::{borrowed::Ipld, CodecExt, Error};
+use cid::Cid;
+use failure::format_err;
 use std::{convert::TryFrom, marker::PhantomData};
 
 /// Shorthand for deriving `From<& _>` for a reference to a type.
@@ -35,7 +36,7 @@ where
     fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::Null(_) => Ok(()),
-            _ => Err(Error::Ipld(IpldError::NotNull)),
+            _ => Err(Error::Ipld(format_err!("Not Null"))),
         }
     }
 }
@@ -63,7 +64,7 @@ where
     fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::Bool(b) => Ok(b),
-            _ => Err(Error::Ipld(IpldError::NotBool)),
+            _ => Err(Error::Ipld(format_err!("Not Bool"))),
         }
     }
 }
@@ -73,7 +74,7 @@ where
 #[doc(hidden)]
 #[macro_export(local_inner_macros)]
 macro_rules! try_from_num {
-    ($type:ty : $member:ident, $error:ident) => {
+    ($type:ty : $member:ident) => {
         impl<'a, C> TryFrom<Ipld<'a, C>> for $type
         where
             C: CodecExt,
@@ -84,7 +85,10 @@ macro_rules! try_from_num {
             fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
                 match ipld {
                     Ipld::$member(i) => Ok(i),
-                    _ => Err(Error::Ipld(IpldError::$error)),
+                    _ => Err(Error::Ipld(::failure::format_err!(
+                        "Not {}",
+                        ::std::stringify!($type)
+                    ))),
                 }
             }
         }
@@ -93,18 +97,18 @@ macro_rules! try_from_num {
     };
 }
 
-try_from_num!(i8: Int8, NotInteger);
-try_from_num!(i16: Int16, NotInteger);
-try_from_num!(i32: Int32, NotInteger);
-try_from_num!(i64: Int64, NotInteger);
-try_from_num!(i128: Int128, NotInteger);
-try_from_num!(u8: Uint8, NotInteger);
-try_from_num!(u16: Uint16, NotInteger);
-try_from_num!(u32: Uint32, NotInteger);
-try_from_num!(u64: Uint64, NotInteger);
-try_from_num!(u128: Uint128, NotInteger);
-try_from_num!(f32: Float32, NotFloat);
-try_from_num!(f64: Float64, NotFloat);
+try_from_num!(i8: Int8);
+try_from_num!(i16: Int16);
+try_from_num!(i32: Int32);
+try_from_num!(i64: Int64);
+try_from_num!(i128: Int128);
+try_from_num!(u8: Uint8);
+try_from_num!(u16: Uint16);
+try_from_num!(u32: Uint32);
+try_from_num!(u64: Uint64);
+try_from_num!(u128: Uint128);
+try_from_num!(f32: Float32);
+try_from_num!(f64: Float64);
 
 // string
 
@@ -118,7 +122,7 @@ where
     fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::String(s) => Ok(s),
-            _ => Err(Error::Ipld(IpldError::NotString)),
+            _ => Err(Error::Ipld(format_err!("Not String"))),
         }
     }
 }
@@ -133,7 +137,7 @@ where
     fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::String(s) => Ok(s.into()),
-            _ => Err(Error::Ipld(IpldError::NotString)),
+            _ => Err(Error::Ipld(format_err!("Not String"))),
         }
     }
 }
@@ -160,7 +164,7 @@ where
     fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::Bytes(b) => Ok(b),
-            _ => Err(Error::Ipld(IpldError::NotBytes)),
+            _ => Err(Error::Ipld(format_err!("Not Bytes"))),
         }
     }
 }
@@ -186,7 +190,7 @@ where
     fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::Bytes(b) => Ok(bytes::Bytes::copy_from_slice(b)),
-            _ => Err(Error::Ipld(IpldError::NotBytes)),
+            _ => Err(Error::Ipld(format_err!("Not Bytes"))),
         }
     }
 }
@@ -214,7 +218,7 @@ where
     fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::Link(cid) => Ok(cid),
-            _ => Err(Error::Ipld(IpldError::NotLink)),
+            _ => Err(Error::Ipld(format_err!("Not Link"))),
         }
     }
 }

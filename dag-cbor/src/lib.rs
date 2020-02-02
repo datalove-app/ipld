@@ -1,133 +1,121 @@
-//! CBOR codec.
-use async_trait::async_trait;
-use failure::Fail;
-use libipld_base::cid;
-pub use libipld_base::codec::Codec;
-use libipld_base::error::BlockError;
-pub use libipld_base::error::IpldError;
-use libipld_base::ipld::Ipld;
+use ipld::Error;
+use serde::de::Error as DError;
+use serde_cbor::{
+    from_reader, from_slice,
+    tags::{current_cbor_tag, Tagged},
+    to_vec, to_writer, Error as CborError,
+};
+use std::{
+    convert::TryFrom,
+    fmt,
+    io::{Read, Write},
+};
 
-pub mod decode;
-pub mod encode;
+/// The magic tag
+pub const CBOR_LINK_TAG: u64 = 42;
 
-pub use decode::ReadCbor;
-pub use encode::WriteCbor;
-
-/// CBOR codec.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct DagCborCodec;
+/// The DagCBOR codec, that delegates to `serde_cbor`.
+pub struct DagCbor;
 
 #[async_trait]
-impl Codec for DagCborCodec {
+impl Codec for DagCbor {
     const VERSION: cid::Version = cid::Version::V1;
     const CODEC: cid::Codec = cid::Codec::DagCBOR;
 
-    type Error = CborError;
+    type Error = Error;
 
+    /// TODO: impl `Encode` and `Serialize` for `Ipld`
     async fn encode(ipld: &Ipld) -> Result<Box<[u8]>, Self::Error> {
-        let mut bytes = Vec::new();
-        ipld.write_cbor(&mut bytes).await?;
-        Ok(bytes.into_boxed_slice())
+        unimplemented!()
     }
 
-    async fn decode(mut data: &[u8]) -> Result<Ipld, Self::Error> {
-        Ipld::read_cbor(&mut data).await
+    /// TODO: impl `Decode` and `Deserialize` for `Ipld`
+    async fn decode(data: &[u8]) -> Result<Ipld, Self::Error> {
+        unimplemented!()
     }
 }
 
-/// CBOR error.
-#[derive(Debug, Fail)]
-pub enum CborError {
-    /// Number larger than u64.
-    #[fail(display = "Number larger than u64.")]
-    NumberOutOfRange,
-    /// Length larger than usize.
-    #[fail(display = "Length out of range.")]
-    LengthOutOfRange,
-    /// Unexpected cbor code.
-    #[fail(display = "Unexpected cbor code.")]
-    UnexpectedCode,
-    /// Unknown cbor tag.
-    #[fail(display = "Unkown cbor tag.")]
-    UnknownTag,
-    /// Unexpected key.
-    #[fail(display = "Wrong key.")]
-    UnexpectedKey,
-    /// Unexpected eof.
-    #[fail(display = "Unexpected end of file.")]
-    UnexpectedEof,
-    /// Io error.
-    #[fail(display = "{}", _0)]
-    Io(std::io::Error),
-    /// Utf8 error.
-    #[fail(display = "{}", _0)]
-    Utf8(std::str::Utf8Error),
-    /// Cid error.
-    #[fail(display = "{}", _0)]
-    Cid(libipld_base::cid::Error),
-    /// Ipld error.
-    #[fail(display = "{}", _0)]
-    Ipld(libipld_base::error::IpldError),
+impl CodecExt for DagCbor {
+    fn encode<S>(dag: &S) -> Result<Box<[u8]>, Self::Error>
+    where
+        S: Serialize,
+    {
+        Ok(to_vec(dag)?.into())
+    }
+
+    fn decode<'de, D>(bytes: &'de [u8]) -> Result<D, Self::Error>
+    where
+        D: Deserialize<'de>,
+    {
+        Ok(from_slice(bytes)?)
+    }
+
+    fn write<S, W>(dag: &S, writer: W) -> Result<(), Self::Error>
+    where
+        S: Serialize,
+        W: Write,
+    {
+        Ok(to_writer(writer, dag)?)
+    }
+
+    fn read<D, R>(reader: R) -> Result<D, Self::Error>
+    where
+        D: DeserializeOwned,
+        R: Read,
+    {
+        Ok(from_reader(reader)?)
+    }
+
+    fn serialize_link<S>(cid: &Cid, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let vec: Vec<u8> = cid.to_bytes();
+        let bytes: &[u8] = vec.as_ref();
+        Tagged::new(Some(CBOR_LINK_TAG), bytes).serialize(serializer)
+    }
+
+    fn deserialize_unknown<'de, D, V>(deserializer: D, visitor: V) -> Result<V::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+        V: IpldVisitor<'de>,
+    {
+        let visitor = DagCborLinkVisitor(visitor);
+        visitor.visit_newtype_struct(deserializer)
+    }
 }
 
-impl From<std::io::Error> for CborError {
-    fn from(err: std::io::Error) -> Self {
-        match err.kind() {
-            std::io::ErrorKind::UnexpectedEof => Self::UnexpectedEof,
-            _ => Self::Io(err),
+/// Helper visitor for deserializing links.
+struct DagCborLinkVisitor<V>(V);
+impl<'de, V> Visitor<'de> for DagCborLinkVisitor<V>
+where
+    V: IpldVisitor<'de>,
+{
+    type Value = V::Value;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("an IPLD link")
+    }
+
+    #[inline]
+    fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match current_cbor_tag() {
+            Some(CBOR_LINK_TAG) => {
+                let bytes = <&[u8]>::deserialize(deserializer)?;
+                let cid = Cid::try_from(bytes).or(Err(DError::custom("expected IPLD link")))?;
+                self.0.visit_link(cid)
+            }
+            Some(tag) => Err(DError::custom(format!("unexpected tag: {}", tag))),
+            _ => Err(DError::custom("tag expected")),
         }
     }
 }
 
-impl From<std::str::Utf8Error> for CborError {
-    fn from(err: std::str::Utf8Error) -> Self {
-        Self::Utf8(err)
-    }
-}
-
-impl From<libipld_base::cid::Error> for CborError {
-    fn from(err: libipld_base::cid::Error) -> Self {
-        Self::Cid(err)
-    }
-}
-
-impl From<libipld_base::error::IpldError> for CborError {
-    fn from(err: libipld_base::error::IpldError) -> Self {
-        Self::Ipld(err)
-    }
-}
-
-impl From<CborError> for BlockError {
+impl From<CborError> for Error {
     fn from(err: CborError) -> Self {
-        Self::CodecError(err.into())
-    }
-}
-
-/// CBOR result.
-pub type CborResult<T> = Result<T, CborError>;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use async_std::task;
-    use libipld_base::cid::Cid;
-    use libipld_macro::ipld;
-
-    async fn encode_decode_cbor() {
-        let ipld = ipld!({
-          "number": 1,
-          "list": [true, null, false],
-          "bytes": vec![0, 1, 2, 3],
-          "map": { "float": 0.0, "string": "hello" },
-          "link": Cid::random(),
-        });
-        let bytes = DagCborCodec::encode(&ipld).await.unwrap();
-        let ipld2 = DagCborCodec::decode(&bytes).await.unwrap();
-        assert_eq!(ipld, ipld2);
-    }
-
-    #[test]
-    fn test_encode_decode_cbor() {
-        task::block_on(encode_decode_cbor());
+        Error::Codec(err.into())
     }
 }

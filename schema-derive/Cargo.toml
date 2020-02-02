@@ -1,11 +1,11 @@
 [package]
-name = "libipld-schema-derive"
+name = "ipld-schema-derive"
 version = "0.0.1"
 authors = ["sunny-g <sunny.gonna@gmail.com>"]
 edition = "2018"
 
 [lib]
-name = "libipld_schema_derive"
+name = "ipld_schema_derive"
 #proc-macro = true
 
 [dependencies]
@@ -13,7 +13,7 @@ impls = "1"
 juniper = { version = "0.14", optional = true }
 
 [dev-dependencies]
-libipld-schema = { path = "../schema", features = ["derive"] }
+ipld-schema = { version = "0.0.1", path = "../schema", features = ["derive"] }
 
 [features]
 default = []

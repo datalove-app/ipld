@@ -16,19 +16,14 @@
 //! `TryFrom<Ipld>` and `TryInto<Ipld>` are implemented to borrow
 //! many of their fields or lazily iterate over them.
 
-use crate::dev::*;
+use crate::CodecExt;
+use cid::Cid;
 use serde::{
     de::{self, Visitor},
-    serde_if_integer128,
+    serde_if_integer128, Deserialize, Deserializer, Serialize, Serializer,
 };
 use std::{
-    cell::RefCell,
-    collections::btree_map::{BTreeMap, Iter as BTreeMapIter},
-    convert::TryFrom,
-    fmt,
-    marker::PhantomData,
-    slice::Iter as SliceIter,
-    vec::IntoIter as VecIter,
+    cell::RefCell, fmt, marker::PhantomData, slice::Iter as SliceIter, vec::IntoIter as VecIter,
 };
 
 /// Ipld that borrows from an underlying type.
@@ -151,12 +146,8 @@ where
             Ipld::String(s) => serializer.serialize_str(s),
             Ipld::Bytes(b) => C::serialize_bytes(*b, serializer),
             Ipld::List(list_iter) => match list_iter {
-                IpldListIter::Slice(iter) => {
-                    serializer.collect_seq(&mut *(iter.borrow_mut()))
-                }
-                IpldListIter::Vec(iter) => {
-                    serializer.collect_seq(&mut *(iter.borrow_mut()))
-                }
+                IpldListIter::Slice(iter) => serializer.collect_seq(&mut *(iter.borrow_mut())),
+                IpldListIter::Vec(iter) => serializer.collect_seq(&mut *(iter.borrow_mut())),
             },
             Ipld::Map(map_iter) => match map_iter {
                 IpldMapIter::Vec(iter) => serializer.collect_map(&mut *(iter.borrow_mut())),
@@ -263,9 +254,7 @@ where
         while let Some(ipld) = seq.next_element()? {
             vec.push(ipld);
         }
-        Ok(Ipld::List(IpldListIter::from(
-            vec.into_iter(),
-        )))
+        Ok(Ipld::List(IpldListIter::from(vec.into_iter())))
     }
 
     #[inline]
@@ -282,13 +271,11 @@ where
         while let Some(ipld) = map.next_entry()? {
             vec.push(ipld);
         }
-        Ok(Ipld::Map(IpldMapIter::from(
-            vec.into_iter(),
-        )))
+        Ok(Ipld::Map(IpldMapIter::from(vec.into_iter())))
     }
 }
 
-impl<'de, C> crate::dev::IpldVisitor<'de> for IpldVisitor<C>
+impl<'de, C> crate::IpldVisitor<'de> for IpldVisitor<C>
 where
     C: 'de + CodecExt,
 {

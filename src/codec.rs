@@ -1,26 +1,34 @@
 //! `Ipld` codecs.
-use crate::error::BlockError;
-use crate::ipld::Ipld;
+use crate::Error;
 use async_trait::async_trait;
 use cid::Cid;
-use core::fmt::Debug;
 use failure::Fail;
-use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer, de::{self, Visitor}};
-use std::io::{Read, Write};
+use serde::{
+    de::DeserializeOwned,
+    de::{self, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
+use std::{
+    fmt::Debug,
+    io::{Read, Write},
+};
 
 /// Codec trait.
 #[async_trait]
 pub trait Codec {
     /// Codec version.
     const VERSION: cid::Version;
+
     /// Codec code.
     const CODEC: cid::Codec;
+
     /// Error type.
-    type Error: Debug + Fail + Into<BlockError>;
-    /// Encode function.
-    async fn encode(ipld: &Ipld) -> Result<Box<[u8]>, Self::Error>;
-    /// Decode function.
-    async fn decode(data: &[u8]) -> Result<Ipld, Self::Error>;
+    type Error: Debug + Fail + Into<Error>;
+
+    // /// Encode function.
+    // async fn encode(ipld: &Ipld) -> Result<Box<[u8]>, Self::Error>;
+    // /// Decode function.
+    // async fn decode(data: &[u8]) -> Result<Ipld, Self::Error>;
 }
 
 /// Extension trait for `Codec`s that can delegate to `serde`.
@@ -41,7 +49,7 @@ pub trait CodecExt: Codec {
     fn write<S, W>(dag: &S, writer: W) -> Result<(), Self::Error>
     where
         S: Serialize,
-        W: Write
+        W: Write,
     {
         unimplemented!()
     }
@@ -52,7 +60,7 @@ pub trait CodecExt: Codec {
     fn read<D, R>(reader: R) -> Result<D, Self::Error>
     where
         D: DeserializeOwned,
-        R: Read
+        R: Read,
     {
         unimplemented!()
     }

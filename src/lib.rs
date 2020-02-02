@@ -1,21 +1,15 @@
-//! The `Ipld` crate.
+//! An implementation of core `Ipld` types and interfaces.
 
-#![deny(missing_docs)]
-#![deny(warnings)]
+mod borrowed;
+mod canon;
+mod codec;
+mod error;
 
-pub mod block;
-pub mod dag;
-pub mod gc;
-pub mod path;
-pub mod store;
+pub use borrowed::{
+    Ipld as BorrowedIpld, IpldListIter as BorrowedIpldListIter, IpldMapIter as BorrowedIpldMapIter,
+};
+pub use codec::{Codec, CodecExt, IpldVisitor};
+pub use error::Error;
 
-pub use dag_cbor as cbor;
-pub use dag_cbor_derive::DagCbor;
-pub use libipld_base::*;
-pub use libipld_macro::*;
-
-/// Default hash used.
-pub type DefaultHash = hash::Blake2b512;
-
-/// The maximum block size is 1MiB.
-pub const MAX_BLOCK_SIZE: usize = 1_048_576;
+#[cfg(test)]
+mod test {}

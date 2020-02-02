@@ -1,5 +1,9 @@
-use ipld::Error;
-use serde::de::Error as DError;
+use cid::{self, Cid};
+use ipld::{Codec, CodecExt, IpldVisitor};
+use serde::{
+    de::{DeserializeOwned, Error as DError, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 use serde_cbor::{
     from_reader, from_slice,
     tags::{current_cbor_tag, Tagged},
@@ -17,22 +21,21 @@ pub const CBOR_LINK_TAG: u64 = 42;
 /// The DagCBOR codec, that delegates to `serde_cbor`.
 pub struct DagCbor;
 
-#[async_trait]
 impl Codec for DagCbor {
     const VERSION: cid::Version = cid::Version::V1;
     const CODEC: cid::Codec = cid::Codec::DagCBOR;
 
-    type Error = Error;
+    type Error = CborError;
 
-    /// TODO: impl `Encode` and `Serialize` for `Ipld`
-    async fn encode(ipld: &Ipld) -> Result<Box<[u8]>, Self::Error> {
-        unimplemented!()
-    }
+    // /// TODO: impl `Encode` and `Serialize` for `Ipld`
+    // async fn encode(ipld: &Ipld) -> Result<Box<[u8]>, Self::Error> {
+    //     unimplemented!()
+    // }
 
-    /// TODO: impl `Decode` and `Deserialize` for `Ipld`
-    async fn decode(data: &[u8]) -> Result<Ipld, Self::Error> {
-        unimplemented!()
-    }
+    // /// TODO: impl `Decode` and `Deserialize` for `Ipld`
+    // async fn decode(data: &[u8]) -> Result<Ipld, Self::Error> {
+    //     unimplemented!()
+    // }
 }
 
 impl CodecExt for DagCbor {
@@ -111,11 +114,5 @@ where
             Some(tag) => Err(DError::custom(format!("unexpected tag: {}", tag))),
             _ => Err(DError::custom("tag expected")),
         }
-    }
-}
-
-impl From<CborError> for Error {
-    fn from(err: CborError) -> Self {
-        Error::Codec(err.into())
     }
 }

@@ -9,6 +9,7 @@ name = "ipld_dag_json"
 path = "src/lib.rs"
 
 [dependencies]
+cid = "^0.3"
 ipld = { path = "../" }
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "^1.0"

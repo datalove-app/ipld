@@ -1,8 +1,5 @@
 //! `Ipld` codecs.
-use crate::Error;
-use async_trait::async_trait;
 use cid::Cid;
-use failure::Fail;
 use serde::{
     de::DeserializeOwned,
     de::{self, Visitor},
@@ -14,7 +11,6 @@ use std::{
 };
 
 /// Codec trait.
-#[async_trait]
 pub trait Codec {
     /// Codec version.
     const VERSION: cid::Version;
@@ -23,7 +19,7 @@ pub trait Codec {
     const CODEC: cid::Codec;
 
     /// Error type.
-    type Error: Debug + Fail + Into<Error>;
+    type Error: Debug + Into<failure::Error>;
 
     // /// Encode function.
     // async fn encode(ipld: &Ipld) -> Result<Box<[u8]>, Self::Error>;

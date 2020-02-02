@@ -9,6 +9,7 @@ name = "ipld_dag_cbor"
 path = "src/lib.rs"
 
 [dependencies]
+cid = "^0.3"
 ipld = { path = "../" }
 serde = { version = "^1.0", features = ["derive"] }
 serde_cbor = { version = "0.11", features = ["tags"] }

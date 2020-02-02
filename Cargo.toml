@@ -27,3 +27,6 @@ members = [
   "dag-json",
   "schema"
 ]
+
+[patch.crates-io]
+cid = { git = "https://github.com/datalove-app/rust-cid", branch = "cli" }

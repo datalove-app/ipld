@@ -17,4 +17,4 @@ ipld-schema = { path = "../schema", features = ["derive"] }
 
 [features]
 default = []
-graphql = ["juniper"]
+# graphql = ["juniper"]

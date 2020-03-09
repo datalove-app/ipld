@@ -11,7 +11,7 @@ path = "src/lib.rs"
 [dependencies]
 async-trait = "0.1"
 bytes = { version = "0.5", optional = true }
-cid = "^0.3"
+cid = "0.3.2"
 derive_more = "0.99"
 failure = "0.1"
 lazy_static = "1.4"
@@ -23,5 +23,5 @@ serde = { version = "^1.0", features = ["derive"] }
 [features]
 default = []
 bytes_ = ["bytes"]
+# datalove = ["ipld-schema-derive", "ipld-schema-derive/datalove"]
 derive = ["ipld-schema-derive"]
-graphql = ["ipld-schema-derive", "ipld-schema-derive/graphql"]

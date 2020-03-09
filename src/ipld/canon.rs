@@ -12,12 +12,12 @@ use std::{convert::TryFrom, marker::PhantomData};
 #[macro_export(local_inner_macros)]
 macro_rules! borrowed_ipld_from_ref {
     ($type:ty : $member:ident) => {
-        impl<'a, C> From<&'a $type> for Ipld<'a, C>
+        impl<'a> From<&'a $type> for Ipld<'a>
         where
             C: CodecExt,
         {
             #[inline]
-            fn from(t: &'a $type) -> Ipld<'a, C> {
+            fn from(t: &'a $type) -> Ipld<'a> {
                 Ipld::$member(*t)
             }
         }
@@ -26,14 +26,14 @@ macro_rules! borrowed_ipld_from_ref {
 
 // null
 
-impl<'a, C> TryFrom<Ipld<'a, C>> for ()
+impl<'a> TryFrom<Ipld<'a>> for ()
 where
     C: CodecExt,
 {
     type Error = Error;
 
     #[inline]
-    fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
+    fn try_from(ipld: Ipld<'a>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::Null(_) => Ok(()),
             _ => Err(Error::Ipld(format_err!("Not Null"))),
@@ -41,12 +41,12 @@ where
     }
 }
 
-impl<'a, C> From<&'a ()> for Ipld<'a, C>
+impl<'a> From<&'a ()> for Ipld<'a>
 where
     C: CodecExt,
 {
     #[inline]
-    fn from(_: &'a ()) -> Ipld<'a, C> {
+    fn from(_: &'a ()) -> Self {
         Ipld::Null(PhantomData)
     }
 }
@@ -54,14 +54,14 @@ where
 // bool
 
 borrowed_ipld_from_ref!(bool: Bool);
-impl<'a, C> TryFrom<Ipld<'a, C>> for bool
+impl<'a> TryFrom<Ipld<'a>> for bool
 where
     C: CodecExt,
 {
     type Error = Error;
 
     #[inline]
-    fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
+    fn try_from(ipld: Ipld<'a>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::Bool(b) => Ok(b),
             _ => Err(Error::Ipld(format_err!("Not Bool"))),
@@ -75,14 +75,14 @@ where
 #[macro_export(local_inner_macros)]
 macro_rules! try_from_num {
     ($type:ty : $member:ident) => {
-        impl<'a, C> TryFrom<Ipld<'a, C>> for $type
+        impl<'a> TryFrom<Ipld<'a>> for $type
         where
             C: CodecExt,
         {
             type Error = Error;
 
             #[inline]
-            fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
+            fn try_from(ipld: Ipld<'a>) -> Result<Self, Self::Error> {
                 match ipld {
                     Ipld::$member(i) => Ok(i),
                     _ => Err(Error::Ipld(::failure::format_err!(
@@ -112,14 +112,14 @@ try_from_num!(f64: Float64);
 
 // string
 
-impl<'a, C> TryFrom<Ipld<'a, C>> for &'a str
+impl<'a> TryFrom<Ipld<'a>> for &'a str
 where
     C: CodecExt,
 {
     type Error = Error;
 
     #[inline]
-    fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
+    fn try_from(ipld: Ipld<'a>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::String(s) => Ok(s),
             _ => Err(Error::Ipld(format_err!("Not String"))),
@@ -127,14 +127,14 @@ where
     }
 }
 
-impl<'a, C> TryFrom<Ipld<'a, C>> for String
+impl<'a> TryFrom<Ipld<'a>> for String
 where
     C: CodecExt,
 {
     type Error = Error;
 
     #[inline]
-    fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
+    fn try_from(ipld: Ipld<'a>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::String(s) => Ok(s.into()),
             _ => Err(Error::Ipld(format_err!("Not String"))),
@@ -142,26 +142,26 @@ where
     }
 }
 
-impl<'a, C> From<&'a String> for Ipld<'a, C>
+impl<'a> From<&'a String> for Ipld<'a>
 where
     C: CodecExt,
 {
     #[inline]
-    fn from(s: &'a String) -> Ipld<'a, C> {
+    fn from(s: &'a String) -> Self {
         Ipld::String(&*s)
     }
 }
 
 // bytes
 
-impl<'a, C> TryFrom<Ipld<'a, C>> for &'a [u8]
+impl<'a> TryFrom<Ipld<'a>> for &'a [u8]
 where
     C: CodecExt,
 {
     type Error = Error;
 
     #[inline]
-    fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
+    fn try_from(ipld: Ipld<'a>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::Bytes(b) => Ok(b),
             _ => Err(Error::Ipld(format_err!("Not Bytes"))),
@@ -169,25 +169,25 @@ where
     }
 }
 
-impl<'a, C> From<&'a Box<[u8]>> for Ipld<'a, C>
+impl<'a> From<&'a Box<[u8]>> for Ipld<'a>
 where
     C: CodecExt,
 {
     #[inline]
-    fn from(bytes: &'a Box<[u8]>) -> Ipld<'a, C> {
+    fn from(bytes: &'a Box<[u8]>) -> Self {
         Ipld::Bytes(&*bytes)
     }
 }
 
 #[cfg(feature = "bytes_")]
-impl<'a, C> TryFrom<Ipld<'a, C>> for bytes::Bytes
+impl<'a> TryFrom<Ipld<'a>> for bytes::Bytes
 where
     C: CodecExt,
 {
     type Error = Error;
 
     #[inline]
-    fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
+    fn try_from(ipld: Ipld<'a>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::Bytes(b) => Ok(bytes::Bytes::copy_from_slice(b)),
             _ => Err(Error::Ipld(format_err!("Not Bytes"))),
@@ -196,26 +196,26 @@ where
 }
 
 #[cfg(feature = "bytes_")]
-impl<'a, C> From<&'a bytes::Bytes> for Ipld<'a, C>
+impl<'a> From<&'a bytes::Bytes> for Ipld<'a>
 where
     C: CodecExt,
 {
     #[inline]
-    fn from(bytes: &'a bytes::Bytes) -> Ipld<'a, C> {
+    fn from(bytes: &'a bytes::Bytes) -> Self {
         Ipld::Bytes(bytes.as_ref())
     }
 }
 
 // cid
 
-impl<'a, C> TryFrom<Ipld<'a, C>> for Cid
+impl<'a> TryFrom<Ipld<'a>> for Cid
 where
     C: CodecExt,
 {
     type Error = Error;
 
     #[inline]
-    fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
+    fn try_from(ipld: Ipld<'a>) -> Result<Self, Self::Error> {
         match ipld {
             Ipld::Link(cid) => Ok(cid),
             _ => Err(Error::Ipld(format_err!("Not Link"))),
@@ -223,12 +223,12 @@ where
     }
 }
 
-impl<'a, C> From<&'a Cid> for Ipld<'a, C>
+impl<'a> From<&'a Cid> for Ipld<'a>
 where
     C: CodecExt,
 {
     #[inline]
-    fn from(link: &'a Cid) -> Ipld<'a, C> {
+    fn from(link: &'a Cid) -> Self {
         Ipld::Link(link.to_owned())
     }
 }
@@ -241,15 +241,25 @@ macro_rules! derive_ipld_for_struct {
         ::paste::item! {
             #[doc(hidden)]
             enum [<$name Field>] {
-                $(
-                    [<Field $member>],
-                )*
+                $([<Field $member>],)*
+            }
+
+            impl [<$name Field>] {
+                #[inline]
+                fn field(key: &str) -> Result<Self, Error> {
+                    match key {
+                        $(::std::stringify!($member) => Ok(Self::$member),)*
+                        _ => Err(Error::Codec(::failure::format_err!("Missing key: {}", key).into())),
+                    }
+                }
             }
         }
         ::paste::item! {
             #[doc(hidden)]
             #[derive(Default)]
-            struct [<$name Builder>] { $($member : Option<$value_type>,)* }
+            struct [<$name Builder>] {
+                $($member : Option<$value_type>,)*
+            }
 
             impl [<$name Builder>] {
                 $(
@@ -259,14 +269,6 @@ macro_rules! derive_ipld_for_struct {
                         self
                     }
                 )*
-
-                #[inline]
-                fn field(key: &str) -> Result<[<$name Field>], Error> {
-                    match key {
-                        $(::std::stringify!($member) => Ok([<$name Field>]::[<Field $member>]),)*
-                        _ => Err(Error::Codec(::failure::format_err!("Missing key: {}", key).into())),
-                    }
-                }
 
                 #[inline]
                 fn build(self) -> Result<$name, Error> {
@@ -279,14 +281,14 @@ macro_rules! derive_ipld_for_struct {
         }
 
         ::paste::item! {
-            impl<'a, C> TryFrom<Ipld<'a, C>> for $name
+            impl<'a> TryFrom<Ipld<'a>> for $name
             where
                 C: CodecExt,
             {
                 type Error = Error;
 
                 #[inline]
-                fn try_from(ipld: Ipld<'a, C>) -> Result<Self, Self::Error> {
+                fn try_from(ipld: Ipld<'a>) -> Result<Self, Self::Error> {
                     match ipld {
                         Ipld::Map(map_iter) => match map_iter {
                             IpldMapIter::Vec(iter) => {
@@ -311,25 +313,25 @@ macro_rules! derive_ipld_for_struct {
         }
 
         ::paste::item! {
-            impl<'a, C> TryInto<Ipld<'a, C>> for &'a $name
+            impl<'a> TryInto<Ipld<'a>> for &'a $name
             where
                 C: CodecExt,
             {
                 type Error = Error;
 
                 #[inline]
-                fn try_into(self) -> Result<Ipld<'a, C>, Self::Error> {
+                fn try_into(self) -> Result<Ipld<'a>, Self::Error> {
 
 
-    //                let mut map: BTreeMap<&'static str, Ipld<'a, C>> = BTreeMap::new();
+    //                let mut map: BTreeMap<&'static str, Ipld<'a>> = BTreeMap::new();
     //                $(map.insert(::std::stringify!($member), (&(self.$member)).try_into()?);)*
     //                Ok(Ipld::Map(map))
                 }
             }
         }
     };
-    (@count $t1:tt, $($t:tt),+) => { 1 + derive_ipld_for_struct!(@count $($t),+) };
-    (@count $t:tt) => { 1 };
+    // (@count $t1:tt, $($t:tt),+) => { 1 + derive_ipld_for_struct!(@count $($t),+) };
+    // (@count $t:tt) => { 1 };
 }
 
 #[macro_export]

@@ -1,20 +1,22 @@
 use cid::Error as CidError;
-use failure::Fail;
-use std::{convert::Infallible, num::TryFromIntError, string::FromUtf8Error};
+use std::{
+    convert::Infallible, error::Error as StdError, num::TryFromIntError, string::FromUtf8Error,
+};
+use thiserror::Error;
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[fail(display = "Cid error: {}", _0)]
+    #[error("Cid error: {0}")]
     Cid(CidError),
 
-    #[fail(display = "IPLD Codec error: {}", _0)]
-    Codec(failure::Error),
+    #[error("IPLD format error:")]
+    Format(),
 
-    #[fail(display = "Invalid data received from context: {}", _0)]
-    Context(failure::Error),
+    #[error("Invalid IPLD data type:")]
+    Ipld(),
 
-    #[fail(display = "Invalid IPLD data type:: {}", _0)]
-    Ipld(failure::Error),
+    #[error("")]
+    Custom(),
 }
 
 impl From<CidError> for Error {
@@ -23,20 +25,20 @@ impl From<CidError> for Error {
     }
 }
 
-impl From<FromUtf8Error> for Error {
-    fn from(err: FromUtf8Error) -> Self {
-        Error::Codec(err.into())
-    }
-}
+// impl From<FromUtf8Error> for Error {
+//     fn from(err: FromUtf8Error) -> Self {
+//         Error::Codec(err.into())
+//     }
+// }
 
-impl From<TryFromIntError> for Error {
-    fn from(err: TryFromIntError) -> Self {
-        Error::Codec(err.into())
-    }
-}
+// impl From<TryFromIntError> for Error {
+//     fn from(err: TryFromIntError) -> Self {
+//         Error::Codec(err.into())
+//     }
+// }
 
-impl From<Infallible> for Error {
-    fn from(err: Infallible) -> Self {
-        Error::Codec(err.into())
-    }
-}
+// impl From<Infallible> for Error {
+//     fn from(err: Infallible) -> Self {
+//         Error::Codec(err.into())
+//     }
+// }

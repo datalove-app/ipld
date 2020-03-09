@@ -1,19 +1,24 @@
-# Rust IPLD library
-Basic rust ipld library supporting `dag-cbor`, `dag-json` and `dag-pb` formats.
+# ipld
+
+README and repos under construction
+
+## Install
+
+**NOTE: due to our use of `#![feature(specialization)]` in order to re-use [`serde`](https://serde.rs) for IPLD codecs, you'll need to use the nightly compiler**
+
+```toml
+[dependencies]
+ipld = "0.0.3"
+
+[features]
+dag-cbor = "uses serde_cbor to implement the `DagCbor` format"
+dag-json = "uses serde_json to implement the `DagJson` format"
+multicodec = "enables all listed IPLD formats"
+```
 
 ## License
-ISC License
 
-Copyright (c) 2019, David Craven and others
+MIT or Apache-2.0.
 
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
-AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
-LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
-OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
-PERFORMANCE OF THIS SOFTWARE.
+Originally forked from [`rust-ipld`](https://github.com/rust-ipfs/rust-ipld) to
+integrate `serde` and implement IPLD Schemas and Representations.

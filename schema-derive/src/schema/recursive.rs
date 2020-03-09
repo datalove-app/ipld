@@ -19,10 +19,10 @@ macro_rules! typedef_list {
     // ($name:ident : $type:ty) => {
     //     typedef_list!($name $type);
     // };
-    ($name:tt $elem_type:ty) => {
-        struct $name(::std::vec::Vec<$elem_type>);
+    ($name:tt $value:ty) => {
+        struct $name(::std::vec::Vec<$value>);
         // TODO: fix matching against `tt`: https://github.com/dtolnay/async-trait/issues/46#issuecomment-547572251
-        delegate_repr_impl!($name: (::std::vec::Vec<$elem_type>));
+        delegate_repr_impl!($name: (::std::vec::Vec<$value>));
     };
 }
 
@@ -52,12 +52,12 @@ macro_rules! typedef_map {
         delegate_repr_impl!($name: (::$std::collections::BTreeMap<$key, $value>));
     };
     // map stringpairs representation
-    ($name:ident { $key:ty : $value:ty } @stringpairs $inner:expr, $entry:expr) => {
+    (@stringpairs $name:ident { $key:ty : $value:ty } $inner:expr, $entry:expr) => {
         struct $name(::std::collections::BTreeMap<$key, $value>);
         // repr_map_impl_stringpairs!($name { $key : $value } { $inner, $entry });
     };
     // map listpairs representation
-    ($name:ident { $key:ty : $value:ty } @listpairs) => {
+    (@listpairs $name:ident { $key:ty : $value:ty }) => {
         struct $name(::std::collections::BTreeMap<$key, $value>);
         // repr_map_impl_listpairs!($name { $key : $value });
     };

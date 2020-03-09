@@ -1,9 +1,9 @@
 [package]
 name = "ipld"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["sunny-g <sunny.gonna@gmail.com>"]
 description = "IPLD types and interfaces"
-license = "ISC"
+license = "MIT or Apache-2.0"
 edition = "2018"
 
 [lib]
@@ -11,22 +11,30 @@ name = "ipld"
 path = "src/lib.rs"
 
 [dependencies]
+# anyhow = "1.0"
 async-trait = "0.1"
-cid = { version = "^0.3", git = "https://github.com/datalove-app/rust-cid", branch = "cli" }
-failure = "0.1"
-multibase = "0.7"
-multihash = "0.9"
+cid = "0.3.2"
+delegate = { version = "0.4", optional = true }
+multibase = "0.8"
+multihash = "0.10"
 serde = { version = "^1.0" }
+serde_cbor = { version = "0.11", optional = true }
+serde_json = { version = "1.0", optional = true }
+thiserror = "1.0"
+
+[dev-dependencies]
+criterion = "0.3"
+proptest = "0.9"
 
 [features]
 default = []
+dag-cbor = ["serde_cbor", "serde_cbor/tags"]
+dag-json = ["delegate", "serde_json"]
+multicodec = ["dag-cbor", "dag-json"]
 
-[workspace]
-members = [
-  "dag-cbor",
-  "dag-json",
-  "schema",
-  "schema-derive"
-]
-
-[patch.crates-io]
+# [workspace]
+# members = [
+#   "schema",
+#   # "schema-codegen",
+#   # "schema-derive"
+# ]

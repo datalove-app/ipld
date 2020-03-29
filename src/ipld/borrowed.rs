@@ -18,8 +18,18 @@
 /// and whenever possible provides borrowed types on deserialization. Likewise,
 /// `TryFrom<Ipld>` and `TryInto<Ipld>` are implemented to borrow many of their
 /// fields or lazily iterate over them.
-use crate::prelude::*;
-use serde::{de, serde_if_integer128};
+//
+
+///
+#[cfg(feature = "graphql")]
+#[path = "./juniper.rs"]
+mod _juniper;
+
+use crate::dev::*;
+use serde::{
+    de::{self, Visitor},
+    serde_if_integer128, Deserialize, Deserializer, Serialize, Serializer,
+};
 use std::{collections::BTreeMap, fmt};
 
 /// An Ipld type that borrows most of its contents from an underlying native
@@ -79,7 +89,7 @@ impl<'a> Serialize for Ipld<'a> {
         S: Serializer,
     {
         match self {
-            Ipld::Null => serializer.serialize_none(),
+            Ipld::Null => serializer.serialize_unit(),
             Ipld::Bool(b) => serializer.serialize_bool(*b),
             Ipld::Int8(n) => serializer.serialize_i8(*n),
             Ipld::Int16(n) => serializer.serialize_i16(*n),
@@ -153,7 +163,7 @@ impl<'de> Visitor<'de> for IpldVisitor {
 
     #[inline]
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a dag of borrowed IPLD")
+        formatter.write_str("a valid IPLD data type")
     }
 
     #[inline]

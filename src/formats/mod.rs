@@ -5,7 +5,7 @@ pub mod dag_cbor;
 #[cfg(feature = "dag-json")]
 pub mod dag_json;
 
-use crate::prelude::*;
+use crate::dev::*;
 use serde::de;
 use std::error::Error as StdError;
 
@@ -108,8 +108,9 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
     }
 }
 
+///
 mod specialization {
-    use crate::prelude::*;
+    use crate::dev::*;
     use serde::de;
 
     /// Default (specialized) implementation for all `Deserializer`s (to avoid

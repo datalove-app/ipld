@@ -1,0 +1,17 @@
+[package]
+name = "ipld-schema-derive-internals"
+version = "0.0.1"
+authors = ["sunny-g <sunny.gonna@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+num-traits = "0.2"
+proc-macro-crate = "0.1.4"
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "1.0", features = ["extra-traits"] }
+
+[dev-dependencies]
+syn = { version = "1.0", features = ["full"] }

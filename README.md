@@ -11,8 +11,8 @@ README and repos under construction
 ipld = "0.0.3"
 
 [features]
-dag-cbor = "uses serde_cbor to implement the `DagCbor` format"
-dag-json = "uses serde_json to implement the `DagJson` format"
+dag-cbor = "uses `serde_cbor` to implement the `DagCbor` format"
+dag-json = "uses `serde_json` to implement the `DagJson` format"
 multicodec = "enables all listed IPLD formats"
 ```
 

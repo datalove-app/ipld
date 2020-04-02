@@ -1,5 +1,6 @@
 //! An implementation of core `IPLD` types and interfaces.
 
+#![feature(const_generics)]
 #![feature(specialization)]
 // #![deny(missing_docs)]
 
@@ -7,11 +8,15 @@
 mod _formats;
 mod block;
 mod error;
-mod ipld;
+// mod ipld;
+mod representation;
+mod selectors;
 
 // pub use error::Error;
-pub use _formats::{Decoder, Encoder, Format, IpldVisitorExt};
-pub use ipld::borrowed::Ipld as BorrowedIpld;
+pub use _formats::{Decoder, Encoder, Format};
+// pub use ipld::borrowed::Ipld as BorrowedIpld;
+pub use representation::{Context, Executor, Representation};
+pub use selectors::{Select, Selector};
 
 pub mod formats {
     #[cfg(feature = "dag-cbor")]
@@ -22,8 +27,17 @@ pub mod formats {
 }
 
 pub mod dev {
+    pub use crate::_formats::*;
     pub use crate::prelude::*;
-    pub use serde::{self, de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
+    pub use crate::representation::*;
+    pub use crate::selectors::*;
+
+    pub use serde::{
+        self,
+        de::{DeserializeSeed, Visitor},
+        Deserialize, Deserializer, Serialize, Serializer,
+    };
+    pub use serde_repr;
     pub use std::{
         fmt::Debug,
         io::{Read, Write},
@@ -31,7 +45,7 @@ pub mod dev {
 }
 pub mod prelude {
     pub use crate::*;
-    pub use async_trait::async_trait;
+    pub use formats::*;
     pub use cid::{self, Cid, ToCid};
     pub use multibase::{self, Base as Multibase};
     pub use multihash::{self, Multihash, MultihashDigest, MultihashRef};

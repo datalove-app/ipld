@@ -15,11 +15,13 @@ path = "src/lib.rs"
 async-trait = "0.1"
 cid = "0.3.2"
 delegate = { version = "0.4", optional = true }
+ipld-macros = { path = "./macros" }
 multibase = "0.8"
 multihash = "0.10"
-serde = { version = "^1.0" }
+serde = { version = "1.0" }
 serde_cbor = { version = "0.11", optional = true }
 serde_json = { version = "1.0", optional = true }
+serde_repr = "0.1"
 thiserror = "1.0"
 
 [dev-dependencies]
@@ -32,9 +34,8 @@ dag-cbor = ["serde_cbor", "serde_cbor/tags"]
 dag-json = ["delegate", "serde_json"]
 multicodec = ["dag-cbor", "dag-json"]
 
-# [workspace]
-# members = [
-#   "schema",
-#   # "schema-codegen",
-#   # "schema-derive"
-# ]
+[workspace]
+members = [
+  "macros",
+  "macros-internals"
+]

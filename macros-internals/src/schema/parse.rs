@@ -1,37 +1,13 @@
 use super::*;
+use crate::dev::*;
 use proc_macro2::TokenStream;
-use proc_macro_crate::crate_name;
+use std::fmt;
 use syn::{
     braced,
-    parse::{Parse, ParseStream, Result as ParseResult},
-    parse_quote, parse_str, token, Ident, ItemFn, Lit, LitStr, Meta, MetaNameValue, Path, Token,
-    Type, Visibility,
+    parse::{Parse, ParseStream, Peek, Result as ParseResult},
+    parse_quote, parse_str, token, Generics, Ident, ItemFn, Lit, LitStr, Meta, MetaNameValue, Path,
+    Token, Type, Visibility,
 };
-
-impl Parse for SchemaMeta {
-    fn parse(input: ParseStream) -> ParseResult<Self> {
-        let typedef_str = input.to_string();
-
-        // parse attributes and any flags
-        let attrs = input.parse::<OuterAttributes>()?;
-        let ipld_schema_lib: Path = attrs.parse_lib(input)?;
-        let try_from = attrs.parse_try_from()?;
-
-        // type info
-        let vis = input.parse::<Visibility>()?;
-        input.parse::<Token![type]>()?;
-        let name = input.parse::<Ident>()?;
-
-        Ok(Self {
-            typedef_str,
-            ipld_schema_lib,
-            try_from,
-            attrs: attrs.omit_internal_attrs(),
-            vis,
-            name,
-        })
-    }
-}
 
 impl Parse for SchemaDefinition {
     fn parse(input: ParseStream) -> ParseResult<Self> {
@@ -39,10 +15,39 @@ impl Parse for SchemaDefinition {
         let repr = input.parse::<ReprDefinition>()?;
 
         if meta.try_from.is_some() && !repr.supports_try_from() {
-            Err(input.error(format!("`{}` attribute only supported for Int, Float, String, and basic Bytes representations", TRY_FROM)))
+            Err(input.error(format!("`{}` attribute only supported for Int, Float, String, and basic Bytes representations", attr::TRY_FROM)))
         } else {
-            Ok(SchemaDefinition { meta, repr })
+            let mut schema_def = SchemaDefinition { meta, repr };
+            // TODO: complete this
+            // schema_def.meta.typedef_str = format!("{}", &schema_def);
+            Ok(schema_def)
         }
+    }
+}
+
+impl Parse for SchemaMeta {
+    fn parse(input: ParseStream) -> ParseResult<Self> {
+        // parse attributes and any flags
+        let attrs = input.parse::<OuterAttributes>()?;
+        let internal = attrs.parse_internal(input);
+        let try_from = attrs.parse_try_from()?;
+
+        // type info
+        let vis = input.parse::<Visibility>()?;
+        input.parse::<Token![type]>()?;
+        let name = input.parse::<Ident>()?;
+        let generics = input.parse::<Generics>().map_or(None, Some);
+
+        Ok(Self {
+            // TODO: fix this
+            typedef_str: String::default(),
+            internal,
+            try_from,
+            attrs: attrs.omit_internal_attrs(),
+            vis,
+            name,
+            generics,
+        })
     }
 }
 
@@ -51,17 +56,15 @@ impl Parse for ReprDefinition {
         macro_rules! parse_kw {
             ($input:expr, $kw:path => $variant:ident $repr_def:ident) => {{
                 $input.parse::<$kw>()?;
-                parse_end($input)?;
-                Ok(ReprDefinition::$variant($repr_def))
+                Self::$variant($repr_def)
             }};
             ($input:expr, $kw:path => $variant:ident $repr_def:ident $type:ty) => {{
                 $input.parse::<$kw>()?;
-                parse_end($input)?;
-                Ok(ReprDefinition::$variant($repr_def(parse_quote!($type))))
+                Self::$variant($repr_def(parse_quote!($type)))
             }};
         }
 
-        match input {
+        let repr_def = match input {
             // null
             _ if input.peek(kw::null) => parse_kw!(input, kw::null => Null NullReprDefinition),
             // bool
@@ -79,133 +82,101 @@ impl Parse for ReprDefinition {
             // bytes
             _ if input.peek(kw::bytes) => {
                 input.parse::<kw::bytes>()?;
-                Ok(ReprDefinition::Bytes(input.parse::<BytesReprDefinition>()?))
+                Self::Bytes(input.parse::<BytesReprDefinition>()?)
             }
             // link
             _ if input.peek(Token![&]) => {
                 input.parse::<Token![&]>()?;
-                let ty = input.parse::<Type>()?;
-                parse_end(input)?;
-                Ok(ReprDefinition::Link(LinkReprDefinition(ty)))
+                Self::Link(LinkReprDefinition(input.parse::<Type>()?))
             }
             // copy
             _ if input.peek(Token![=]) => {
                 input.parse::<Token![=]>()?;
-                let ty = input.parse::<Type>()?;
-                parse_end(input)?;
-                Ok(ReprDefinition::Copy(CopyReprDefinition(ty)))
+                Self::Copy(CopyReprDefinition(input.parse::<Type>()?))
             }
             // list
-            _ if input.peek(token::Bracket) => {
-                Ok(ReprDefinition::List(input.parse::<ListReprDefinition>()?))
-            }
+            _ if input.peek(token::Bracket) => Self::List(input.parse()?),
             // map
-            _ if input.peek(token::Brace) => {
-                Ok(ReprDefinition::Map(input.parse::<MapReprDefinition>()?))
-            }
+            _ if input.peek(token::Brace) => Self::Map(input.parse()?),
             // struct
             _ if input.peek(Token![struct]) => {
                 input.parse::<Token![struct]>()?;
-                Ok(ReprDefinition::Struct(
-                    input.parse::<StructReprDefinition>()?,
-                ))
+                Self::Struct(input.parse::<StructReprDefinition>()?)
             }
             // enum
             _ if input.peek(Token![enum]) => {
                 input.parse::<Token![enum]>()?;
-                let ty = input.parse::<EnumReprDefinition>()?;
-                parse_end(input)?;
-                Ok(ReprDefinition::Enum(ty))
+                Self::Enum(input.parse::<EnumReprDefinition>()?)
             }
             // union
             _ if input.peek(Token![union]) => {
                 input.parse::<Token![union]>()?;
-                let ty = input.parse::<UnionReprDefinition>()?;
-                parse_end(input)?;
-                Ok(ReprDefinition::Union(ty))
+                Self::Union(input.parse::<UnionReprDefinition>()?)
             }
-            _ => Err(input.error("invalid IPLD schema definition")),
-        }
-    }
-}
+            _ => return Err(input.error("invalid IPLD schema definition")),
+        };
 
-impl OuterAttributes {
-    fn parse_lib(&self, input: ParseStream) -> ParseResult<Path> {
-        if self.iter().any(|a| a.path.is_ident(INTERNAL)) {
-            // macro is used w/in `ipld_schema` => expand to `crate`
-            Ok(parse_quote!(crate))
-        } else {
-            // macro is used in foreign crate => expand to dependency
-            let name = crate_name(CRATE_NAME).or(Err(
-                input.error("`ipld-schema` is not present in Cargo.toml")
-            ))?;
-            parse_str(&name)
-        }
-    }
-
-    fn parse_try_from(&self) -> ParseResult<Option<LitStr>> {
-        let mut try_from = None;
-
-        for attr in self.iter() {
-            if attr.path.is_ident(TRY_FROM) {
-                if let Meta::NameValue(MetaNameValue {
-                    path: _,
-                    eq_token: _,
-                    lit: Lit::Str(lit_str),
-                }) = attr.parse_meta()?
-                {
-                    try_from.replace(lit_str);
-                };
-            }
-        }
-
-        Ok(try_from)
+        parse_end(input)?;
+        Ok(repr_def)
     }
 }
 
 impl<T: Parse> Parse for Fields<T> {
     fn parse(input: ParseStream) -> ParseResult<Self> {
         let mut vec = Vec::new();
-
         while !input.is_empty() {
             vec.push(input.parse::<T>()?);
         }
-
         Ok(Self(vec))
     }
 }
+
+// impl<K: Parse + Peek + Default, T: Parse> Parse for kw::Directive<K, T> {
+//     fn parse(input: ParseStream) -> ParseResult<Self> {
+//         use std::marker::PhantomData;
+
+//         if input.peek::<K>(K::default()) {
+//             input.parse::<K>()?;
+//             Ok(Self(Some(input.parse::<T>()?), PhantomData::<K>))
+//         } else {
+//             Ok(Self(None, PhantomData::<K>))
+//         }
+//     }
+// }
 
 // TODO: impl `fn rest(input)`, which grabs the rest of the tokens, but asserts that it ends with a semicolon
 
-/// Checks if the next token is the ending semicolon.
-pub fn is_end(input: ParseStream) -> bool {
-    input.peek(Token![;])
-}
-
-/// Parses the ending semicolon, asserting that the
-pub fn parse_end(input: ParseStream) -> ParseResult<()> {
-    input.parse::<Token![;]>()?;
-    if !input.is_empty() {
-        Err(input.error("must end IPLD schema definitions with a semicolon"))
-    } else {
-        Ok(())
-    }
-}
-
 ///
-pub fn parse_rest(input: ParseStream) -> ParseResult<TokenStream> {
+pub(crate) fn parse_rest(input: ParseStream) -> ParseResult<TokenStream> {
     let args;
     braced!(args in input);
-    parse_end(input)?;
     Ok(args.parse::<TokenStream>()?)
 }
 
-impl Parse for super::Methods {
-    fn parse(input: ParseStream) -> ParseResult<Self> {
-        let mut vec = Vec::new();
-        while !input.is_empty() {
-            vec.push(input.parse::<ItemFn>()?);
+// impl Parse for super::Methods {
+//     fn parse(input: ParseStream) -> ParseResult<Self> {
+//         let mut vec = Vec::new();
+//         while !input.is_empty() {
+//             vec.push(input.parse::<ItemFn>()?);
+//         }
+//         Ok(Self(vec))
+//     }
+// }
+
+#[doc(hidden)]
+#[macro_export(local_inner_macros)]
+macro_rules! parse_advanced {
+    ($type:ident => $repr_variant:ident) => {
+        fn parse(input: ParseStream) -> ParseResult<Self> {
+            use crate::schema::{ReprDefinition, SchemaDefinition};
+            let SchemaDefinition { meta, repr } = input.parse()?;
+            match repr {
+                ReprDefinition::$type($repr_variant::Advanced(repr)) => Ok(Self { meta, repr }),
+                _ => Err(input.error(&::std::format!(
+                    "invalid IPLD {} advanced representation",
+                    ::std::stringify!($type)
+                ))),
+            }
         }
-        Ok(Self(vec))
-    }
+    };
 }

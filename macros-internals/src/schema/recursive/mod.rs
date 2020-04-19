@@ -11,11 +11,11 @@ pub enum ListReprDefinition {
     Advanced(AdvancedListReprDefinition),
 }
 
-// #[derive(Debug)]
-// pub struct AdvancedListSchemaDefinition {
-//     pub meta: SchemaMeta,
-//     pub repr_def: AdvancedListReprDefinition,
-// }
+#[derive(Debug)]
+pub struct AdvancedListSchemaDefinition {
+    pub meta: SchemaMeta,
+    pub repr: AdvancedListReprDefinition,
+}
 
 #[derive(Debug)]
 pub struct AdvancedListReprDefinition {
@@ -31,12 +31,7 @@ impl ListReprDefinition {
         use AdvancedListReprDefinition as Adv;
         match self {
             Self::Basic { elem, nullable } => (elem, *nullable),
-            Self::Advanced(Adv {
-                name: _,
-                elem,
-                rest: _,
-                nullable,
-            }) => (elem, *nullable),
+            Self::Advanced(Adv { elem, nullable, .. }) => (elem, *nullable),
         }
     }
 }
@@ -63,11 +58,11 @@ pub enum MapReprDefinition {
     Advanced(AdvancedMapReprDefinition),
 }
 
-// #[derive(Debug)]
-// pub struct AdvancedMapSchemaDefinition {
-//     pub meta: SchemaMeta,
-//     pub repr_def: AdvancedMapReprDefinition,
-// }
+#[derive(Debug)]
+pub struct AdvancedMapSchemaDefinition {
+    pub meta: SchemaMeta,
+    pub repr: AdvancedMapReprDefinition,
+}
 
 #[derive(Debug)]
 pub struct AdvancedMapReprDefinition {
@@ -91,8 +86,7 @@ impl MapReprDefinition {
                 key,
                 value,
                 nullable,
-                inner_delim: _,
-                entry_delim: _,
+                ..
             } => (key, value, *nullable),
             Self::Listpairs {
                 key,
@@ -100,11 +94,10 @@ impl MapReprDefinition {
                 nullable,
             } => (key, value, *nullable),
             Self::Advanced(AdvancedMapReprDefinition {
-                name: _,
                 key,
                 value,
                 nullable,
-                rest: _,
+                ..
             }) => (key, value, *nullable),
         }
     }

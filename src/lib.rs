@@ -1,6 +1,5 @@
-//! An implementation of core `IPLD` types and interfaces.
+//! The [types](), [traits]() and [macros]() for [`IPLD`]() [Data Model](), [Schemas](), [Representations](), and [Selectors]().
 
-#![feature(const_generics)]
 #![feature(specialization)]
 // #![deny(missing_docs)]
 
@@ -9,40 +8,61 @@ mod _formats;
 mod block;
 mod error;
 // mod ipld;
-mod representation;
-mod selectors;
+// #[doc(inline)]
+pub mod representation;
+pub mod selectors;
+pub mod value;
 
-// pub use error::Error;
 pub use _formats::{Decoder, Encoder, Format};
+pub use error::Error;
 // pub use ipld::borrowed::Ipld as BorrowedIpld;
-pub use representation::{Context, Executor, Representation};
-pub use selectors::{Select, Selector};
+#[doc(inline)]
+pub use representation::{
+    Context, Executor, Representation, Select, Selection, SelectionResult, SelectionStream,
+};
+#[doc(inline)]
+pub use selectors::Selector;
+// #[doc(inline)]
+// pub use value::Value;
 
+///
 pub mod formats {
     #[cfg(feature = "dag-cbor")]
     pub use crate::_formats::dag_cbor::DagCbor;
 
-    #[cfg(feature = "dag-json")]
+    #[cfg(all(feature = "dag-json", not(feature = "simd")))]
     pub use crate::_formats::dag_json::DagJson;
+    // #[cfg(all(feature = "dag-json", feature = "simd"))]
+    // pub use crate::_formats::dag_json_simd::DagJson;
 }
 
+#[cfg(feature = "macros")]
+#[doc(inline)]
+pub use ipld_macros::{ipld_attr, schema, selector};
+
+///
 pub mod dev {
     pub use crate::_formats::*;
+    pub use crate::formats::*;
+    #[doc(inline)]
+    pub use crate::impl_root_select;
     pub use crate::prelude::*;
     pub use crate::representation::*;
     pub use crate::selectors::*;
+    pub use crate::value::*;
 
+    // pub use async_stream::stream;
+    pub use futures::{self, Stream, StreamExt};
+    pub use ipld_macros_internals as macros;
     pub use serde::{
         self,
-        de::{DeserializeSeed, Visitor},
+        de::{DeserializeOwned, DeserializeSeed, Visitor},
         Deserialize, Deserializer, Serialize, Serializer,
     };
     pub use serde_repr;
-    pub use std::{
-        fmt::Debug,
-        io::{Read, Write},
-    };
 }
+
+///
 pub mod prelude {
     pub use crate::*;
     pub use formats::*;

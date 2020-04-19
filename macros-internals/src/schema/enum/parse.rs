@@ -1,7 +1,7 @@
 //! Enum
 
 use super::{EnumIntField, EnumIntFields, EnumReprDefinition, EnumStrField, EnumStrFields};
-use crate::dev::{parse, schema::kw, Fields, InnerAttributes};
+use crate::dev::{common, parse, schema::kw, Fields, InnerAttributes};
 use quote::quote;
 use syn::{
     braced, parenthesized,
@@ -14,21 +14,21 @@ impl Parse for EnumReprDefinition {
         let typedef_stream;
         braced!(typedef_stream in input);
 
-        let enum_repr = if parse::is_end(input) {
-            println!("end of input, parsing fields: {:?}", &typedef_stream);
+        let enum_repr = if common::is_end(input) {
             let fields = typedef_stream.parse::<EnumStrFields>()?;
-            println!("finished parsing fields: {:?}", &fields);
             EnumReprDefinition::String { fields }
         } else {
             input.parse::<kw::representation>()?;
             match input {
                 // string
                 _ if input.peek(kw::string) => {
+                    input.parse::<kw::string>()?;
                     let fields = typedef_stream.parse::<EnumStrFields>()?;
                     EnumReprDefinition::String { fields }
                 }
                 // int
                 _ if input.peek(kw::int) => {
+                    input.parse::<kw::int>()?;
                     let fields = typedef_stream.parse::<EnumIntFields>()?;
                     EnumReprDefinition::Int { fields }
                 }

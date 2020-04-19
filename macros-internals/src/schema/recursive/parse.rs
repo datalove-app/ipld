@@ -1,8 +1,6 @@
-use super::{
-    AdvancedListReprDefinition, AdvancedMapReprDefinition, ListReprDefinition, MapReprDefinition,
-};
+use super::*;
 use crate::dev::{
-    parse_kwarg,
+    common, parse_advanced, parse_kwarg,
     schema::{kw, parse},
 };
 use syn::{
@@ -27,7 +25,7 @@ impl Parse for ListReprDefinition {
         }
 
         // parse list representation
-        let list_repr = if parse::is_end(input) {
+        let list_repr = if common::is_end(input) {
             ListReprDefinition::Basic { elem, nullable }
         } else {
             input.parse::<kw::representation>()?;
@@ -40,7 +38,6 @@ impl Parse for ListReprDefinition {
             })
         };
 
-        parse::parse_end(input)?;
         Ok(list_repr)
     }
 }
@@ -63,7 +60,7 @@ impl Parse for MapReprDefinition {
         }
 
         // parse map representation
-        let map_repr = if parse::is_end(input) {
+        let map_repr = if common::is_end(input) {
             // basic
             MapReprDefinition::Basic {
                 key,
@@ -166,6 +163,14 @@ fn try_parse_stringpair_args(
     } else {
         Ok(())
     }
+}
+
+impl Parse for AdvancedListSchemaDefinition {
+    parse_advanced!(List => ListReprDefinition);
+}
+
+impl Parse for AdvancedMapSchemaDefinition {
+    parse_advanced!(Map => MapReprDefinition);
 }
 
 // //////////////////////////////////////////////////////////////////////////

@@ -27,16 +27,27 @@ pub trait Context {
     //     B: Into<BlockMeta>;
 }
 
+// impl<'a, Ctx: Context> Context for &'a Ctx {}
+
+pub trait ContextExt {}
+
+static NULL_CONTEXT: () = ();
+
+pub struct DefaultContext;
+impl Context for DefaultContext {}
+
+// impl Context for () {}
+
 pub trait FromContext<Ctx> {
     fn from(ctx: &Ctx) -> &Self;
 }
 
-static NULL_CONTEXT: () = ();
 impl<Ctx> FromContext<Ctx> for () {
     fn from(_ctx: &Ctx) -> &Self {
         &NULL_CONTEXT
     }
 }
+
 impl<Ctx> FromContext<Ctx> for Ctx
 where
     Ctx: Context,

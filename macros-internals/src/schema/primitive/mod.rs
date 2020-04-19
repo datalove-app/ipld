@@ -34,11 +34,11 @@ pub enum BytesReprDefinition {
     Advanced(AdvancedBytesReprDefinition),
 }
 
-// #[derive(Debug)]
-// pub struct AdvancedBytesSchemaDefinition {
-//     pub meta: SchemaMeta,
-//     pub repr_def: AdvancedBytesReprDefinition,
-// }
+#[derive(Debug)]
+pub struct AdvancedBytesSchemaDefinition {
+    pub meta: SchemaMeta,
+    pub repr: AdvancedBytesReprDefinition,
+}
 
 #[derive(Debug)]
 pub struct AdvancedBytesReprDefinition {

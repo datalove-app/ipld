@@ -1,7 +1,7 @@
 use super::*;
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens, TokenStreamExt};
-use syn::{parse_macro_input, Ident};
+use syn::{parse_macro_input, parse_quote, Ident};
 
 impl SchemaDefinition {
     /// Expand this into a `TokenStream` of the IPLD Schema + Representation
@@ -42,19 +42,40 @@ impl ToTokens for SchemaDefinition {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         macro_rules! expand_basic {
             ($meta:ident, $def:ident) => {{
+                let name = &$meta.name;
                 let typedef = $def.define_type($meta);
                 let serde = $def.derive_serde($meta);
                 let repr = $def.derive_repr($meta);
+                let selector = $def.derive_selector($meta);
+                // let conv = $def.derive_conv($meta);
+
+                let use_ipld = if $meta.internal {
+                    quote!(use crate as _ipld)
+                } else {
+                    quote!(extern crate ipld as _ipld)
+                };
+
+                let dummy = Ident::new(&format!("_IPLD_IMPLS_FOR_{}", name), Span::call_site());
                 quote! {
                     #typedef
-                    #serde
-                    #repr
+
+                    #[doc(hidden)]
+                    const #dummy: () = {
+                        #use_ipld;
+                        #[allow(unused_imports)]
+                        use _ipld::dev::{*, serde::de};
+
+                        #serde
+                        #repr
+                        #selector
+                        // #conv
+                    };
                 }
             }};
         }
 
         let meta = &self.meta;
-        let repr_tokens: TokenStream = match &self.repr {
+        tokens.append_all::<TokenStream>(match &self.repr {
             ReprDefinition::Null(def) => expand_basic!(meta, def),
             ReprDefinition::Bool(def) => expand_basic!(meta, def),
             ReprDefinition::Int(def) => expand_basic!(meta, def),
@@ -67,19 +88,17 @@ impl ToTokens for SchemaDefinition {
 
             // possibly advanced reprs
             // ReprDefinition::Bytes(BytesReprDefinition::Advanced(def))
-            // ReprDefinition::List(ListReprDefinition::Advamced(def))
-            // ReprDefinition::Map(MapReprDefinition::Advamced(def))
-            // ReprDefinition::Struct(StructReprDefinition::Advamced(def))
+            // ReprDefinition::List(ListReprDefinition::Advanced(def))
+            // ReprDefinition::Map(MapReprDefinition::Advanced(def))
+            // ReprDefinition::Struct(StructReprDefinition::Advanced(def))
 
             // non-advanced reprs
-            // ReprDefinition::Bytes(def) => expand_basic_def!(meta, def),
+            ReprDefinition::Bytes(def) => expand_basic!(meta, def),
             // ReprDefinition::List(def) => expand_basic_def!(meta, def),
             // ReprDefinition::Map(def) => expand_basic_def!(meta, def),
-            // ReprDefinition::Struct(def) => expand_basic_def!(meta, def),
+            ReprDefinition::Struct(def) => expand_basic!(meta, def),
             _ => unimplemented!(),
-        };
-
-        tokens.append_all(repr_tokens);
+        });
     }
 }
 
@@ -89,6 +108,9 @@ pub(crate) trait ExpandBasicRepresentation {
     /// Defines the type, and applies any provided attributes.
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream;
 
+    /// Derives `Representation` and `Select` for the defined type.
+    fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream;
+
     /// Derive Serde impls for the defined type.
     ///
     /// Optional because many types can use `#[derive(Deserialize, Serialize)]`
@@ -97,141 +119,20 @@ pub(crate) trait ExpandBasicRepresentation {
         TokenStream::default()
     }
 
-    /// Derives `Representation` for the defined type.
-    fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream;
-
-    /// - `type ReprSelectorVisitor = SelectorVisitor<ReprVisitor>`
-    ///     `impl Visitor for `ReprSelectorVisitor`
-    /// - define `IgnoredRepr ` type
-    /// - `impl DeserializeSeed<'de, Value = Self> for Selector`
-    ///     instantiates ReprSelectorVisitor(selector, repr_visitor)
-    ///     matches on selector, delegates to one deserializer method
+    /// - `type ReprSelectorSeed = SelectorSeed<ReprVisitor>`
+    ///     `impl Visitor for `ReprSelectorSeed`
+    /// - `type IgnoredT = IgnoredRepr<T>`
     /// - defines a `NewSelector` for the type, wrapping `Selector`
     ///     `impl DeserializeSeed for NewSelector`
+    /// - `impl DeserializeSeed<'de, Value = Self> for Selector`
+    ///     instantiates ReprSelectorSeed(selector, repr_visitor)
+    ///     matches on selector, delegates to one deserializer method
     fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream;
 
-    #[doc(hidden)]
-    fn impl_serialize(&self, meta: &SchemaMeta, body: TokenStream) -> TokenStream {
-        let name = &meta.name;
-        let lib = &meta.ipld_schema_lib;
-        quote! {
-            #[automatically_derived]
-            impl #lib::dev::Serialize for #name {
-                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-                where
-                    S: #lib::dev::Serializer,
-                {
-                    #body
-                }
-            }
-        }
-    }
-
-    // TODO: for each visitor method, incorporate try_from...
-    // - define TryFromType
-    //      - `impl Visitor<Value = TryFromType> for ReprVisitor`
-    //      - method bodies expanded (should only refer to Self::Value, not #name)
-    // - in `impl Visitor<Value = Repr> for ReprVisitor`, replacing method bodies
-    //      - call each equiv method on <Self as Visitor<TryFromType>>
-    //      - handle result with try_from().map_err() call
-    #[doc(hidden)]
-    fn impl_visitor(
-        &self,
-        meta: &SchemaMeta,
-        expecting: &'static str,
-        body: TokenStream,
-    ) -> (Ident, TokenStream) {
-        let name = &meta.name;
-        let lib = &meta.ipld_schema_lib;
-        let visitor = meta.visitor_name();
-
-        // TODO? if try_from, add:
-        //  - def ReprVisitor
-        //  - def TryFromType
-        //  - `impl Visitor<Value = TryFromType> for ReprVisitor`
-        //      - body
-        //  - `impl Visitor<Value = Repr> for ReprVisitor`
-        //      - body replaced w/ try_from call
-        // TODO? else:
-        //  - def ReprVisitor
-        //  - `impl Visitor<Value = Repr> for ReprVisitor`
-
-        // body = if let Some(try_from_name) = &meta.try_from {
-        //     let try_from_ident = Ident::new(&try_from_name.value(), Span::call_site());
-        //     let methods = expand_try_from_visitor_methods(body, try_from_ident);
-        //     quote! {
-        //             use ::std::convert::TryFrom;
-        //             // let t = #try_from_ident::deserialize(deserializer)?;
-        //             // Ok(#name::try_from(t).map_err(D::Error::custom)?)
-        //     }
-        // } else {
-        //     quote! {
-        //         type Value = #name;
-        //         #body
-        //     }
-        // };
-
-        let visitor_def = quote! {
-            struct #visitor;
-
-            #[automatically_derived]
-            impl<'de> #lib::dev::Visitor<'de> for #visitor {
-                type Value = #name;
-
-                fn expecting(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                    fmt.write_str(#expecting)
-                }
-
-                #body
-            }
-        };
-
-        (visitor, visitor_def)
-    }
-
-    #[doc(hidden)]
-    fn impl_deserialize(&self, meta: &SchemaMeta, mut body: TokenStream) -> TokenStream {
-        let name = &meta.name;
-        let lib = &meta.ipld_schema_lib;
-
-        // body = if let Some(try_from_name) = &meta.try_from {
-        //     let try_from_ident = Ident::new(&try_from_name.value(), Span::call_site());
-        //     // let methods = expand_try_from_visitor_methods(body, try_from_ident);
-        //     quote! {
-        //     use ::std::convert::TryFrom;
-        //     let t = #try_from_ident::deserialize(deserializer)?;
-        //     Ok(#name::try_from(t).map_err(D::Error::custom)?)
-        //     }
-        // } else {
-        //     body
-        // };
-
-        quote! {
-            #[automatically_derived]
-            impl<'de> #lib::dev::Deserialize<'de> for #name {
-                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-                where
-                    D: #lib::dev::Deserializer<'de>,
-                {
-                    #body
-                }
-            }
-        }
-    }
-
-    #[doc(hidden)]
-    fn impl_repr(&self, meta: &SchemaMeta, body: TokenStream) -> TokenStream {
-        let name = &meta.name;
-        let lib = &meta.ipld_schema_lib;
-        let typedef_str = &meta.typedef_str;
-        quote! {
-            #[automatically_derived]
-            impl #lib::dev::Representation for #name {
-                const NAME: &'static str = ::std::stringify!(#name);
-                const SCHEMA: &'static str = #typedef_str;
-                #body
-            }
-        }
+    /// Derives conversions between the type and `Value`, as well as `ipfs::Ipld`
+    /// (if `#[cfg(feature = "ipld/ipfs")]` is enabled)
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        unimplemented!()
     }
 }
 
@@ -265,6 +166,188 @@ pub trait ExpandAdvancedRepresentation {
         unimplemented!()
     }
 }
+
+pub(crate) fn impl_serialize(meta: &SchemaMeta, body: TokenStream) -> TokenStream {
+    let name = &meta.name;
+    // let lib = &meta.ipld_schema_lib;
+    quote! {
+        #[automatically_derived]
+        impl Serialize for #name {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                #body
+            }
+        }
+    }
+}
+
+// TODO: for each visitor method, incorporate try_from...
+// - define TryFromType
+//      - `impl Visitor<Value = TryFromType> for ReprVisitor`
+//      - method bodies expanded (should only refer to Self::Value, not #name)
+// - in `impl Visitor<Value = Repr> for ReprVisitor`, replacing method bodies
+//      - call each equiv method on <Self as Visitor<TryFromType>>
+//      - handle result with try_from().map_err() call
+pub(crate) fn impl_visitor(
+    meta: &SchemaMeta,
+    expecting: &'static str,
+    body: TokenStream,
+) -> (Ident, TokenStream) {
+    let name = &meta.name;
+    // let lib = &meta.ipld_schema_lib;
+    let visitor = meta.visitor_name();
+
+    // TODO? if try_from, add:
+    //  - def ReprVisitor
+    //  - def TryFromType
+    //  - `impl Visitor<Value = TryFromType> for ReprVisitor`
+    //      - body
+    //  - `impl Visitor<Value = Repr> for ReprVisitor`
+    //      - body replaced w/ try_from call
+    // TODO? else:
+    //  - def ReprVisitor
+    //  - `impl Visitor<Value = Repr> for ReprVisitor`
+
+    // body = if let Some(try_from_name) = &meta.try_from {
+    //     let try_from_ident = Ident::new(&try_from_name.value(), Span::call_site());
+    //     let methods = expand_try_from_visitor_methods(body, try_from_ident);
+    //     quote! {
+    //             use ::std::convert::TryFrom;
+    //             // let t = #try_from_ident::deserialize(deserializer)?;
+    //             // Ok(#name::try_from(t).map_err(D::Error::custom)?)
+    //     }
+    // } else {
+    //     quote! {
+    //         type Value = #name;
+    //         #body
+    //     }
+    // };
+
+    let visitor_def = quote! {
+        struct #visitor;
+
+        #[automatically_derived]
+        impl<'de> Visitor<'de> for #visitor {
+            type Value = #name;
+            fn expecting(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                fmt.write_str(#expecting)
+            }
+            #body
+        }
+    };
+
+    (visitor, visitor_def)
+}
+
+pub(crate) fn impl_deserialize(meta: &SchemaMeta, mut body: TokenStream) -> TokenStream {
+    let name = &meta.name;
+    // let lib = &meta.ipld_schema_lib;
+
+    // body = if let Some(try_from_name) = &meta.try_from {
+    //     let try_from_ident = Ident::new(&try_from_name.value(), Span::call_site());
+    //     // let methods = expand_try_from_visitor_methods(body, try_from_ident);
+    //     quote! {
+    //     use ::std::convert::TryFrom;
+    //     let t = #try_from_ident::deserialize(deserializer)?;
+    //     Ok(#name::try_from(t).map_err(D::Error::custom)?)
+    //     }
+    // } else {
+    //     body
+    // };
+
+    quote! {
+        #[automatically_derived]
+        impl<'de> Deserialize<'de> for #name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                #body
+            }
+        }
+    }
+}
+
+pub(crate) fn impl_repr(meta: &SchemaMeta, body: TokenStream) -> TokenStream {
+    let name = &meta.name;
+    // let lib = &meta.ipld_schema_lib;
+    let typedef_str = &meta.typedef_str;
+    let generics = &meta
+        .generics
+        .as_ref()
+        .map(|g| quote!(#g))
+        .unwrap_or(TokenStream::default());
+    quote! {
+        #[automatically_derived]
+        impl #generics Representation for #name #generics {
+            const NAME: &'static str = ::std::stringify!(#name);
+            // const SCHEMA: &'static str = #typedef_str;
+            #body
+        }
+    }
+}
+
+pub(crate) fn impl_select_for(
+    meta: &SchemaMeta,
+    selector: Ident,
+    body: TokenStream,
+) -> TokenStream {
+    let name = &meta.name;
+    // let lib = &meta.ipld_schema_lib;
+    quote! {
+        #[automatically_derived]
+        impl<Ctx> Select<Ctx, #selector> for #name
+        where
+            Ctx: Context,
+        {
+            #body
+        }
+    }
+}
+
+pub(crate) fn impl_de_seed_for(
+    meta: &SchemaMeta,
+    selector: Ident,
+    body: TokenStream,
+) -> TokenStream {
+    let name = &meta.name;
+    // let lib = &meta.ipld_schema_lib;
+    quote! {
+        #[automatically_derived]
+        impl<'de> DeserializeSeed<'de> for SelectorSeed<'de, #selector, #name> {
+            type Value = #name;
+            fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                #body
+            }
+        }
+    }
+}
+
+// pub(crate) fn impl_primtive_de_seed(meta: &SchemaMeta) -> TokenStream {
+//     let name = &meta.name;
+//     let lib = &meta.ipld_schema_lib;
+//     impl_de_seed(
+//         meta,
+//         quote! {
+//             match (&self).as_selector() {
+//                 Selector::Matcher(sel) => <#name as de::Deserialize<'de>>::deserialize(deserializer),
+//                 Selector::ExploreConditional(sel) => {
+//                     use std::borrow::Borrow;
+//                     let ExploreConditional { condition, next } = sel.borrow();
+//                     unimplemented!()
+//                 },
+//                 sel => Err(de::Error::custom(
+//                     #lib::Error::Selector::invalid_selector::<#name>(sel)
+//                 )),
+//             }
+//         },
+//     )
+// }
 
 // fn expand_try_from_visitor_methods(tokens: TokenStream) -> TokenStream {
 //     let tokens = tokens.into::<proc_macro::TokenStream>();

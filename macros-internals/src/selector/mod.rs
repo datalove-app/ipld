@@ -12,61 +12,104 @@
 //! )
 //! ```
 //!
-/// TODO? impl should look roughly like:
-///
-/// let type: Type = input.parse()?;
-/// let fields & field_name = ...;
-/// let rest: TokenStream = ...;
-/// quote! {{
-///     let mut explore_fields = ExploreFields::new();
-///
-///     *(
-///         let sel = <BlockchainBlock as Select<ExploreField<#field_name>>>
-///             ::insert(
-///                 explore_fields as ExploreFields,
-///                 #match_args...?
-///             );
-///
-///         explore_fields = sel.0;
-///     );
-///
-///     Selector::ExploreFields()
-/// }}
-///
+// TODO? impl should look roughly like:
+//
+// let type: Type = input.parse()?;
+// let fields & field_name = ...;
+// let rest: TokenStream = ...;
+// quote! {{
+//     let mut explore_fields = ExploreFields::new();
+//
+//     *(
+//         let sel = <BlockchainBlock as Select<ExploreField<#field_name>>>
+//             ::insert(
+//                 explore_fields as ExploreFields,
+//                 #match_args...?
+//             );
+//
+//         explore_fields = sel.0;
+//     );
+//
+//     Selector::ExploreFields()
+// }}
+mod expand;
+mod parse;
+
+use crate::dev::*;
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens, TokenStreamExt};
-use syn::parse::{Parse, ParseStream, Result as ParseResult};
+use syn::{
+    parenthesized,
+    parse::{Parse, ParseStream, Peek, Result as ParseResult},
+    token, Ident, Lit, LitInt, LitStr, Path, Token, Type,
+};
 
-pub struct SelectorDefinition;
+///
+pub struct RootSelectorDefinition {
+    internal: bool,
+    root_type: Type,
+    def: SelectorDefinition,
+}
 
-impl SelectorDefinition {
+impl RootSelectorDefinition {
     pub fn expand(self) -> TokenStream {
         self.into_token_stream()
     }
 }
 
-impl Parse for SelectorDefinition {
-    fn parse(input: ParseStream) -> ParseResult<Self> {
-        Ok(Self)
-    }
+///
+pub enum SelectorDefinition {
+    Matcher(Option<Interpolated<LitStr>>),
+    ExploreAll(Box<Interpolated<SelectorDefinition>>),
+    ExploreFields(Vec<(Interpolated<LitStr>, Interpolated<SelectorDefinition>)>),
+    ExploreIndex {
+        index: Interpolated<LitInt>,
+        def: Box<Interpolated<SelectorDefinition>>,
+    },
+    ExploreRange {
+        start: Interpolated<LitInt>,
+        end: Interpolated<LitInt>,
+        def: Box<Interpolated<SelectorDefinition>>,
+    },
+    ExploreRecursive {
+        sequence: Box<Interpolated<SelectorDefinition>>,
+        limit: Option<Interpolated<LitInt>>,
+        // stop_at
+    },
+    ExploreUnion(Vec<Interpolated<SelectorDefinition>>),
+    ExploreConditional {
+        // conditional: (LitStr, ()),
+        def: Box<Interpolated<SelectorDefinition>>,
+    },
+    ExploreRecursiveEdge,
 }
 
-impl ToTokens for SelectorDefinition {
-    /// TODO?
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        tokens.append_all(TokenStream::default());
-    }
+pub enum Interpolated<T> {
+    Expected(T),
+    Ident(Ident),
 }
+
+// pub enum InterpolatedSelector {
+//     Expected(SelectorDefinition),
+//     Ident(Ident),
+// }
 
 pub(crate) mod kw {
+    // // Helper macro for parsing interpolated values
+    // #[macro_export(local_inner_macros)]
+    // macro_rules! parse_selector_kwarg {
+    //     ($()*) => {};
+    // }
+
     crate::define_keywords! {
-        fields
-        recurse recursive
-        all
-        limit
-        stopAt
         label
-        union
+        all
+        fields
+        // index
+        // range
+        recursive limit stopAt
+        // conditional
+        recurse
     }
 }
 

@@ -1,3 +1,4 @@
+use crate::dev::*;
 use cid::Error as CidError;
 use std::{
     convert::Infallible, error::Error as StdError, num::TryFromIntError, string::FromUtf8Error,
@@ -15,8 +16,29 @@ pub enum Error {
     #[error("Invalid IPLD data type:")]
     Ipld(),
 
+    #[error(
+        "Invalid selector: type {type_name} does not support selecting against {selector_name}"
+    )]
+    UnsupportedSelector {
+        type_name: &'static str,
+        selector_name: &'static str,
+    },
+
     #[error("")]
     Custom(),
+}
+
+impl Error {
+    pub fn unsupported_selector<T, S>(selector: &S) -> Self
+    where
+        S: ISelector,
+        T: Representation,
+    {
+        Self::UnsupportedSelector {
+            type_name: <T as Representation>::NAME,
+            selector_name: selector.name(),
+        }
+    }
 }
 
 impl From<CidError> for Error {

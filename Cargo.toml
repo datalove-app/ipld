@@ -11,31 +11,44 @@ name = "ipld"
 path = "src/lib.rs"
 
 [dependencies]
-# anyhow = "1.0"
-async-trait = "0.1"
+# core
 cid = "0.3.2"
-delegate = { version = "0.4", optional = true }
 ipld-macros = { path = "./macros" }
+ipld-macros-internals = { path = "./macros-internals" }
 multibase = "0.8"
 multihash = "0.10"
-serde = { version = "1.0" }
-serde_cbor = { version = "0.11", optional = true }
-serde_json = { version = "1.0", optional = true }
+serde = { version = "1.0", features = ["derive"] }
 serde_repr = "0.1"
 thiserror = "1.0"
+# multicodec
+serde_cbor = { version = "0.11", optional = true }
+serde_json = { version = "1.0", optional = true }
+simd-json = { version = "^0.3", optional = true }
+# async
+async-stream = "^0.2"
+async-trait = "0.1"
+futures = "^0.3"
+pin-utils = "0.1.0-alpha.4"
+# misc
+# anyhow = "1.0"
+delegate = { version = "0.4", optional = true }
 
 [dev-dependencies]
 criterion = "0.3"
 proptest = "0.9"
 
 [features]
-default = []
+default = ["macros", "multicodec"]
 dag-cbor = ["serde_cbor", "serde_cbor/tags"]
 dag-json = ["delegate", "serde_json"]
+ipfs-adapter = []
+macros = []
 multicodec = ["dag-cbor", "dag-json"]
+simd = ["simd-json"]
 
 [workspace]
 members = [
   "macros",
+  "macros-hack",
   "macros-internals"
 ]

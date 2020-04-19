@@ -1,32 +1,31 @@
 //! Union
 
-use super::{
-    DataModelKind, UnionField, UnionIntFields, UnionKindedFields, UnionReprDefinition,
-    UnionStrFields,
-};
-use crate::dev::{parse_kwarg, schema::kw, InnerAttributes};
+use super::*;
+use crate::dev::{common, parse_kwarg, schema::kw, OuterAttributes};
 use std::collections::HashSet;
 use syn::{
     braced,
     parse::{Parse, ParseStream, Result as ParseResult},
-    LitInt, LitStr, Token, Type,
+    Generics, Ident, LitInt, LitStr, Token,
 };
 
 impl Parse for UnionReprDefinition {
     fn parse(input: ParseStream) -> ParseResult<Self> {
-        let typedef_stream;
-        braced!(typedef_stream in input);
+        let field_input;
+        braced!(field_input in input);
 
         input.parse::<kw::representation>()?;
         let union_repr = match input {
             // keyed
             _ if input.peek(kw::keyed) => {
-                let fields = typedef_stream.parse::<UnionStrFields>()?;
-                UnionReprDefinition::Keyed { fields }
+                input.parse::<kw::keyed>()?;
+                let fields = field_input.parse::<UnionStrFields>()?;
+                Self::Keyed(KeyedUnionReprDefinition { fields })
             }
             // envelope
             _ if input.peek(kw::envelope) => {
-                let fields = typedef_stream.parse::<UnionStrFields>()?;
+                input.parse::<kw::envelope>()?;
+                let fields = field_input.parse::<UnionStrFields>()?;
                 let args;
                 braced!(args in input);
 
@@ -38,47 +37,47 @@ impl Parse for UnionReprDefinition {
                 let content_key = content_key.ok_or(args.error(
                     "invalid IPLD union envelope representation definition: missing `contentKey`",
                 ))?;
-
-                UnionReprDefinition::Envelope {
+                Self::Envelope(EnvelopeUnionReprDefinition {
                     fields,
                     discriminant_key,
                     content_key,
-                }
+                })
             }
             // inline
             _ if input.peek(kw::inline) => {
-                let fields = typedef_stream.parse::<UnionStrFields>()?;
+                input.parse::<kw::inline>()?;
+                let fields = field_input.parse::<UnionStrFields>()?;
                 let args;
                 braced!(args in input);
                 let discriminant_key = parse_kwarg!(args, discriminantKey => LitStr);
-
-                UnionReprDefinition::Inline {
+                Self::Inline(InlineUnionReprDefinition {
                     fields,
                     discriminant_key,
-                }
+                })
             }
             // byteprefix
             _ if input.peek(kw::byteprefix) => {
-                let fields = typedef_stream.parse::<UnionIntFields>()?;
-                UnionReprDefinition::BytePrefix { fields }
+                input.parse::<kw::byteprefix>()?;
+                let fields = field_input.parse::<UnionIntFields>()?;
+                Self::BytePrefix(BytePrefixUnionReprDefinition { fields })
             }
             // kinded
             _ if input.peek(kw::kinded) => {
-                let fields = typedef_stream.parse::<UnionKindedFields>()?;
-                let unique_kinds = {
+                input.parse::<kw::kinded>()?;
+                let fields = field_input.parse::<UnionKindedFields>()?;
+                let all_unique_kinds = {
                     let set = &fields
                         .iter()
                         .map(|field| &field.key)
                         .collect::<HashSet<&DataModelKind>>();
                     fields.len() == set.len()
                 };
-                if !unique_kinds {
+                if !all_unique_kinds {
                     return Err(input.error(
                         "invalid IPLD union kinded representation defintion: duplicate kinds",
                     ));
                 }
-
-                UnionReprDefinition::Kinded { fields }
+                Self::Kinded(KindedUnionReprDefinition { fields })
             }
             _ => return Err(input.error("invalid IPLD union representation definition")),
         };
@@ -89,15 +88,15 @@ impl Parse for UnionReprDefinition {
 
 impl<T: Parse> Parse for UnionField<T> {
     fn parse(input: ParseStream) -> ParseResult<Self> {
-        let attrs = input.parse::<InnerAttributes>()?;
+        let attrs = input.parse::<OuterAttributes>()?;
         input.parse::<Token![|]>()?;
 
-        let mut linked = false;
-        if input.peek(Token![&]) {
+        let linked = input.peek(Token![&]);
+        if linked {
             input.parse::<Token![&]>()?;
-            linked = true;
         }
-        let value = input.parse::<Type>()?;
+        let value = input.parse::<Ident>()?;
+        let generics = input.parse::<Generics>().ok();
         let key = input.parse::<T>()?;
 
         // parse optional comma
@@ -106,8 +105,10 @@ impl<T: Parse> Parse for UnionField<T> {
         }
 
         Ok(UnionField {
-            attrs,
+            wrapper: attrs.parse_wrapper()?,
+            attrs: attrs.omit_internal_attrs(),
             value,
+            generics,
             key,
             linked,
         })

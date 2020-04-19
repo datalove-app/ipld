@@ -4,401 +4,471 @@
 //!     - selectors are types that impl Representation (can be defined with `schema!`)
 //!     - macro can compile selector string to a type
 //!     - type implements Context
-
+#![allow(non_camel_case_types)]
 use crate::dev::*;
-use ipld_macros::{ipld_macros_internal, schema};
-use std::collections::BTreeMap;
+use macros::{derive_more::From, schema};
+use std::{marker::PhantomData, ops::Deref};
 
-schema! {
-    ///
-    /// TODO: serde impls for Selectors (for intelligently ignoring deserialized data)
-    ///     - SelectorSeed, Into<SelectorSeed> for Selector
-    ///     - impl DeserializeSeed<Value = T> for SelectorSeed for each type,
-    ///     - IgnoredDag<T>, impl Visitor for IgnoredDag<T>
-    ///         - which "validates" the types it receives against its schema before dropping the values
-    ///     - impl Visitor for SelectorSeed
-    ///         - mimics the type's default Visitor
-    ///         - then, in any map/list type, call next_element_seed with SelectorSeed<InnerType>::from(selector)
-    /// TODO: selector output ()
-    #[ipld_macros_internal]
-    pub type Selector null;
-}
-
-schema! {
-    #[ipld_macros_internal]
-    pub type ExploreAll null;
-}
-
-schema! {
-    #[ipld_macros_internal]
-    pub type Matcher null;
-}
-
-// schema! {
-//     #[ipld_macros_internal]
-//     type NewString string;
-// }
-
-// schema! {
-//     #[ipld_macros_internal]
-//     type NewEnum enum {
-//         | Nope ("hell_no")
-//         | Yep
-//     };
-// }
-
-pub struct Selection<T: Representation>(Option<String>, T);
-
+//  TODO? example impl for ExploreAll for a map:
+//  impl<K, V, S> Select<ExploreAll> for Map<K, V>
+//  where
+//      V: Select<S>
+//  {
+//      type SelectorArgs = <V as Select<S>>::Args;
+//      fn new_selector(args: Self::SelectorArgs) -> Selector {
+//          let sel = Selector::new_selector::<Ctx, S, V>(args);
+//          ExploreAll::from(sel)
+//      }
+//  }
+//  TODO? example impl for ExploreFields for a map:
+//  impl<K, V, S> Select<ExploreFields> for Map<K, V>
+//  where
+//      V: Select<S>
+//  {
+//      type SelectorArgs = (ExploreFields, <V as Select<S>::Args)];
+//      fn new_selector(args: Self::SelectorArgs) -> Selector {
+//          let mut map = BTreeMap::new();
 ///
-pub trait Select<Ctx, S>: Representation
-where
-    Ctx: Context,
-    S: ISelector,
-{
-    ///
-    type SelectorArgs;
-
-    ///
-    type Output;
-
-    ///
-    fn new_selector(args: Self::SelectorArgs) -> S;
-
-    ///
-    /// TODO? executor<'a, Ctx>, ...
-    fn select(self, selector: &S) -> Result<Self::Output, ()>;
-
-    //
-    // fn patch<F>(&mut self, selector: &S, func: F) -> ()
-    // where
-    //     F: Fn(&mut Self::Output) -> ();
-
-    //
-    // fn flush(&mut self, selector: &S) -> Result<(), ()>;
-}
-
-impl<'a, Ctx, T> Select<Ctx, Selector> for T
-where
-    Ctx: Context,
-    T: Representation,
-{
-    type SelectorArgs = ();
-    type Output = ();
-
-    // TODO:
-    fn new_selector(args: Self::SelectorArgs) -> Selector {
-        Selector
-    }
-
-    fn select(self, selector: &Selector) -> Result<Self::Output, ()> {
-        unimplemented!()
-    }
-}
-
-impl<'a, Ctx, T> Select<Ctx, Matcher> for T
-where
-    Ctx: Context,
-    T: Representation,
-{
-    type SelectorArgs = Option<String>;
-    type Output = Selection<Self>;
-
-    // TODO:
-    fn new_selector(args: Self::SelectorArgs) -> Matcher {
-        Matcher
-    }
-
-    fn select(self, selector: &Matcher) -> Result<Self::Output, ()> {
-        Ok(Selection(None, self))
-    }
-}
-
-// impl<'a, Ctx, T> Select<Ctx, Matcher> for &'a T
-// where
-//     Ctx: Context,
-//     for<'a>
-//     T: Representation,
-//     // &'a T: Representation,
-// {
-//     type SelectorArgs = Option<String>;
-//     type Output = Selection<Self>;
-
-//     fn new_selector(args: Self::SelectorArgs) -> Matcher {
-//         // TODO?
-//         Matcher
-//     }
-
-//     fn select(&self, selector: &Matcher) -> Result<Self::Output, ()> {
-//         Ok(Selection(None, self))
-//     }
-// }
-
-impl<S, const F: &'static str> ISelector for ExploreField<S, F> {}
-pub struct ExploreField<S, const F: &'static str> {
-    selector: std::marker::PhantomData<S>,
-}
-
-/// TODO? example impl for ExploreAll for a map:
-/// impl<K, V, S> Select<ExploreAll> for Map<K, V>
-/// where
-///     V: Select<S>
-/// {
-///     type SelectorArgs = <V as Select<S>>::Args;
-///     fn new_selector(args: Self::SelectorArgs) -> Selector {
-///         let sel = <V as Select<S>>::new_selector(args);
-///         Selector::from(ExploreAll::from(sel))
-///     }
-/// }
-/// TODO? example impl for ExploreFields for a map:
-/// impl<K, V, S> Select<ExploreFields> for Map<K, V>
-/// where
-///     V: Select<S>
-/// {
-///     type SelectorArgs = &[(&str, <V as Select<S>::Args)];
-///     fn new_selector(args: Self::SelectorArgs) -> Selector {
-///         let mut map = BTreeMap::new();
+//          for (field, args) in args {
+//              map.insert(field, <V as Select<S>>::new_selector(args));
+//          }
 ///
-///         for (field, args) in args {
-///             map.insert(field, <V as Select<S>>::new_selector(args));
-///         }
+//          Selector::from(ExploreFields::from(map))
+//      }
+//  }
 ///
-///         Selector::from(ExploreFields::from(map))
-///     }
-/// }
-///
-/// TODO? example impl for ExploreFields for a struct:
-/// impl<S> Select<ExploreField<"field1", S>> for Struct {
-///     type SelectorArgs = (
-///         ExploreFields,
-///         <SomeInnerTypeOfStruct as Select<S>::Args,
-///     );
-///     fn new_selector(args: Self::SelectorArgs) -> Selector {
-///         let sel = <SomeInnerTypeOfStruct as Select<S>>::new_selector(args.1);
-///         args.0.insert("field1", sel);
-///         Selector::from(args.0)
-///     }
-/// }
+//  TODO? example impl for ExploreFields for a struct:
+//  impl<S> Select<ExploreField<"field1", S>> for Struct {
+//      type SelectorArgs = (
+//          ExploreFields,
+//          <SomeInnerTypeOfStruct as Select<S>::Args,
+//      );
+//      fn new_selector(args: Self::SelectorArgs) -> Selector {
+//          let sel = <SomeInnerTypeOfStruct as Select<S>>::new_selector(args.1);
+//          args.0.insert("field1", sel);
+//          Selector::from(args.0)
+//      }
+//  }
 
 // impl From<SelectorEnvelope> for Selector;
 // impl From<Selector> for SelectorEnvelope;
-
-// pub trait IExploreRange {}
-
-// pub trait IExploreField<const FIELD: &'static str, InnerType> {
-//     // const FIELDS: HashSet<(&'static str, Type)>;
-//     // const FIELDS: &'static [(&'static str, Type)];
-//     // const FIELD: &'static str;
-//     // const TYPE: Type;
-//     // const fn is_field(s: &str) -> bool {
-//     //     s == Self::FIELD
-//     // }
-//     fn insert<S>(explore_fields: &mut ExploreFields, selector: S) {
-//         // TODO? in the repr macro:
-//         // match selector variants the inner type supports
-//         // then call <InnerType as ISelectorTrait>::
-//         // explore_fields.insert(FIELD, <Inner as Select<S>>::from(selector))
-
-//         unimplemented!()
-//     }
-// }
-
-// /// TODO: impl this for all Representations that support ExploreFields
-// ///
-// pub trait ExploreFields {
-//     fn add_field(
-//         mut selectors: BTreeMap<String, Selector>,
-//         field_name: String,
-//         selector: Selector,
-//     ) -> BTreeMap<String, Selector> {
-//         selectors.insert(field_name, selector);
-//         selectors
-//     }
-// }
-
-// /// TODO: impl this for all Representations that support ExploreUnion
-// ///
-// pub trait UnionExplorer {
-//     fn add_union(mut selectors: Vec<Selector>, selector: Selector) -> Vec<Selector> {
-//         selectors.push(selector);
-//         selectors
-//     }
-// }
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 
 // /// Wrapper type for visiting a `Deserializer` with a `Selector`.
-// pub struct SelectorVisitor<'a, V> {
+//
+//  TODO: serde impls for Selectors (for intelligently ignoring deserialized data)
+//      - SelectorSeed, Into<SelectorSeed> for Selector
+//      - impl DeserializeSeed<Value = T> for SelectorSeed for each type,
+//      - IgnoredDag<T>, impl Visitor for IgnoredDag<T>
+//          - which "validates" the types it receives against its schema before dropping the values
+//      - impl Visitor for SelectorSeed
+//          - mimics the type's default Visitor
+//          - then, in any map/list type, call next_element_seed with SelectorSeed<InnerType>::from(selector)
+// pub struct SelectorSeed<'a, V> {
 //     selector: &'a Selector,
 //     visitor: V,
 // }
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////
+
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(Debug, From)]
+    pub type Selector union {
+        ///
+        | Matcher "."
+
+        ///
+        #[ipld_attr(wrapper = "Box")]
+        | ExploreAll "a"
+
+        ///
+        | ExploreFields "f"
+
+        ///
+        #[ipld_attr(wrapper = "Box")]
+        | ExploreIndex "i"
+
+        ///
+        #[ipld_attr(wrapper = "Box")]
+        | ExploreRange "r"
+
+        ///
+        #[ipld_attr(wrapper = "Box")]
+        | ExploreRecursive "R"
+        //
+        // | ExploreUnion "|"
+
+        ///
+        #[ipld_attr(wrapper = "Box")]
+        | ExploreConditional "&"
+
+        ///
+        | ExploreRecursiveEdge "@"
+    } representation keyed;
+}
+
+schema! {
+    ///
+    #[ipld_attr(internal)]
+    #[derive(Debug, From)]
+    pub type ExploreAll struct {
+        pub next Selector (rename ">"),
+    };
+}
+
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(Debug, From)]
+    pub type ExploreFields struct {
+        // fields {String:Selector} (rename "f>"),
+    };
+}
+
+schema! {
+    ///
+    #[ipld_attr(internal)]
+    #[derive(Debug, From)]
+    pub type ExploreIndex struct {
+        pub index Int (rename "i"),
+        pub next Selector (rename ">"),
+    };
+}
+
+schema! {
+    ///
+    #[ipld_attr(internal)]
+    #[derive(Debug)]
+    pub type ExploreRange struct {
+        pub start Int (rename "^"),
+        pub end Int (rename "$"),
+        pub next Selector (rename ">"),
+    };
+}
+
+schema! {
+    ///
+    #[ipld_attr(internal)]
+    #[derive(Debug, From)]
+    pub type ExploreRecursive struct {
+        pub sequence Selector (rename ":>"),
+        pub limit RecursionLimit (rename "l"),
+        stopAt optional Condition (rename "!"),
+    };
+}
+
+schema! {
+    ///
+    #[ipld_attr(internal)]
+    #[derive(Debug, From)]
+    pub type RecursionLimit union {
+        | RecursionLimit_None "none"
+        | RecursionLimit_Depth "depth"
+    } representation keyed;
+}
+schema! {
+    ///
+    #[ipld_attr(internal)]
+    #[derive(Debug)]
+    pub type RecursionLimit_None struct {};
+}
+schema! {
+    ///
+    #[ipld_attr(internal)]
+    #[derive(Debug)]
+    pub type RecursionLimit_Depth int;
+}
+
+schema! {
+    ///
+    #[ipld_attr(internal)]
+    #[derive(Debug)]
+    pub type ExploreRecursiveEdge struct {};
+}
 
 // schema! {
-//     #[ipld_macros_internal]
-//     type Selector union {
-//         | Matcher "."
-//         | ExploreAll "a"
-//         | ExploreFields "f"
-//         | ExploreIndex "i"
-//         | ExploreRange "r"
-//         | ExploreRecursive "R"
-//         | ExploreUnion "|"
-//         | ExploreConditional "&"
-//         | ExploreRecursiveEdge "@"
-//     } representation keyed;
+//     #[ipld_attr(internal)]
+//     #[derive(Debug)]
+//     pub type ExploreUnion [Selector];
 // }
 
-// schema! {
-//     #[ipld_macros_internal]
-//     type ExploreAll struct {
-//         next: Selector (rename ">"),
-//     };
-// }
+schema! {
+    ///
+    #[ipld_attr(internal)]
+    #[derive(Debug, From)]
+    pub type ExploreConditional struct {
+        pub condition Condition (rename "&"),
+        pub next Selector (rename ">"),
+    };
+}
 
-// schema! {
-//     #[ipld_macros_internal]
-//     type ExploreFields struct {
-//         fields: {String:Selector} (rename "f>"),
-//     };
-// }
+schema! {
+    ///
+    #[ipld_attr(internal)]
+    #[derive(Debug, From)]
+    pub type Matcher struct {
+        // onlyIf optional Condition,
+        pub label optional String,
+    };
+}
 
-// schema! {
-//     #[ipld_macros_intenral]
-//     type ExploreIndex struct {
-//         index: Int (rename "i"),
-//         next: Selector (rename ">"),
-//     };
-// }
+schema! {
+    ///
+    #[ipld_attr(internal)]
+    #[derive(Debug, From)]
+    pub type Condition union {
+        | Condition_HasField "hasField"
+        | Condition_HasValue "="
+        | Condition_HasKind "%"
+        | Condition_IsLink "/"
+        | Condition_GreaterThan "greaterThan"
+        | Condition_LessThan "lessThan"
+        | Condition_And "and"
+        | Condition_Or "or"
+    } representation keyed;
+}
 
-// schema! {
-//     #[ipld_macros_intenral]
-//     type ExploreRange struct {
-//         start: Int (rename "^"),
-//         end: Int (rename "$"),
-//         next: Selector (rename ">"),
-//     };
-// }
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(Debug)]
+    pub type Condition_HasField struct {};
+}
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(Debug)]
+    pub type Condition_HasValue struct {};
+}
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(Debug)]
+    pub type Condition_HasKind struct {};
+}
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(Debug)]
+    pub type Condition_IsLink struct {};
+}
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(Debug)]
+    pub type Condition_GreaterThan struct {};
+}
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(Debug)]
+    pub type Condition_LessThan struct {};
+}
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(Debug)]
+    pub type Condition_And struct {};
+}
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(Debug)]
+    pub type Condition_Or struct {};
+}
 
-// schema! {
-//     #[ipld_macros_intenral]
-//     type ExploreRecursive struct {
-//         sequence: Selector (rename ":>"),
-//         limit: RecursionLimit (rename "l"),
-//         stopAt: optional Condition (rename "!"),
-//     };
-// }
+/// A thin, typed wrapper around a `&Selector` and the type the `Selector` is
+/// being deserialized with via `DeserializeSeed`.
+pub struct SelectorSeed<'a, S, T> {
+    selector: &'a S,
+    inner: PhantomData<T>,
+}
 
-// schema!(
-//     #[ipld_macros_internal]
-//     type RecursionLimit union {
-//         | RecursionLimit_None "none"
-//         | RecursionLimit_Depth "depth"
-//     } representation keyed;
-// }
-// schema! {
-//     #[ipld_macros_internal]
-//     type RecursionLimit_None struct {};
-// }
-// schema! {
-//     #[ipld_macros_internal]
-//     type RecursionLimit_Depth int;
-// }
+impl<'a, S, T> SelectorSeed<'a, S, T> {
+    pub const fn into(self) -> &'a S {
+        self.selector
+    }
 
-// schema! {
-//     #[ipld_macros_internal]
-//     type ExploreRecursiveEdge struct {};
-// }
+    pub const fn from(selector: &'a S) -> Self {
+        Self {
+            selector,
+            inner: PhantomData,
+        }
+    }
+}
 
-// schema! {
-//     #[ipld_macros_internal]
-//     type ExploreUnion [Selector];
-// }
+/// Blanket implementation that directly delegates to `Select::decode`.
+impl<'de, S, T> DeserializeSeed<'de> for SelectorSeed<'de, S, T>
+where
+    S: ISelector,
+    T: Select<S>,
+{
+    type Value = T;
+    // TODO: support conditionals
+    #[inline]
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        <T as Select<S>>::decode(self.into(), deserializer)
+    }
+}
 
-// schema! {
-//     #[ipld_macros_internal]
-//     type ExploreConditional struct {
-//         condition: Condition (rename "&"),
-//         next: Selector (rename ">"),
-//     };
-// }
+/// Sealed marker trait for types that can be used as `Selector`s.
+#[doc(hidden)]
+pub trait ISelector: Representation + private::Sealed {}
 
-// schema! {
-//     #[ipld_macros_internal]
-//     type Matcher struct {
-//         onlyIf: optional Condition,
-//         label: optional String,
-//     };
-// }
-
-// schema! {
-//     #[ipld_macros_internal]
-//     type Condition union {
-//         | Condition_HasField "hasField"
-//         | Condition_HasValue "="
-//         | Condition_HasKind "%"
-//         | Condition_IsLink "/"
-//         | Condition_GreaterThan "greaterThan"
-//         | Condition_LessThan "lessThan"
-//         | Condition_And "and"
-//         | Condition_Or "or"
-//     } representation keyed;
-// }
-
-// schema! {
-//     #[ipld_macros_internal]
-//     type Condition_HasField struct {};
-// }
-// schema! {
-//     #[ipld_macros_internal]
-//     type Condition_HasValue struct {};
-// }
-// schema! {
-//     #[ipld_macros_internal]
-//     type Condition_HasKind struct {};
-// }
-// schema! {
-//     #[ipld_macros_internal]
-//     type Condition_IsLink struct {};
-// }
-// schema! {
-//     #[ipld_macros_internal]
-//     type Condition_GreaterThan struct {};
-// }
-// schema! {
-//     #[ipld_macros_internal]
-//     type Condition_LessThan struct {};
-// }
-// schema! {
-//     #[ipld_macros_internal]
-//     type Condition_And struct {};
-// }
-// schema! {
-//     #[ipld_macros_internal]
-//     type Condition_Or struct {};
-// }
-
-/// Sealed marker trait for `Selector` types.
-trait ISelector {}
 impl ISelector for Selector {}
 impl ISelector for Matcher {}
 impl ISelector for ExploreAll {}
 // impl ISelector for ExploreFields {}
-// impl ISelector for ExploreIndex {}
-// impl ISelector for ExploreRange {}
-// impl ISelector for ExploreRecursive {}
+impl ISelector for ExploreIndex {}
+impl ISelector for ExploreRange {}
+impl ISelector for ExploreRecursive {}
 // impl ISelector for ExploreUnion {}
-// impl ISelector for ExploreConditional {}
-// impl ISelector for ExploreRecursiveEdge {}
+impl ISelector for ExploreConditional {}
+impl ISelector for ExploreRecursiveEdge {}
+
+impl Selector {
+    // TODO: handle ExploreFields and ExploreUnion iteratively, directly delegate the rest
+    // fn new<Ctx, T, S>(args: T::SelectorArgs) -> Self
+    // where
+    //     Ctx: Context, // TODO FromContext?
+    //     // S: ISelector,
+    //     T: Select<Ctx, S>,
+    //     Self: From<S>,
+    // {
+    //     Self::from(T::new_selector(args))
+    // }
+
+    // fn select<Ctx, T, S>(&self, T) -> Result<S::Output, ()>
+    // where
+    //     Ctx: Context,
+    //     S: ISelector,
+    //     T: Select<Ctx, S>,
+    // {
+    //     match self {
+    //         // Self::Matcher
+    //         // Self::ExploreAll
+    //         // Self::ExploreFields
+    //         // Self::ExploreIndex
+    //         // Self::ExploreRange
+    //         // Self::ExploreRecursive
+    //         // Self::ExploreUnion
+    //         // Self::ExploreConditional
+    //         // Self::ExploreRecursiveEdge
+    //     }
+    // }
+}
+
+// pub mod args {
+//     use ipld_macros_internals::dev::derive_more::{Deref, From};
+//     use std::collections::HashMap;
+
+//     #[derive(Debug, From)]
+//     pub enum SelectorArgs {
+//         Selector(super::Selector),
+//         Matcher(Matcher),
+//         ExploreAll(ExploreAll),
+//         ExploreFields(ExploreFields),
+//         ExploreIndex(ExploreIndex),
+//         ExploreRange(ExploreRange),
+//         ExploreRecursive(ExploreRecursive),
+//         ExploreUnion(ExploreUnion),
+//         ExploreConditional(ExploreConditional),
+//         ExploreRecursiveEdge(ExploreRecursiveEdge),
+//     }
+
+//     #[derive(Debug, Deref, From)]
+//     pub struct Matcher(pub Option<String>);
+//     #[derive(Debug, Deref, From)]
+//     pub struct ExploreAll(pub Box<SelectorArgs>);
+//     #[derive(Debug, Deref, From)]
+//     pub struct ExploreFields(pub HashMap<String, SelectorArgs>);
+//     #[derive(Debug)]
+//     pub struct ExploreIndex {
+//         pub index: usize,
+//         pub selector: Box<SelectorArgs>,
+//     }
+//     #[derive(Debug)]
+//     pub struct ExploreRange {
+//         pub start: usize,
+//         pub end: usize,
+//         pub selector: Box<SelectorArgs>,
+//     }
+//     #[derive(Debug)]
+//     pub struct ExploreRecursive {
+//         pub sequence: Box<SelectorArgs>,
+//         pub limit: super::RecursionLimit,
+//         pub stop_at: super::Condition,
+//     }
+//     #[derive(Debug, Deref, From)]
+//     pub struct ExploreUnion(Vec<SelectorArgs>);
+//     #[derive(Debug)]
+//     pub struct ExploreConditional {
+//         pub conditional: super::Condition,
+//         pub selector: Box<SelectorArgs>,
+//     }
+//     #[derive(Debug)]
+//     pub struct ExploreRecursiveEdge;
+// }
+
+mod private {
+    use crate::dev::*;
+
+    /// Sealed marker trait for `Selector` types.
+    #[doc(hidden)]
+    pub trait Sealed {}
+
+    impl Sealed for Selector {}
+    impl Sealed for Matcher {}
+    impl Sealed for ExploreAll {}
+    // impl Sealed for ExploreFields {}
+    impl Sealed for ExploreIndex {}
+    impl Sealed for ExploreRange {}
+    impl Sealed for ExploreRecursive {}
+    // impl Sealed for ExploreUnion {}
+    impl Sealed for ExploreConditional {}
+    impl Sealed for ExploreRecursiveEdge {}
+}
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::dev::*;
+    use ipld_macros::{schema, selector};
+
+    schema! {
+        #[derive(Debug)]
+        type Nullish null;
+    }
+
+    schema! {
+        #[derive(Debug, PartialEq)]
+        type Test struct {
+            field1 Int,
+            field2 String,
+        };
+    }
+
     #[test]
     fn it_works() {
-        assert_eq!(2 + 2, 4);
+        let t = Test {
+            field1: Int::from(0),
+            field2: String::default(),
+        };
+
+        // let executor = Executor
+
+        let sel1 = selector! {
+            // #[ipld_attr(internal)]
+            Test,
+            match(
+                label=("label")
+            )
+        };
+
+        // let sel1 = Selector::Matcher({ Matcher { label: None } });
+        // let Selector::Matcher(matcher) = sel1;
+
+        // let selection = <Test as Select<_, Matcher>>::select(t, &matcher);
+
+        assert_eq!(true, true);
     }
 }

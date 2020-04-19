@@ -1,5 +1,5 @@
-use super::{AdvancedBytesReprDefinition, BytesReprDefinition};
-use crate::dev::{parse, parse_kwarg, schema::kw};
+use super::*;
+use crate::dev::{common, parse, parse_advanced, parse_kwarg, schema::kw};
 use proc_macro2::TokenStream;
 use syn::{
     parse::{Parse, ParseStream, Result as ParseResult},
@@ -8,7 +8,7 @@ use syn::{
 
 impl Parse for BytesReprDefinition {
     fn parse(input: ParseStream) -> ParseResult<Self> {
-        if parse::is_end(input) {
+        if common::is_end(input) {
             Ok(BytesReprDefinition::Basic)
         } else {
             input.parse::<kw::representation>()?;
@@ -19,6 +19,10 @@ impl Parse for BytesReprDefinition {
             }))
         }
     }
+}
+
+impl Parse for AdvancedBytesSchemaDefinition {
+    parse_advanced!(Bytes => BytesReprDefinition);
 }
 
 // // Null

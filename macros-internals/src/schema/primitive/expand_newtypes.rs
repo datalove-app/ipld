@@ -75,7 +75,7 @@ macro_rules! derive_newtype_repr {
 //             fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
 //                 derive_newtype_repr!(self, meta => $inner_type)
 //             }
-//             fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
+//             fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
 //                 unimplemented!()
 //             }
 //         }
@@ -91,7 +91,7 @@ impl expand::ExpandBasicRepresentation for BoolReprDefinition {
         let inner_type = Type::Verbatim(quote!(bool));
         derive_newtype_repr!(self, meta => inner_type)
     }
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         unimplemented!()
     }
 }
@@ -106,7 +106,7 @@ impl expand::ExpandBasicRepresentation for IntReprDefinition {
         derive_newtype_repr!(self, meta => inner_type)
     }
     // TODO:
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
 }
@@ -121,7 +121,7 @@ impl expand::ExpandBasicRepresentation for FloatReprDefinition {
         derive_newtype_repr!(self, meta => inner_type)
     }
     // TODO:
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
 }
@@ -137,7 +137,7 @@ impl expand::ExpandBasicRepresentation for StringReprDefinition {
         let inner_type = Type::Verbatim(quote!(String));
         derive_newtype_repr!(self, meta => inner_type)
     }
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         unimplemented!()
     }
 }
@@ -150,7 +150,7 @@ impl expand::ExpandBasicRepresentation for CopyReprDefinition {
         let inner_type = &self.0;
         derive_newtype_repr!(self, meta => inner_type)
     }
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         unimplemented!()
     }
 }

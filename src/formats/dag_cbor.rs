@@ -1,6 +1,6 @@
 //! IPLD DagCbor codec.
 
-use crate::prelude::*;
+use crate::dev::*;
 use serde::de;
 use serde_cbor::{
     de::Read as CborRead,
@@ -65,7 +65,7 @@ impl Format for DagCbor {
 
 impl<'a, W: CborWrite> Encoder for &'a mut CborSerializer<W> {
     #[inline]
-    fn serialize_link(self, cid: &Cid) -> Result<<Self as Serializer>::Ok, CborError> {
+    fn serialize_link(self, cid: &Cid) -> Result<Self::Ok, CborError> {
         let vec: Vec<u8> = cid.to_bytes();
         let bytes: &[u8] = vec.as_ref();
         Tagged::new(Some(CBOR_LINK_TAG), bytes).serialize(self)
@@ -80,12 +80,12 @@ impl<'de, 'a, R: CborRead<'de>> Decoder<'de> for &'a mut CborDeserializer<R> {
     {
         match current_cbor_tag() {
             Some(CBOR_LINK_TAG) => {
-                let bytes = <&[u8]>::deserialize(self)?;
+                let bytes = <&'de [u8]>::deserialize(self)?;
                 let cid = ToCid::to_cid(bytes)
                     .or::<CborError>(Err(de::Error::custom("expected a CID")))?;
                 visitor.visit_link(cid)
             }
-            Some(_tag) => Err(de::Error::custom("unexpected CBOR tag")),
+            Some(tag) => Err(de::Error::custom(format!("unexpected CBOR tag: {}", tag))),
             _ => Err(de::Error::custom("expected a CID")),
         }
     }

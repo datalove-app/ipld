@@ -34,7 +34,7 @@ impl ExpandBasicRepresentation for BasicStructReprDefinition {
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         impl_repr(self.iter(), meta)
     }
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
 }
@@ -171,13 +171,13 @@ impl ExpandBasicRepresentation for StructReprDefinition {
         }
     }
 
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         match self {
-            Self::Map(repr) => repr.derive_selector(meta),
-            Self::Listpairs(repr) => repr.derive_selector(meta),
-            Self::Tuple(repr) => repr.derive_selector(meta),
-            Self::Stringpairs(repr) => repr.derive_selector(meta),
-            Self::Stringjoin(repr) => repr.derive_selector(meta),
+            Self::Map(repr) => repr.derive_selects(meta),
+            Self::Listpairs(repr) => repr.derive_selects(meta),
+            Self::Tuple(repr) => repr.derive_selects(meta),
+            Self::Stringpairs(repr) => repr.derive_selects(meta),
+            Self::Stringjoin(repr) => repr.derive_selects(meta),
             Self::Advanced(_) => unreachable!(),
         }
     }

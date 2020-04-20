@@ -34,7 +34,7 @@ impl ExpandBasicRepresentation for KeyedUnionReprDefinition {
             },
         )
     }
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         let name = &meta.name;
         // let lib = &meta.ipld_schema_lib;
         quote!(impl_root_select!(#name => Matcher);)
@@ -89,13 +89,13 @@ impl ExpandBasicRepresentation for UnionReprDefinition {
             _ => unimplemented!(),
         }
     }
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         match self {
-            Self::Keyed(def) => def.derive_selector(meta),
-            // Self::Envelope(def) => def.derive_selector(meta),
-            // Self::Inline(def) => def.derive_selector(meta),
-            // Self::BytePrefix(def) => def.derive_selector(meta),
-            // Self::Kinded(def) => def.derive_selector(meta),
+            Self::Keyed(def) => def.derive_selects(meta),
+            // Self::Envelope(def) => def.derive_selects(meta),
+            // Self::Inline(def) => def.derive_selects(meta),
+            // Self::BytePrefix(def) => def.derive_selects(meta),
+            // Self::Kinded(def) => def.derive_selects(meta),
             _ => unimplemented!(),
         }
     }

@@ -49,46 +49,41 @@ pub trait Format {
 /// The IPLD and Serde data models do not map 1:1. As a result, Serde may
 /// encounter types that require special handling when serializing (i.e. bytes
 /// and links).
-pub trait Encoder: Serializer + Sized {
+pub trait Encoder: Serializer {
     /// Serialize a sequence of bytes.
     ///
     /// Because some codecs are text-based rather than binary, `Codec`s may define
     /// custom default behaviour for serializing bytes.
-    fn serialize_bytes(
-        self,
-        bytes: &[u8],
-    ) -> Result<<Self as Serializer>::Ok, <Self as Serializer>::Error>;
+    fn serialize_bytes(self, bytes: &[u8]) -> Result<Self::Ok, Self::Error>;
 
     /// Serialize an IPLD link.
-    fn serialize_link(
-        self,
-        cid: &Cid,
-    ) -> Result<<Self as Serializer>::Ok, <Self as Serializer>::Error>;
+    fn serialize_link(self, cid: &Cid) -> Result<Self::Ok, Self::Error>;
 }
 
 /// The IPLD and Serde data models do not map 1:1. As a result, Serde may
 /// encounter types that are not equivalent in IPLD (such as byte and link maps
 /// in DagJSON), or types it cannot handle altogether (such as IPLD links).
-pub trait Decoder<'de>: Deserializer<'de> + Sized {
+pub trait Decoder<'de>: Deserializer<'de> {
     /// Deserialize any IPLD data type, mapping any encountered Serde type to the
     /// appropriate `Visitor` or `IpldVisitorExt` method.
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, <Self as Deserializer<'de>>::Error>
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
+        V: IpldVisitorExt<'de>;
+
+    /// Deserialize a sequence of borrowed bytes.
+    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        // TODO: get rid of this extra trait bound
         V: IpldVisitorExt<'de>;
 
     /// Deserialize a sequence of bytes.
-    fn deserialize_bytes<V>(
-        self,
-        visitor: V,
-    ) -> Result<V::Value, <Self as Deserializer<'de>>::Error>
+    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
+        // TODO: get rid of this extra trait bound
         V: IpldVisitorExt<'de>;
 
     /// Deserialize an IPLD link.
-    fn deserialize_link<V>(
-        self,
-        visitor: V,
-    ) -> Result<V::Value, <Self as Deserializer<'de>>::Error>
+    fn deserialize_link<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: IpldVisitorExt<'de>;
 }
@@ -100,7 +95,7 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
     /// The input contains a `Cid`.
     ///
     /// The default implementation fails with a type error.
-    fn visit_link<E>(self, _cid: Cid) -> Result<<Self as Visitor<'de>>::Value, E>
+    fn visit_link<E>(self, cid: Cid) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
@@ -118,10 +113,7 @@ mod specialization {
     impl<'de, D: Deserializer<'de> + Sized> Decoder<'de> for D {
         /// Default behaviour is to delegate directly to `Deserializer::deserialize_any`.
         #[inline]
-        default fn deserialize_any<V>(
-            self,
-            visitor: V,
-        ) -> Result<V::Value, <Self as Deserializer<'de>>::Error>
+        default fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
         where
             V: IpldVisitorExt<'de>,
         {
@@ -131,28 +123,32 @@ mod specialization {
         /// Default behaviour is to delegate directly to
         /// `Deserializer::deserialize_bytes`.
         #[inline]
-        default fn deserialize_bytes<V>(
-            self,
-            visitor: V,
-        ) -> Result<V::Value, <Self as Deserializer<'de>>::Error>
+        default fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
         where
             V: IpldVisitorExt<'de>,
         {
             Deserializer::deserialize_bytes(self, visitor)
         }
 
-        /// Default behaviour is to deserialize some bytes and parse them directly
-        /// as a `Cid`.
+        /// Default behaviour is to delegate directly to
+        /// `Deserializer::deserialize_byte_buf`.
         #[inline]
-        default fn deserialize_link<V>(
-            self,
-            visitor: V,
-        ) -> Result<V::Value, <Self as Deserializer<'de>>::Error>
+        default fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
         where
             V: IpldVisitorExt<'de>,
         {
-            let bytes = <&[u8]>::deserialize(self)?;
-            let cid = ToCid::to_cid(bytes).or(Err(de::Error::custom("expected a CID")))?;
+            Deserializer::deserialize_byte_buf(self, visitor)
+        }
+
+        /// Default behaviour is to deserialize some bytes and parse them directly
+        /// as a `Cid`.
+        #[inline]
+        default fn deserialize_link<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+        where
+            V: IpldVisitorExt<'de>,
+        {
+            let bytes = <&'de [u8]>::deserialize(self)?;
+            let cid = ToCid::to_cid(bytes).or_else(|_| Err(de::Error::custom("expected a CID")))?;
             visitor.visit_link(cid)
         }
     }
@@ -162,19 +158,13 @@ mod specialization {
     impl<S: Serializer> Encoder for S {
         /// Default behaviour is to delegate to `Serializer::serialize_bytes`.
         #[inline]
-        default fn serialize_bytes(
-            self,
-            bytes: &[u8],
-        ) -> Result<<Self as Serializer>::Ok, <Self as Serializer>::Error> {
+        default fn serialize_bytes(self, bytes: &[u8]) -> Result<Self::Ok, Self::Error> {
             Serializer::serialize_bytes(self, bytes)
         }
 
         /// Default behaviour is to serialize the link directly as bytes.
         #[inline]
-        default fn serialize_link(
-            self,
-            cid: &Cid,
-        ) -> Result<<Self as Serializer>::Ok, <Self as Serializer>::Error> {
+        default fn serialize_link(self, cid: &Cid) -> Result<Self::Ok, Self::Error> {
             Serializer::serialize_bytes(self, cid.to_bytes().as_ref())
         }
     }

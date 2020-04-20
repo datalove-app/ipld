@@ -20,6 +20,10 @@ impl Parse for SchemaDefinition {
             let mut schema_def = SchemaDefinition { meta, repr };
             // TODO: complete this
             // schema_def.meta.typedef_str = format!("{}", &schema_def);
+
+            // parse ending semicolon
+            parse_end(input)?;
+
             Ok(schema_def)
         }
     }
@@ -116,7 +120,6 @@ impl Parse for ReprDefinition {
             _ => return Err(input.error("invalid IPLD schema definition")),
         };
 
-        parse_end(input)?;
         Ok(repr_def)
     }
 }
@@ -165,17 +168,19 @@ pub(crate) fn parse_rest(input: ParseStream) -> ParseResult<TokenStream> {
 
 #[doc(hidden)]
 #[macro_export(local_inner_macros)]
-macro_rules! parse_advanced {
-    ($type:ident => $repr_variant:ident) => {
-        fn parse(input: ParseStream) -> ParseResult<Self> {
-            use crate::schema::{ReprDefinition, SchemaDefinition};
-            let SchemaDefinition { meta, repr } = input.parse()?;
-            match repr {
-                ReprDefinition::$type($repr_variant::Advanced(repr)) => Ok(Self { meta, repr }),
-                _ => Err(input.error(&::std::format!(
-                    "invalid IPLD {} advanced representation",
-                    ::std::stringify!($type)
-                ))),
+macro_rules! impl_advanced_parse {
+    ($def:ident => $type:ident, $repr_variant:ident) => {
+        impl syn::parse::Parse for $def {
+            fn parse(input: syn::parse::ParseStream) -> syn::parse::Result<Self> {
+                use crate::schema::{ReprDefinition, SchemaDefinition};
+                let SchemaDefinition { meta, repr } = input.parse()?;
+                match repr {
+                    ReprDefinition::$type($repr_variant::Advanced(repr)) => Ok(Self { meta, repr }),
+                    _ => Err(input.error(&::std::format!(
+                        "invalid IPLD {} advanced representation",
+                        ::std::stringify!($type)
+                    ))),
+                }
             }
         }
     };

@@ -14,26 +14,26 @@ impl Parse for EnumReprDefinition {
         let typedef_stream;
         braced!(typedef_stream in input);
 
-        let enum_repr = if common::is_end(input) {
+        if !input.peek(kw::representation) {
             let fields = typedef_stream.parse::<EnumStrFields>()?;
-            EnumReprDefinition::String { fields }
-        } else {
-            input.parse::<kw::representation>()?;
-            match input {
-                // string
-                _ if input.peek(kw::string) => {
-                    input.parse::<kw::string>()?;
-                    let fields = typedef_stream.parse::<EnumStrFields>()?;
-                    EnumReprDefinition::String { fields }
-                }
-                // int
-                _ if input.peek(kw::int) => {
-                    input.parse::<kw::int>()?;
-                    let fields = typedef_stream.parse::<EnumIntFields>()?;
-                    EnumReprDefinition::Int { fields }
-                }
-                _ => return Err(input.error("invalid IPLD enum representation definition")),
+            return Ok(Self::String { fields });
+        }
+
+        input.parse::<kw::representation>()?;
+        let enum_repr = match input {
+            // string
+            _ if input.peek(kw::string) => {
+                input.parse::<kw::string>()?;
+                let fields = typedef_stream.parse::<EnumStrFields>()?;
+                EnumReprDefinition::String { fields }
             }
+            // int
+            _ if input.peek(kw::int) => {
+                input.parse::<kw::int>()?;
+                let fields = typedef_stream.parse::<EnumIntFields>()?;
+                EnumReprDefinition::Int { fields }
+            }
+            _ => return Err(input.error("invalid IPLD enum representation definition")),
         };
 
         Ok(enum_repr)

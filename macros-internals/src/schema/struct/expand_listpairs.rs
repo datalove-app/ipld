@@ -31,7 +31,7 @@ impl ExpandBasicRepresentation for ListpairsStructReprDefinition {
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         super::expand::impl_repr(self.iter(), meta)
     }
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
 }

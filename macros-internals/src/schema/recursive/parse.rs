@@ -1,6 +1,6 @@
 use super::*;
 use crate::dev::{
-    common, parse_advanced, parse_kwarg,
+    common, impl_advanced_parse, parse_kwarg,
     schema::{kw, parse},
 };
 use syn::{
@@ -24,21 +24,19 @@ impl Parse for ListReprDefinition {
             return Err(input.error("invalid IPLD list type definition"));
         }
 
-        // parse list representation
-        let list_repr = if common::is_end(input) {
-            ListReprDefinition::Basic { elem, nullable }
-        } else {
-            input.parse::<kw::representation>()?;
-            let name = parse_kwarg!(input, advanced => Path);
-            ListReprDefinition::Advanced(AdvancedListReprDefinition {
-                name,
-                elem,
-                nullable,
-                rest: parse::parse_rest(input)?,
-            })
-        };
+        if !input.peek(kw::representation) {
+            return Ok(Self::Basic { elem, nullable });
+        }
 
-        Ok(list_repr)
+        // parse list representation
+        input.parse::<kw::representation>()?;
+        let name = parse_kwarg!(input, advanced => Path);
+        Ok(Self::Advanced(AdvancedListReprDefinition {
+            name,
+            elem,
+            nullable,
+            rest: parse::parse_rest(input)?,
+        }))
     }
 }
 
@@ -59,61 +57,60 @@ impl Parse for MapReprDefinition {
             return Err(input.error("invalid IPLD map type definition"));
         }
 
-        // parse map representation
-        let map_repr = if common::is_end(input) {
-            // basic
-            MapReprDefinition::Basic {
+        if !input.peek(kw::representation) {
+            return Ok(Self::Basic {
                 key,
                 value,
                 nullable,
-            }
-        } else {
-            input.parse::<kw::representation>()?;
-            match input {
-                // basic
-                _ if input.peek(kw::map) => {
-                    input.parse::<kw::map>()?;
-                    MapReprDefinition::Basic {
-                        key,
-                        value,
-                        nullable,
-                    }
-                }
-                // listpairs
-                _ if input.peek(kw::listpairs) => {
-                    input.parse::<kw::listpairs>()?;
-                    MapReprDefinition::Listpairs {
-                        key,
-                        value,
-                        nullable,
-                    }
-                }
-                // stringpairs
-                _ if input.peek(kw::stringpairs) => {
-                    input.parse::<kw::stringpairs>()?;
-                    let (inner_delim, entry_delim) = parse_stringpair_args(input)?;
+            });
+        }
 
-                    MapReprDefinition::Stringpairs {
-                        key,
-                        value,
-                        nullable,
-                        inner_delim,
-                        entry_delim,
-                    }
+        // parse map representation
+        input.parse::<kw::representation>()?;
+        let map_repr = match input {
+            // basic
+            _ if input.peek(kw::map) => {
+                input.parse::<kw::map>()?;
+                Self::Basic {
+                    key,
+                    value,
+                    nullable,
                 }
-                // advanced
-                _ if input.peek(kw::advanced) => {
-                    let name = parse_kwarg!(input, advanced => Path);
-                    MapReprDefinition::Advanced(AdvancedMapReprDefinition {
-                        name,
-                        key,
-                        value,
-                        nullable,
-                        rest: parse::parse_rest(input)?,
-                    })
-                }
-                _ => return Err(input.error("invalid IPLD map representation definition")),
             }
+            // listpairs
+            _ if input.peek(kw::listpairs) => {
+                input.parse::<kw::listpairs>()?;
+                Self::Listpairs {
+                    key,
+                    value,
+                    nullable,
+                }
+            }
+            // stringpairs
+            _ if input.peek(kw::stringpairs) => {
+                input.parse::<kw::stringpairs>()?;
+                let (inner_delim, entry_delim) = parse_stringpair_args(input)?;
+
+                Self::Stringpairs {
+                    key,
+                    value,
+                    nullable,
+                    inner_delim,
+                    entry_delim,
+                }
+            }
+            // advanced
+            _ if input.peek(kw::advanced) => {
+                let name = parse_kwarg!(input, advanced => Path);
+                Self::Advanced(AdvancedMapReprDefinition {
+                    name,
+                    key,
+                    value,
+                    nullable,
+                    rest: parse::parse_rest(input)?,
+                })
+            }
+            _ => return Err(input.error("invalid IPLD map representation definition")),
         };
 
         Ok(map_repr)
@@ -165,13 +162,8 @@ fn try_parse_stringpair_args(
     }
 }
 
-impl Parse for AdvancedListSchemaDefinition {
-    parse_advanced!(List => ListReprDefinition);
-}
-
-impl Parse for AdvancedMapSchemaDefinition {
-    parse_advanced!(Map => MapReprDefinition);
-}
+impl_advanced_parse!(AdvancedListSchemaDefinition => List, ListReprDefinition);
+impl_advanced_parse!(AdvancedMapSchemaDefinition => Map, MapReprDefinition);
 
 // //////////////////////////////////////////////////////////////////////////
 // // Link

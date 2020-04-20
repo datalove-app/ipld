@@ -9,12 +9,14 @@ use syn::{Ident, Type};
 
 impl expand::ExpandBasicRepresentation for NullReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
+        let lib = meta.lib();
         let attrs = &meta.attrs;
         let vis = &meta.vis;
         let ident = &meta.name;
 
         quote! {
             #(#attrs)*
+            #[derive(#lib::dev::Deserialize, #lib::dev::Serialize)]
             #vis struct #ident;
         }
     }
@@ -27,66 +29,67 @@ impl expand::ExpandBasicRepresentation for NullReprDefinition {
             },
         )
     }
-
-    fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
-        let name = &meta.name;
-        // let lib = &meta.ipld_schema_lib;
-
-        // TODO? correctness?
-        let impl_ser = expand::impl_serialize(
-            meta,
-            quote! {
-            serializer.serialize_unit()},
-        );
-        let (visitor, impl_visitor) = expand::impl_visitor(
-            meta,
-            "expected an IPLD null value",
-            quote! {
-                fn visit_none<E: de::Error>(self) -> Result<Self::Value, E>{
-                    Ok(#name)
-                }
-
-                fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
-                    Ok(#name)
-                }
-            },
-        );
-        // TODO: is this right?
-        let impl_de = expand::impl_deserialize(
-            meta,
-            quote! {
-            deserializer.deserialize_unit(#visitor)},
-        );
-
-        quote! {
-            #impl_ser
-            #impl_visitor
-            #impl_de
-        }
-    }
-
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
-        let name = &meta.name;
-        // let impl_de_seed = expand::impl_primtive_de_seed(meta);
-        quote! {
-            impl_root_select!(#name => Matcher);
-            // #impl_de_seed
-        }
-    }
 }
 
 impl expand::ExpandBasicRepresentation for BytesReprDefinition {
-    // TODO:
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
-        let lib = meta.lib();
         let attrs = &meta.attrs;
         let vis = &meta.vis;
         let ident = &meta.name;
 
         quote! {
             #(#attrs)*
-            #[derive(#lib::dev::Deserialize, #lib::dev::Serialize)]
-            #vis struct #ident;
+            #vis struct #ident(bytes::Bytes);
+
+            #[automatically_derived]
+            impl bytes::buf::Buf for #ident {
+                fn remaining(&self) -> usize {
+                    self.0.remaining()
+                }
+                fn bytes(&self) -> &[u8] {
+                    self.0.bytes()
+                }
+                fn advance(&mut self, cnt: usize) {
+                    self.0.advance(cnt)
+                }
+            }
+        }
+    }
+    fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
+        let name = &meta.name;
+
+        // TODO? correctness?
+        let impl_ser = expand::impl_serialize(
+            meta,
+            quote! {
+                <S as Encoder>::serialize_bytes(serializer, &self.0)
+            },
+        );
+        let (visitor, impl_visitor) = expand::impl_visitor(
+            meta,
+            "expected an IPLD bytes value",
+            quote! {
+                fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E>{
+                    Ok(#name(bytes::Bytes::copy_from_slice(v)))
+                }
+                fn visit_byte_buf<E: de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+                    Ok(#name(bytes::Bytes::from(v)))
+                }
+            },
+        );
+        let impl_de = expand::impl_deserialize(
+            meta,
+            quote! {
+                <D as Decoder>::deserialize_bytes(deserializer, #visitor)
+            },
+        );
+        let impl_visitor_ext = expand::impl_visitor_ext(meta, None);
+
+        quote! {
+            #impl_ser
+            #impl_visitor
+            #impl_visitor_ext
+            #impl_de
         }
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
@@ -98,8 +101,9 @@ impl expand::ExpandBasicRepresentation for BytesReprDefinition {
         )
     }
     // TODO:
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
-        TokenStream::default()
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
+        let name = &meta.name;
+        quote!(impl_root_select!(#name => Matcher);)
     }
 }
 
@@ -122,7 +126,7 @@ impl expand::ExpandBasicRepresentation for LinkReprDefinition {
             #wrapper_repr_def
         }
     }
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         unimplemented!()
     }
 }

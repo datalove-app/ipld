@@ -282,11 +282,10 @@ macro_rules! impl_root_select {
     };
     // main
     ($name:ident, Ctx : $($ctx:ident),* => $($ISelector:ident),*) => {
-        $crate::impl_root_select!(@select $name, Ctx: $($ctx),* => $($ISelector),*);
-        // $crate::impl_root_select!(@de_seed $name => $($ISelector)*);
+        $crate::impl_root_select!(@impl_ $name, Ctx: $($ctx),* => $($ISelector),*);
     };
     // select def
-    (@select $name:ident, Ctx : $($ctx:ident),* => $($ISelector:ident),*) => {
+    (@impl_ $name:ident, Ctx : $($ctx:ident),* => $($ISelector:ident),*) => {
         impl<Ctx> $crate::Select<$crate::Selector, Ctx> for $name
         where
             Ctx: $crate::Context $(+ $ctx)*,
@@ -297,6 +296,8 @@ macro_rules! impl_root_select {
         }
     };
     (@select $name:ident => $($ISelector:ident),*) => {
+        /// Delegates directly to the `ISelector` contained within the given
+        /// `Selector`. See [`Select::select`]() for more information.
         // fn select<Ctx: FromContext<NewCtx>>(
         #[inline]
         fn select(
@@ -315,6 +316,8 @@ macro_rules! impl_root_select {
         }
     };
     (@decode $name:ident => $($ISelector:ident),*) => {
+        /// Delegates directly to the `ISelector` contained within the given
+        /// `Selector`. See [`Select::decode`]() and [`serde::de::DeserializeSeed`]() for more information.
         #[inline]
         fn decode<'de, D>(selector: &'de $crate::Selector, decoder: D) -> Result<Self, D::Error>
         where
@@ -332,6 +335,8 @@ macro_rules! impl_root_select {
         }
     };
     (@validate $name:ident => $($ISelector:ident),*) => {
+        /// Delegates directly to the `ISelector` contained within the given
+        /// `Selector`. See [`Select::validate`]() for more information.
         #[inline]
         fn validate(selector: &$crate::Selector) -> Result<(), $crate::Error> {
             use $crate::{selectors::*, Error, Select};
@@ -344,144 +349,3 @@ macro_rules! impl_root_select {
         }
     };
 }
-
-// impl<Ctx, T> Select<Ctx, Selector> for T
-// where
-//     Ctx: Context,
-//     T: ObjectSafeRepresentation + 'static,
-// {
-//     fn select(
-//         self,
-//         selector: &Selector,
-//         // executor: &Executor<'a, Ctx>,
-//     ) -> SelectionStream {
-//         macro_rules! match_selector {
-//             ($variant:ident) => {
-//                 if $crate::dev::macros::impls::impls!(T: Select<NewCtx, $variant>) {
-//                     if let Selector::$variant(sel) = selector {
-//                         return <T as Select<Ctx, $variant>>::select(self, sel);
-//                     }
-//                 }
-//             };
-//         }
-
-//         match_selector!(Matcher);
-//         match_selector!(ExploreAll);
-//         match_selector!(ExploreFields);
-//         match_selector!(ExploreIndex);
-//         match_selector!(ExploreRange);
-//         match_selector!(ExploreRecursive);
-//         match_selector!(ExploreUnion);
-//         match_selector!(ExploreConditional);
-//         match_selector!(ExploreRecursiveEdge);
-
-//         SelectionStream::of::<T>(Err(()))
-//     }
-// }
-
-// /// TODO: this blanket impl might be better implemented by each type individually
-
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-
-// pub trait Dag<Ctx> {
-//     type Repr: Representation<Ctx>;
-// }
-
-// impl<Ctx, T> Serialize for Dag<Ctx, Repr = T> where T: Representation<Ctx> {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         T::serialize()
-//     }
-// }
-
-// impl<'de, Ctx, T> Deserialize<'de> for Dag<Ctx, Repr = T> where T: Representation<Ctx> {}
-
-// pub trait RepresentationExt<'a, Ctx>: Representation<Ctx> {
-//     fn serialize_ipld<S>(ipld: &BorrowedIpld<'a>, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer;
-
-//     fn deserialize_ipld<D>(deserializer: D) -> Result<BorrowedIpld<'a>, D::Error>
-//     where
-//         D: Deserializer<'a>,
-// }
-
-// /// An interface for `Encode`ing and `Decode`ing an IPLD Representation.
-// ///
-// /// Types that have `Representation`s generally follow the same few steps when
-// /// encoding (in reverse for decoding):
-// ///     - pre-processing, i.e.:
-// ///         fetching codecs
-// ///         generating signatures
-// ///         converting bytes to hex
-// ///     - (? optionally) conversion of the type to an Ipld-like
-// ///         helpful for ensuring canonicalization
-// ///     - serializing the Ipld-like type with a provided Codec
-// /// decoding:
-// ///     - pre-processing, i.e.:
-// ///         fetching blocks
-// ///     - deserializing either:
-// ///         - to an Ipld-like type, then conversion to native type
-// ///         - to a native type directly
-// ///
-// /// The supplied execution `Context` provides `Codec` to use, and can also:
-// ///     - dictate which fields to `Read`/`Write`,
-// ///     - provide a source/sink of bytes for a particular `Cid`/`Block`
-// #[async_trait]
-// pub trait Representation: Sized {
-//     type Context = Context;
-
-//     /// Encodes a type to a provided `Context`.
-//     ///
-//     /// By default, creates an IPLD data type representation from the type, then
-//     /// encodes the `Ipld` with the provided `Codec`.
-//     async fn encode(
-//         &self,
-//         ctx: &Self::Context,
-//     ) -> Result<Option<Cid>, <Self::Context as Context>::Error> {
-//         //        let dag = self.to_ipld(ctx).await?;
-//         //        ctx.codec().encode(dag)?
-//     }
-
-//     /// `Read` a type from a provided `Context`.
-//     async fn decode(
-//         bytes: &[u8],
-//         ctx: &Self::Context,
-//     ) -> Result<Self, <Self::Context as Context>::Error> {
-//         //        let dag = ctx.codec().decode(bytes).await?;
-//         //        Self::from_ipld(dag, ctx)
-//     }
-
-//     //    /// `Read` a type from a provided `Context`.
-//     //    async fn read_with_ctx<NewCtx>(ctx: &Ctx) -> Result<Self, Error>
-//     //    where
-//     //        NewCtx: FromContext<Ctx>,
-//     //        Self: Representation<NewCtx>;
-
-//     //    /// `Write` a type to a provided `Context`.
-//     //    async fn write_with_ctx<NewCtx>(&self, ctx: &Ctx) -> Result<(), Error>
-//     //    where
-//     //        Co: 'async_trait,
-//     //        R: 'async_trait,
-//     //        W: 'async_trait,
-//     //        NewCtx: FromContext<Ctx>;
-// }

@@ -37,28 +37,25 @@ pub struct SchemaMeta {
 }
 
 impl SchemaMeta {
+    /// Creates a `TokenStream` of the `ipld` lib used (either `crate` or the `ipld` crate name).
     pub fn lib(&self) -> TokenStream {
         if self.internal {
             quote!(crate)
         } else {
-            let path = crate_name(attr::IPLD_CRATE_NAME)
-                .or(Err(()))
-                .and_then(|name| parse_str::<Path>(&name).or(Err(())))
-                .expect("`ipld` is not present in Cargo.toml");
+            let path = crate_name(attr::IPLD_CRATE_NAME).map_or(
+                Path::from(Ident::new("ipld", Span::call_site())),
+                |name| {
+                    parse_str::<Path>(&name).expect("`ipld` is either not present in Cargo.toml")
+                },
+            );
             quote!(#path)
         }
     }
 
+    /// Returns the `Ident` of the `Visitor` generated for this type.
     pub fn visitor_name(&self) -> Ident {
         Ident::new(
-            &format!("__{}Visitor", &self.name.to_string()),
-            Span::call_site(),
-        )
-    }
-
-    pub fn selector_name(&self) -> Ident {
-        Ident::new(
-            &format!("__{}SelectorSeed", &self.name.to_string()),
+            &format!("_{}Visitor", &self.name.to_string()),
             Span::call_site(),
         )
     }
@@ -95,7 +92,13 @@ pub enum ReprDefinition {
     Union(UnionReprDefinition),
 }
 
-/// Wrapper around a vec of `Field`s.
+// #[derive(Debug)]
+// pub struct ContainerAttr {
+//     internal: bool,
+//     try_from: Option<LitStr>,
+// }
+
+/// Wrapper around a vec of fields.
 #[derive(Debug)]
 pub struct Fields<T>(Vec<T>);
 impl<T> Deref for Fields<T> {
@@ -105,10 +108,10 @@ impl<T> Deref for Fields<T> {
     }
 }
 
-#[derive(Debug)]
-pub struct FieldAttr {
-    wrapper: Option<Ident>,
-}
+// #[derive(Debug)]
+// pub struct FieldAttr {
+//     wrapper: Option<Ident>,
+// }
 
 /// Keywords unique to IPLD Schemas and Representations
 #[macro_use]

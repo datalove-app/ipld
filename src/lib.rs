@@ -1,4 +1,8 @@
-//! The [types](), [traits]() and [macros]() for [`IPLD`]() [Data Model](), [Schemas](), [Representations](), and [Selectors]().
+//! [Types](), [traits]() and [macros](https://ipld.io) for [`IPLD`]()
+//! [Data Model](https://github.com/ipld/specs/blob/master/data-model-layer/data-model.md),
+//! [Schemas](https://github.com/ipld/specs/blob/master/schemas/introduction.md),
+//! [Representations](https://github.com/ipld/specs/blob/master/schemas/representations.md), and
+//! [Selectors](https://github.com/ipld/specs/blob/master/selectors/selectors.md) specifications.
 
 #![feature(specialization)]
 // #![deny(missing_docs)]
@@ -25,6 +29,10 @@ pub use selectors::Selector;
 // #[doc(inline)]
 // pub use value::Value;
 
+#[cfg(feature = "macros")]
+#[doc(inline)]
+pub use ipld_macros::{ipld_attr, schema, selector};
+
 ///
 pub mod formats {
     #[cfg(feature = "dag-cbor")]
@@ -35,10 +43,6 @@ pub mod formats {
     // #[cfg(all(feature = "dag-json", feature = "simd"))]
     // pub use crate::_formats::dag_json_simd::DagJson;
 }
-
-#[cfg(feature = "macros")]
-#[doc(inline)]
-pub use ipld_macros::{ipld_attr, schema, selector};
 
 ///
 pub mod dev {
@@ -52,6 +56,7 @@ pub mod dev {
     pub use crate::value::*;
 
     // pub use async_stream::stream;
+    pub use bytes;
     pub use futures::{self, Stream, StreamExt};
     pub use ipld_macros_internals as macros;
     pub use serde::{
@@ -70,6 +75,3 @@ pub mod prelude {
     pub use multibase::{self, Base as Multibase};
     pub use multihash::{self, Multihash, MultihashDigest, MultihashRef};
 }
-
-#[cfg(test)]
-mod test {}

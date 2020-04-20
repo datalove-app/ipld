@@ -33,7 +33,7 @@ impl ExpandBasicRepresentation for EnumReprDefinition {
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
 }

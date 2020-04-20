@@ -1,6 +1,6 @@
 //! IPLD DagJson codec.
 
-use crate::prelude::*;
+use crate::dev::*;
 use delegate::delegate;
 use serde::{de, ser};
 use serde_json::{
@@ -53,7 +53,7 @@ impl<'a, W: Write> Encoder for &'a mut JsonSerializer<W> {
     /// Serializes bytes as a struct variant, e.g.
     /// `{ "/": { "base64": <some base64-encoded string> } }`.
     #[inline]
-    fn serialize_bytes(self, bytes: &[u8]) -> Result<<Self as Serializer>::Ok, JsonError> {
+    fn serialize_bytes(self, bytes: &[u8]) -> Result<Self::Ok, JsonError> {
         use ser::SerializeStructVariant as SV;
 
         let mut sv = self.serialize_struct_variant("", 0, "/", 1)?;
@@ -63,7 +63,7 @@ impl<'a, W: Write> Encoder for &'a mut JsonSerializer<W> {
 
     /// Serializes links as a newtype variant, e.g.  `{ "/": "Qm..." }`.
     #[inline]
-    fn serialize_link(self, cid: &Cid) -> Result<<Self as Serializer>::Ok, JsonError> {
+    fn serialize_link(self, cid: &Cid) -> Result<Self::Ok, JsonError> {
         self.serialize_newtype_variant("", 0, "/", &cid.to_string())
     }
 }
@@ -75,9 +75,9 @@ impl<'de, 'a, R: JsonRead<'de>> Decoder<'de> for &'a mut JsonDeserializer<R> {
     ///     - links, e.g. `{ "/": "Qm..." }`
     ///     - byte sequences, e.g. `{ "/": { "base64": <some base64-encoded string> } }`
     ///
-    /// This method wraps the provided `Visitor`, delegating all the visiting of
-    /// all types found in the input data to the provided `Visitor` except for maps,
-    /// which are handled separately as they may be IPLD bytes or links.
+    /// This method wraps the provided `Visitor`, delegating the visiting of all
+    /// types found in the input data to the provided `Visitor` (except for maps,
+    /// which are handled separately as they may be IPLD bytes, links or actual maps.
     #[inline]
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, JsonError>
     where
@@ -91,7 +91,15 @@ impl<'de, 'a, R: JsonRead<'de>> Decoder<'de> for &'a mut JsonDeserializer<R> {
     where
         V: IpldVisitorExt<'de>,
     {
-        <Self as Decoder>::deserialize_any(self, visitor)
+        Decoder::deserialize_byte_buf(self, visitor)
+    }
+
+    #[inline]
+    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, JsonError>
+    where
+        V: IpldVisitorExt<'de>,
+    {
+        self.deserialize_map(JsonVisitor(visitor))
     }
 
     #[inline]
@@ -99,7 +107,7 @@ impl<'de, 'a, R: JsonRead<'de>> Decoder<'de> for &'a mut JsonDeserializer<R> {
     where
         V: IpldVisitorExt<'de>,
     {
-        <Self as Decoder>::deserialize_any(self, visitor)
+        self.deserialize_map(JsonVisitor(visitor))
     }
 }
 
@@ -116,6 +124,7 @@ impl<'de, V: IpldVisitorExt<'de>> Visitor<'de> for JsonVisitor<V> {
     }
 
     /// Called when a map is found in the input data.
+    /// TODO: test that this works with links union-inlined into structs/maps
     #[inline]
     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
     where
@@ -123,9 +132,9 @@ impl<'de, V: IpldVisitorExt<'de>> Visitor<'de> for JsonVisitor<V> {
     {
         let first_key: Option<&'de str> = map.next_key()?;
         if first_key == Some("/") {
-            match map.next_value::<MapLikeVisitor>()? {
-                MapLikeVisitor::Bytes(b) => self.0.visit_byte_buf(b),
-                MapLikeVisitor::Cid(cid) => self.0.visit_link(cid),
+            match map.next_value::<MapLikeVisitor>() {
+                Ok(MapLikeVisitor::Bytes(b)) => self.0.visit_byte_buf(b),
+                Ok(MapLikeVisitor::Cid(cid)) => self.0.visit_link(cid),
                 _ => Err(de::Error::custom("expected a CID or byte string")),
             }
         } else {
@@ -184,7 +193,7 @@ impl<'de> Deserialize<'de> for MapLikeVisitor {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_any(MapLikeVisitor::Default)
+        deserializer.deserialize_map(MapLikeVisitor::Default)
     }
 }
 
@@ -225,15 +234,16 @@ impl<'de> Visitor<'de> for MapLikeVisitor {
         }
 
         let (mb, bytes) = multibase::decode(s).or(Err(de::Error::custom(
-            "expected a multibase-encoded string",
+            "expected a base64 multibase-encoded string",
         )))?;
-        if multibase::Base::Base64.ne(&mb) {
-            return Err(de::Error::custom(
-                "DagJSON only supports base64-encoded strings",
-            ));
-        }
 
-        Ok(MapLikeVisitor::Bytes(bytes))
+        if multibase::Base::Base64.eq(&mb) {
+            Ok(MapLikeVisitor::Bytes(bytes))
+        } else {
+            Err(de::Error::custom(
+                "DagJSON only supports base64-encoded strings",
+            ))
+        }
     }
 }
 
@@ -260,11 +270,12 @@ impl<'de, A: de::MapAccess<'de>> de::MapAccess<'de> for MapAccessor<'de, A> {
         }
     }
 
-    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::DeserializeSeed<'de>,
-    {
-        self.map.next_value_seed(seed)
+    delegate! {
+        to self.map {
+            fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
+            where
+                V: de::DeserializeSeed<'de>;
+        }
     }
 }
 

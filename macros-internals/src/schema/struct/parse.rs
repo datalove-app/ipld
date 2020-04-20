@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::dev::{
-    common, parse_advanced, parse_kwarg,
+    common, impl_advanced_parse, parse_kwarg,
     schema::{kw, parse, recursive::parse::parse_stringpair_args},
     InnerAttributes,
 };
@@ -19,72 +19,72 @@ impl Parse for StructReprDefinition {
         braced!(typedef_stream in input);
         let fields: StructFields = typedef_stream.parse_terminated(StructField::parse)?;
 
-        let struct_repr = if common::is_end(input) {
-            Self::Map(BasicStructReprDefinition { fields })
-        } else {
-            input.parse::<kw::representation>()?;
-            match input {
-                // map
-                _ if input.peek(kw::map) => {
-                    input.parse::<kw::map>()?;
-                    Self::Map(BasicStructReprDefinition { fields })
-                }
-                // listpairs
-                _ if input.peek(kw::listpairs) => {
-                    input.parse::<kw::listpairs>()?;
-                    Self::Listpairs(ListpairsStructReprDefinition { fields })
-                }
-                // tuple
-                // TODO? assert that any fields do not have optional + implicit?
-                _ if input.peek(kw::tuple) => {
-                    input.parse::<kw::tuple>()?;
-                    if input.is_empty() {
-                        Self::Tuple(TupleStructReprDefinition {
-                            fields,
-                            field_order: None,
-                        })
-                    } else {
-                        let args;
-                        braced!(args in input);
-                        let field_order = parse_kwarg!(args, fieldOrder => Expr);
+        if !input.peek(kw::representation) {
+            return Ok(Self::Map(BasicStructReprDefinition { fields }));
+        }
 
-                        Self::Tuple(TupleStructReprDefinition {
-                            fields,
-                            field_order: Some(field_order),
-                        })
-                    }
-                }
-                // stringpairs
-                _ if input.peek(kw::stringpairs) => {
-                    input.parse::<kw::stringpairs>()?;
-                    let (inner_delim, entry_delim) = parse_stringpair_args(input)?;
-
-                    Self::Stringpairs(StringpairsStructReprDefinition {
+        input.parse::<kw::representation>()?;
+        let struct_repr = match input {
+            // map
+            _ if input.peek(kw::map) => {
+                input.parse::<kw::map>()?;
+                Self::Map(BasicStructReprDefinition { fields })
+            }
+            // listpairs
+            _ if input.peek(kw::listpairs) => {
+                input.parse::<kw::listpairs>()?;
+                Self::Listpairs(ListpairsStructReprDefinition { fields })
+            }
+            // tuple
+            // TODO? assert that any fields do not have optional + implicit?
+            _ if input.peek(kw::tuple) => {
+                input.parse::<kw::tuple>()?;
+                if input.is_empty() {
+                    Self::Tuple(TupleStructReprDefinition {
                         fields,
-                        inner_delim,
-                        entry_delim,
+                        field_order: None,
                     })
-                }
-                // stringjoin
-                _ if input.peek(kw::stringjoin) => {
-                    input.parse::<kw::stringjoin>()?;
+                } else {
                     let args;
                     braced!(args in input);
-                    let join = parse_kwarg!(args, join => LitStr);
+                    let field_order = parse_kwarg!(args, fieldOrder => Expr);
 
-                    Self::Stringjoin(StringjoinStructReprDefinition { fields, join })
-                }
-                // advanced
-                _ if input.peek(kw::advanced) => {
-                    let name = parse_kwarg!(input, advanced => Path);
-                    Self::Advanced(AdvancedStructReprDefinition {
-                        name,
+                    Self::Tuple(TupleStructReprDefinition {
                         fields,
-                        rest: parse::parse_rest(input)?,
+                        field_order: Some(field_order),
                     })
                 }
-                _ => return Err(input.error("invalid IPLD struct representation definition")),
             }
+            // stringpairs
+            _ if input.peek(kw::stringpairs) => {
+                input.parse::<kw::stringpairs>()?;
+                let (inner_delim, entry_delim) = parse_stringpair_args(input)?;
+
+                Self::Stringpairs(StringpairsStructReprDefinition {
+                    fields,
+                    inner_delim,
+                    entry_delim,
+                })
+            }
+            // stringjoin
+            _ if input.peek(kw::stringjoin) => {
+                input.parse::<kw::stringjoin>()?;
+                let args;
+                braced!(args in input);
+                let join = parse_kwarg!(args, join => LitStr);
+
+                Self::Stringjoin(StringjoinStructReprDefinition { fields, join })
+            }
+            // advanced
+            _ if input.peek(kw::advanced) => {
+                let name = parse_kwarg!(input, advanced => Path);
+                Self::Advanced(AdvancedStructReprDefinition {
+                    name,
+                    fields,
+                    rest: parse::parse_rest(input)?,
+                })
+            }
+            _ => return Err(input.error("invalid IPLD struct representation definition")),
         };
 
         Ok(struct_repr)
@@ -181,6 +181,4 @@ fn try_parse_repr_directives(
     }
 }
 
-impl Parse for AdvancedStructSchemaDefinition {
-    parse_advanced!(Struct => StructReprDefinition);
-}
+impl_advanced_parse!(AdvancedStructSchemaDefinition => Struct, StructReprDefinition);

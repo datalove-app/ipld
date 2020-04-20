@@ -14,19 +14,19 @@ pub struct NullReprDefinition;
 pub struct BoolReprDefinition;
 
 #[derive(Debug)]
-pub struct IntReprDefinition(pub(crate) Type);
+pub struct IntReprDefinition(pub Type);
 
 #[derive(Debug)]
-pub struct FloatReprDefinition(pub(crate) Type);
+pub struct FloatReprDefinition(pub Type);
 
 #[derive(Debug)]
 pub struct StringReprDefinition;
 
 #[derive(Debug)]
-pub struct LinkReprDefinition(pub(crate) Type);
+pub struct LinkReprDefinition(pub Type);
 
 #[derive(Debug)]
-pub struct CopyReprDefinition(pub(crate) Type);
+pub struct CopyReprDefinition(pub Type);
 
 #[derive(Debug)]
 pub enum BytesReprDefinition {

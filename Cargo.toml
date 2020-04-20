@@ -1,8 +1,8 @@
 [package]
 name = "ipld"
-version = "0.0.3"
+version = "0.1.0"
 authors = ["sunny-g <sunny.gonna@gmail.com>"]
-description = "IPLD types and interfaces"
+description = "Types, traits and macros for the IPLD Data Model, Schema, Representation, and Selector specifications."
 license = "MIT or Apache-2.0"
 edition = "2018"
 
@@ -12,6 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # core
+bytes = "0.5"
 cid = "0.3.2"
 ipld-macros = { path = "./macros" }
 ipld-macros-internals = { path = "./macros-internals" }
@@ -19,19 +20,18 @@ multibase = "0.8"
 multihash = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_repr = "0.1"
-thiserror = "1.0"
-# multicodec
+# formats
 serde_cbor = { version = "0.11", optional = true }
 serde_json = { version = "1.0", optional = true }
 simd-json = { version = "^0.3", optional = true }
-# async
+# misc
+anyhow = "1.0"
 async-stream = "^0.2"
 async-trait = "0.1"
+delegate = { version = "0.4", optional = true }
 futures = "^0.3"
 pin-utils = "0.1.0-alpha.4"
-# misc
-# anyhow = "1.0"
-delegate = { version = "0.4", optional = true }
+thiserror = "1.0"
 
 [dev-dependencies]
 criterion = "0.3"
@@ -39,9 +39,8 @@ proptest = "0.9"
 
 [features]
 default = ["macros", "multicodec"]
-dag-cbor = ["serde_cbor", "serde_cbor/tags"]
+dag-cbor = ["serde_cbor/tags"]
 dag-json = ["delegate", "serde_json"]
-ipfs-adapter = []
 macros = []
 multicodec = ["dag-cbor", "dag-json"]
 simd = ["simd-json"]

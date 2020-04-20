@@ -44,32 +44,39 @@ impl ToTokens for SchemaDefinition {
             ($meta:ident, $def:ident) => {{
                 let name = &$meta.name;
                 let typedef = $def.define_type($meta);
-                let serde = $def.derive_serde($meta);
-                let repr = $def.derive_repr($meta);
-                let selector = $def.derive_selector($meta);
-                // let conv = $def.derive_conv($meta);
 
                 let use_ipld = if $meta.internal {
                     quote!(use crate as _ipld)
                 } else {
-                    quote!(extern crate ipld as _ipld)
+                    quote! {
+                        // #[allow(clippy::useless_attribute)]
+                        extern crate ipld as _ipld
+                    }
                 };
 
-                let dummy = Ident::new(&format!("_IPLD_IMPLS_FOR_{}", name), Span::call_site());
+                let defs = [
+                    ("SERDE_IMPLS", $def.derive_serde($meta)),
+                    ("REPR_IMPL", $def.derive_repr($meta)),
+                    ("SELECT_IMPLS", $def.derive_selects($meta)),
+                    // ("VALUE_CONV_IMPLS", $def.derive_conv($meta)),
+                ];
+                let dummies = defs
+                    .iter()
+                    .map(|(kind, def)| (Ident::new(&format!("_IPLD_{}_FOR_{}", kind, name), Span::call_site()), def))
+                    .map(|(ident, def)| quote! {
+                        #[doc(hidden)]
+                        const #ident: () = {
+                            #use_ipld;
+                            #[allow(unused_imports)]
+                            use _ipld::dev::{*, serde::de};
+                            #def
+                        };
+                    });
+
                 quote! {
                     #typedef
-
-                    #[doc(hidden)]
-                    const #dummy: () = {
-                        #use_ipld;
-                        #[allow(unused_imports)]
-                        use _ipld::dev::{*, serde::de};
-
-                        #serde
-                        #repr
-                        #selector
-                        // #conv
-                    };
+                    #(#dummies)*
+                    // #conv
                 }
             }};
         }
@@ -102,13 +109,13 @@ impl ToTokens for SchemaDefinition {
     }
 }
 
-///
+/// Helper trait for expanding a `SchemaDefinition` into a type and it's trait impls.
 #[allow(unused_variables)]
 pub(crate) trait ExpandBasicRepresentation {
     /// Defines the type, and applies any provided attributes.
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream;
 
-    /// Derives `Representation` and `Select` for the defined type.
+    /// Derives `Representation` for the defined type.
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream;
 
     /// Derive Serde impls for the defined type.
@@ -119,6 +126,10 @@ pub(crate) trait ExpandBasicRepresentation {
         TokenStream::default()
     }
 
+    /// Derives `Select<ISelector>` for each `ISelector` the type supports.
+    ///
+    /// Optional because many types only support the `Matcher` selector.
+    /// TODO: support conditionals
     /// - `type ReprSelectorSeed = SelectorSeed<ReprVisitor>`
     ///     `impl Visitor for `ReprSelectorSeed`
     /// - `type IgnoredT = IgnoredRepr<T>`
@@ -127,7 +138,10 @@ pub(crate) trait ExpandBasicRepresentation {
     /// - `impl DeserializeSeed<'de, Value = Self> for Selector`
     ///     instantiates ReprSelectorSeed(selector, repr_visitor)
     ///     matches on selector, delegates to one deserializer method
-    fn derive_selector(&self, meta: &SchemaMeta) -> TokenStream;
+    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
+        let name = &meta.name;
+        quote!(impl_root_select!(#name => Matcher);)
+    }
 
     /// Derives conversions between the type and `Value`, as well as `ipfs::Ipld`
     /// (if `#[cfg(feature = "ipld/ipfs")]` is enabled)
@@ -143,33 +157,35 @@ pub(crate) trait ExpandBasicRepresentation {
 #[allow(unused_variables)]
 pub trait ExpandAdvancedRepresentation {
     /// Expands an advanced `bytes` representation definition into a `TokenStream`
-    /// that of a type that implements `Representation`.
+    /// of a type that implements `Representation`.
     fn expand_bytes(repr: AdvancedBytesReprDefinition) -> TokenStream {
         unimplemented!()
     }
 
     /// Expands an advanced `list` representation definition into a `TokenStream`
-    /// that of a type that implements `Representation`.
+    /// of a type that implements `Representation`.
     fn expand_list(repr: AdvancedListReprDefinition) -> TokenStream {
         unimplemented!()
     }
 
     /// Expands an advanced `map` representation definition into a `TokenStream`
-    /// that of a type that implements `Representation`.
+    /// of a type that implements `Representation`.
     fn expand_map(repr: AdvancedMapReprDefinition) -> TokenStream {
         unimplemented!()
     }
 
     /// Expands an advanced `struct` representation definition into a `TokenStream`
-    /// that of a type that implements `Representation`.
+    /// of a type that implements `Representation`.
     fn expand_struct(repr: AdvancedStructReprDefinition) -> TokenStream {
         unimplemented!()
     }
 }
 
+// Helpers
+
+///
 pub(crate) fn impl_serialize(meta: &SchemaMeta, body: TokenStream) -> TokenStream {
     let name = &meta.name;
-    // let lib = &meta.ipld_schema_lib;
     quote! {
         #[automatically_derived]
         impl Serialize for #name {
@@ -196,7 +212,6 @@ pub(crate) fn impl_visitor(
     body: TokenStream,
 ) -> (Ident, TokenStream) {
     let name = &meta.name;
-    // let lib = &meta.ipld_schema_lib;
     let visitor = meta.visitor_name();
 
     // TODO? if try_from, add:
@@ -241,6 +256,16 @@ pub(crate) fn impl_visitor(
     (visitor, visitor_def)
 }
 
+pub(crate) fn impl_visitor_ext(meta: &SchemaMeta, body: Option<TokenStream>) -> TokenStream {
+    let visitor = meta.visitor_name();
+    quote! {
+        #[automatically_derived]
+        impl<'de> IpldVisitorExt<'de> for #visitor {
+            #body
+        }
+    }
+}
+
 pub(crate) fn impl_deserialize(meta: &SchemaMeta, mut body: TokenStream) -> TokenStream {
     let name = &meta.name;
     // let lib = &meta.ipld_schema_lib;
@@ -272,8 +297,7 @@ pub(crate) fn impl_deserialize(meta: &SchemaMeta, mut body: TokenStream) -> Toke
 
 pub(crate) fn impl_repr(meta: &SchemaMeta, body: TokenStream) -> TokenStream {
     let name = &meta.name;
-    // let lib = &meta.ipld_schema_lib;
-    let typedef_str = &meta.typedef_str;
+    // let typedef_str = &meta.typedef_str;
     let generics = &meta
         .generics
         .as_ref()
@@ -295,7 +319,6 @@ pub(crate) fn impl_select_for(
     body: TokenStream,
 ) -> TokenStream {
     let name = &meta.name;
-    // let lib = &meta.ipld_schema_lib;
     quote! {
         #[automatically_derived]
         impl<Ctx> Select<Ctx, #selector> for #name

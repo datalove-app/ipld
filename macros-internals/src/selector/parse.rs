@@ -13,6 +13,7 @@ impl Parse for RootSelectorDefinition {
         let internal = attrs.parse_internal(input);
 
         // the root type this selector begins selecting against
+        // TODO: maybe parse optional bracketed type: `<Type>` or attr
         let root_type = input.parse::<Type>()?;
         input.parse::<Token![,]>()?;
 

@@ -44,13 +44,14 @@ impl ToTokens for SchemaDefinition {
             ($meta:ident, $def:ident) => {{
                 let name = &$meta.name;
                 let typedef = $def.define_type($meta);
+                let lib = &$meta.lib();
 
                 let use_ipld = if $meta.internal {
                     quote!(use crate as _ipld)
                 } else {
                     quote! {
                         // #[allow(clippy::useless_attribute)]
-                        extern crate ipld as _ipld
+                        extern crate #lib as _ipld
                     }
                 };
 
@@ -60,7 +61,7 @@ impl ToTokens for SchemaDefinition {
                     ("SELECT_IMPLS", $def.derive_selects($meta)),
                     // ("VALUE_CONV_IMPLS", $def.derive_conv($meta)),
                 ];
-                let dummies = defs
+                let scoped_impls = defs
                     .iter()
                     .map(|(kind, def)| (Ident::new(&format!("_IPLD_{}_FOR_{}", kind, name), Span::call_site()), def))
                     .map(|(ident, def)| quote! {
@@ -75,7 +76,7 @@ impl ToTokens for SchemaDefinition {
 
                 quote! {
                     #typedef
-                    #(#dummies)*
+                    #(#scoped_impls)*
                     // #conv
                 }
             }};

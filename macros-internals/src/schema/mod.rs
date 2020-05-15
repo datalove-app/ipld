@@ -22,7 +22,7 @@ use proc_macro2::{Span, TokenStream};
 use proc_macro_crate::crate_name;
 use quote::quote;
 use std::ops::Deref;
-use syn::{parse_str, Attribute, Generics, Ident, ItemFn, LitStr, Path, Visibility};
+use syn::{parse_str, Attribute, Generics, Ident, ItemFn, LitStr, Path, Type, Visibility};
 
 ///
 #[derive(Debug, Clone)]
@@ -43,7 +43,7 @@ impl SchemaMeta {
             quote!(crate)
         } else {
             let path = crate_name(attr::IPLD_CRATE_NAME).map_or(
-                Path::from(Ident::new("ipld", Span::call_site())),
+                Path::from(Ident::new(attr::IPLD_CRATE_NAME, Span::call_site())),
                 |name| {
                     parse_str::<Path>(&name).expect("`ipld` is either not present in Cargo.toml")
                 },
@@ -129,7 +129,9 @@ pub(crate) mod kw {
         // main keywords
         representation advanced
         // schema data types
-        null bool int float bytes string list map link copy
+        null bool bytes string list map link copy
+        int uint8 uint16 uint32 uint64 uint128 int8 int16 int32 int64 int128
+        float float32 float64
         // representation types
         listpairs stringjoin stringpairs
         tuple keyed kinded envelope inline byteprefix
@@ -139,7 +141,7 @@ pub(crate) mod kw {
         fieldOrder discriminantKey contentKey
 
         // custom container and field attributes
-        schema internal try_from wrapper
+        internal try_from wrapper
     }
 
     // pub struct Directive<K, T>(pub Option<T>, pub std::marker::PhantomData<K>);

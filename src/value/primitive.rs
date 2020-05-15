@@ -1,5 +1,10 @@
 use crate::dev::*;
 
+impl Representation for () {
+    const NAME: &'static str = "Null";
+}
+impl_root_select!(() => Matcher);
+
 #[doc(hidden)]
 #[macro_export(local_inner_macros)]
 macro_rules! def_primitive {
@@ -29,36 +34,21 @@ def_primitive!(f32: Float, "Float32");
 def_primitive!(f64: Float, "Float64");
 def_primitive!(String: String, "String");
 
-// TODO: bytes
+impl Representation for &str {
+    const NAME: &'static str = "str";
+}
+
+impl<T> Representation for Option<T> {
+    const NAME: &'static str = "Null";
+}
+impl_root_select!(Matcher {
+    impl<Ctx, T> Select<Selector, Ctx> for Option<T>
+    where
+        Ctx: Context,
+        T: Representation + 'static
+});
+
 // TODO: cid
-
-// Bytes
-
-// // impl Representation for Cid
-// where
-//     Ctx: Context + Sync,
-// {
-//     const NAME: &'static str = "Bytes";
-//     const KIND: Kind = Kind::Link;
-
-//     async fn resolve<'a>(
-//         selection: &Selector,
-//         executor: &'a Executor<'a, Ctx>,
-//     ) -> Result<Self, ()> {
-//         unimplemented!()
-//     }
-
-//     async fn resolve_field<'a, T>(
-//         &'a self,
-//         selection: &Selector,
-//         executor: &'a Executor<'a, Ctx>,
-//     ) -> Result<T, ()>
-//     where
-//         T: Representation<Ctx>,
-//     {
-//         unimplemented!()
-//     }
-// }
 
 // /// Default implementations that delegate directly to the underlying
 // /// `ReadCbor`/`WriteCbor`.

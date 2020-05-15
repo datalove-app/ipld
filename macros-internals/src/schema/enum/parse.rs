@@ -97,17 +97,17 @@ mod tests {
     use quote::quote;
     use syn::{parse2, LitStr};
 
-    #[test]
-    fn it_works() {
-        let sample_quote = quote! {
-            | Yes
-            | No
-        };
+    // #[test]
+    // fn it_works() {
+    //     let sample_quote = quote! {
+    //         | Yes
+    //         | No
+    //     };
 
-        let fields = parse2::<EnumStrFields>(sample_quote).unwrap();
-        println!("enum fields: {:?}", fields);
+    //     let fields = parse2::<EnumStrFields>(sample_quote).unwrap();
+    //     println!("enum fields: {:?}", fields);
 
-        let fields = quote!(#fields);
-        println!("quoted enum fields: {:?}", fields);
-    }
+    //     let fields = quote!(#fields);
+    //     println!("quoted enum fields: {:?}", fields);
+    // }
 }

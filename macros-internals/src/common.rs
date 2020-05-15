@@ -19,11 +19,9 @@ pub(crate) mod attr {
     pub(crate) const IPLD_CRATE_NAME: &'static str = "ipld";
     pub(crate) const ATTR: &'static str = "ipld_attr";
 
-    pub(crate) const CRATE: &'static str = "crate";
     pub(crate) const INTERNAL: &'static str = "internal";
     pub(crate) const TRY_FROM: &'static str = "try_from";
     pub(crate) const WRAPPER: &'static str = "wrapper";
-    // TODO: consider getting rid of this limitation
     pub(crate) const SERDE: &'static str = "serde";
 
     #[doc(hidden)]
@@ -82,6 +80,7 @@ pub(crate) mod attr {
                 }
             }
             impl $name {
+                // TODO: consider getting rid of this omission of additional serde attrs
                 pub(crate) fn is_internal_attr(attr: &Attribute) -> bool {
                     attr.path.is_ident(SERDE) || attr.path.is_ident(ATTR)
                 }

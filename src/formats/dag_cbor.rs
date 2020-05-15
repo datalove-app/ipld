@@ -4,12 +4,12 @@ use crate::dev::*;
 use serde::de;
 use serde_cbor::{
     de::Read as CborRead,
-    from_reader, from_slice,
+    from_reader,
     ser::Write as CborWrite,
     tags::{current_cbor_tag, Tagged},
-    to_vec, to_writer, Deserializer as CborDeserializer, Error as CborError,
-    Serializer as CborSerializer,
+    to_writer, Deserializer as CborDeserializer, Error as CborError, Serializer as CborSerializer,
 };
+use std::io::{Read, Write};
 
 /// The magic tag signifying an IPLD link.
 pub const CBOR_LINK_TAG: u64 = 42;
@@ -20,6 +20,16 @@ pub struct DagCbor;
 impl Format for DagCbor {
     const VERSION: cid::Version = cid::Version::V1;
     const CODEC: cid::Codec = cid::Codec::DagCBOR;
+
+    // type Encoder<W: Write> = CborSerializer<W>;
+    // type Decoder<R: Read> = CborDeserializer<R>;
+
+    // fn encoder<W: Write>(writer: W) -> Self::Encoder<W> {
+    //     unimplemented!()
+    // }
+    // fn decoder<'de, R: Read>(reader: R) -> Self::Decoder<R> {
+    //     unimplemented!()
+    // }
 
     // type Encoder = CborSerializer;
     // type Decoder = CborDeserializer;
@@ -32,35 +42,21 @@ impl Format for DagCbor {
     //     CborSerializer::from_reader(reader)
     // }
 
-    // fn encode<S>(dag: &S) -> Result<Box<[u8]>, Self::Error>
-    // where
-    //     S: Serialize,
-    // {
-    //     Ok(to_vec(dag)?.into())
-    // }
+    fn write<T, W>(dag: &T, writer: W) -> Result<(), Error>
+    where
+        T: Representation + Serialize,
+        W: Write,
+    {
+        to_writer(writer, dag).map_err(|e| Error::Encoder(anyhow::Error::new(e)))
+    }
 
-    // fn decode<'de, D>(bytes: &'de [u8]) -> Result<D, Self::Error>
-    // where
-    //     D: Deserialize<'de>,
-    // {
-    //     Ok(from_slice(bytes)?)
-    // }
-
-    // fn write<S, W>(dag: &S, writer: W) -> Result<(), Self::Error>
-    // where
-    //     S: Serialize,
-    //     W: Write,
-    // {
-    //     Ok(to_writer(writer, dag)?)
-    // }
-
-    // fn read<D, R>(reader: R) -> Result<D, Self::Error>
-    // where
-    //     D: DeserializeOwned,
-    //     R: Read,
-    // {
-    //     Ok(from_reader(reader)?)
-    // }
+    fn read<T, R>(reader: R) -> Result<T, Error>
+    where
+        T: Representation + for<'de> Deserialize<'de>,
+        R: Read,
+    {
+        from_reader(reader).map_err(|e| Error::Decoder(anyhow::Error::new(e)))
+    }
 }
 
 impl<'a, W: CborWrite> Encoder for &'a mut CborSerializer<W> {

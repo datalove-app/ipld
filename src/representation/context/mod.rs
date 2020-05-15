@@ -21,7 +21,7 @@ pub trait Context {
     // /// ```
     // /// Context::write(&ipld).await?;
     // /// ```
-    // async fn write<R, B>(&self, ipld: &R, block_meta: B) -> Result<(), ()>
+    // async fn write<B, R>(&self, dag: &R, block_meta: B) -> Result<(), ()>
     // where
     //     R: Representation,
     //     B: Into<BlockMeta>;

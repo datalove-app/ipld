@@ -3,13 +3,15 @@
 //! Outputs a statically-typed instance of `Selector`, checked against the schemas of the input type (as well as any nested types), and the desired output type.
 //!
 //! # Syntax:
-//! ```edition2018
+//! TODO:
+//! ```text
 //! /// Selects the 'parent' of a blockchain block.
-//! let ParentSelector = selector!(BlockchainBlock,
-//!     fields('parent'(
+//! let ParentSelector = selector! {
+//!     #[ipld_attr(root = BlockchainBlock)]
+//!     fields("parent"(
 //!         match
-//!     ))
-//! )
+//!     ));
+//! };
 //! ```
 //!
 // TODO? impl should look roughly like:

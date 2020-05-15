@@ -10,13 +10,14 @@ pub use context::*;
 pub use executor::*;
 
 use crate::dev::*;
+use downcast_rs::{impl_downcast, Downcast};
 // use crate::selectors::args as Args;
 use futures::{
     future::FutureExt,
     task::{Context as Cx, Poll},
 };
 use pin_utils::unsafe_pinned;
-use std::{convert::TryFrom, fmt, pin::Pin};
+use std::{any::Any, convert::TryFrom, fmt, pin::Pin};
 
 /// TODO: represents Schema or Representation kind?
 #[derive(Debug, Eq, Hash, PartialEq)]
@@ -121,7 +122,7 @@ pub enum Fields {
 ///         - TODO: ? stateful visitor derived from selector + type?
 ///         - TODO: ? impl DeserializeSeed for selector?
 ///         - TODO: ? Representation::visitor(selector: &Selector)
-pub trait Representation: Serialize + for<'de> Deserialize<'de> {
+pub trait Representation {
     /// The stringified name of the IPLD type.
     const NAME: &'static str;
     // /// The stringified IPLD typedef.
@@ -148,42 +149,109 @@ pub trait Representation: Serialize + for<'de> Deserialize<'de> {
     // fn to_owned(&self) -> Self;
 }
 
-pub trait RepresentationExt<T: Representation>: Representation {
-    const NAME: &'static str;
+impl<'a, T> Representation for &'a T
+where
+    T: Representation,
+{
+    const NAME: &'static str = T::NAME;
 }
+
+impl<'a, T> Representation for &'a mut T
+where
+    T: Representation,
+{
+    const NAME: &'static str = T::NAME;
+}
+
+// #[async_trait]
+pub trait RepresentationExt<T: Representation>: Representation {
+    // fn resolve(self)
+}
+
+///
+/// TODO: possibly look at erased-serde to complete this "hack"
+#[doc(hidden)]
+pub trait ObjectSafeRepresentation: Downcast {}
+impl<T: Representation + 'static> ObjectSafeRepresentation for T {}
+impl_downcast!(ObjectSafeRepresentation);
 
 // TODO: impl the Entry pattern, so you can use matched results to update the tree
-pub struct Selection {
+// TODO rename to Match
+// TODO refactor to hold a ref
+pub struct Selection<'a> {
     label: Option<String>,
-    matched: Option<Box<dyn ObjectSafeRepresentation>>,
+    matched: &'a dyn ObjectSafeRepresentation,
+}
+
+impl<'a> Selection<'a> {
+    ///
+    #[inline]
+    pub fn new<T>(matched: &'a T, label: Option<String>) -> Self
+    where
+        T: Representation + 'static,
+    {
+        Selection { label, matched }
+    }
+
+    ///
+    #[inline]
+    pub fn label(&self) -> &Option<String> {
+        &self.label
+    }
+
+    #[inline]
+    pub fn downcast<T>(&self) -> Option<&'a T>
+    where
+        T: Representation + 'static,
+    {
+        self.matched.downcast_ref::<T>()
+    }
+}
+
+impl<'a, T> From<&'a T> for Selection<'a>
+where
+    T: Representation + 'static,
+{
+    #[inline]
+    fn from(matched: &'a T) -> Self {
+        Selection {
+            label: None,
+            matched,
+        }
+    }
+}
+
+pub struct SelectionMut<'a> {
+    label: Option<String>,
+    matched: &'a mut dyn ObjectSafeRepresentation,
 }
 
 ///
-pub type SelectionResult = Result<Selection, Error>;
-
-///
-#[must_use = "SelectionStreams do nothing unless polled"]
-pub struct SelectionStream {
+#[must_use = "Streams do nothing unless polled"]
+pub struct SelectionStream<'a, T> {
     // TODO: pin vs box?
-    inner: Pin<Box<dyn Stream<Item = SelectionResult>>>,
+    inner: Pin<Box<dyn Stream<Item = Result<T, Error>> + 'a>>,
 }
 
 // impl Unpin for SelectionStream {}
 
-impl SelectionStream {
-    // TODO:
-    unsafe_pinned!(inner: dyn Stream<Item = SelectionResult>);
+impl<'a, T: 'a> SelectionStream<'a, T> {
+    // TODO: requires that the stream be wrapped in a pinbox - why?
+    unsafe_pinned!(inner: dyn Stream<Item = Result<T, Error>>);
 
     ///
-    pub fn of(matched: SelectionResult) -> Self {
-        // let matched = matched.into();
-        SelectionStream::from(async { matched }.into_stream())
+    pub fn ok(t: T) -> Self {
+        SelectionStream::from(async { Ok(t) }.into_stream())
+    }
+
+    pub fn err(err: Error) -> Self {
+        SelectionStream::from(async { Err(err) }.into_stream())
     }
 
     ///
     pub fn from<S>(inner: S) -> Self
     where
-        S: Stream<Item = SelectionResult> + 'static,
+        S: Stream<Item = Result<T, Error>> + 'a,
     {
         SelectionStream {
             inner: Box::pin(inner),
@@ -191,8 +259,8 @@ impl SelectionStream {
     }
 }
 
-impl Stream for SelectionStream {
-    type Item = SelectionResult;
+impl<'a, T> Stream for SelectionStream<'a, T> {
+    type Item = Result<T, Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Cx<'_>) -> Poll<Option<Self::Item>> {
         self.inner.as_mut().poll_next(cx)
     }
@@ -202,33 +270,60 @@ impl Stream for SelectionStream {
 }
 
 ///
-/// TODO: possibly look at erased-serde to complete this "hack"
-#[doc(hidden)]
-pub trait ObjectSafeRepresentation {}
-impl<T: Representation> ObjectSafeRepresentation for T {}
-
-///
 ///
 
 ///
-pub trait Select<S, Ctx = DefaultContext>: Representation
+pub trait Select<S = Selector, Ctx = DefaultContext>: Representation + 'static
 where
     S: ISelector,
     Ctx: Context,
 {
+    /// Selects zero or more ...
+    ///
+    /// for link
+    /// -
+    /// for everything else
+    /// -
+    ///
     /// TODO? executor<'a, Ctx>, ...
-    fn select(
-        self,
+    fn select<'a>(
+        &'a self,
         selector: &S,
         // context: &Ctx,
         // executor: &Executor<'a, Ctx>,
-    ) -> SelectionStream;
+    ) -> SelectionStream<'a, Selection<'a>>;
 
-    /// `Deserialize`s a selection of the given type against a `Selector`.
+    // fn select_mut(
+    //     &mut self,
+    //     selector: &S,
+    //     // context: &Ctx,
+    //     // executor: &Executor<'a, Ctx>,
+    // ) -> SelectionStream<&mut dyn ObjectSafeRepresentation> {
+    //     unimplemented!()
+    // }
+
+    // ///
+    // /// for link:
+    // /// - fails if ...
+    // /// - creates a stub encoder (wrapping a Write and an Encoder)
+    // /// - then recurses
+    // /// for everything else
+    // /// - either match and serialize itself to encoder
+    // /// - or decide where to go next
+    // #[inline]
+    // fn encode<'a, E>(&self, selector: &'a S, encoder: E) -> Result<E::Ok, E::Error>
+    // where
+    //     E: Encoder,
+    // {
+    //     unimplemented!()
+    // }
+
+    /// `Deserialize`s a selection of the type from a `Decoder` using a `Selector`.
     #[inline]
     fn decode<'de, D>(selector: &'de S, decoder: D) -> Result<Self, D::Error>
     where
-        D: Decoder<'de>;
+        D: Decoder<'de>,
+        Self: Deserialize<'de>;
 
     ///
     /// TODO
@@ -245,96 +340,128 @@ where
     Ctx: Context,
     T: Representation + 'static,
 {
+    // TODO: handle conditionals, probably using same similar macro to impl_select!
     #[inline]
-    fn select(
-        self,
+    fn select<'a>(
+        &'a self,
         selector: &Matcher,
         // context: &Ctx,
         // executor: &Executor<'a, Ctx>,
-    ) -> SelectionStream {
-        // TODO: handle condition, probably using same similar macro to impl_select!
-        SelectionStream::of(Ok(Selection {
-            label: selector.label.clone(),
-            matched: Some(Box::new(self)),
-        }))
+    ) -> SelectionStream<'a, Selection<'a>> {
+        SelectionStream::ok(Selection::new(self, selector.label.clone()))
     }
 
-    // TODO: support conditionals
+    // TODO: handle conditionals
     #[inline]
     fn decode<'de, D>(_selector: &'de Matcher, decoder: D) -> Result<Self, D::Error>
     where
         D: Decoder<'de>,
+        Self: Deserialize<'de>,
     {
         T::deserialize(decoder)
     }
 }
 
-/// Helper macro that `impl Select<Selector, Ctx> for T`.
+// TODO: how to decode? cache decoded value?
+///
+// impl<Ctx, T> Select<ExploreUnion, Ctx> for T
+// where
+//     Ctx: Context,
+//     T: Representation + 'static,
+// {
+//     #[inline]
+//     fn select(
+//         self,
+//         selector: &Matcher,
+//         // context: &Ctx,
+//         // executor: &Executor<'a, Ctx>,
+//     ) -> SelectionStream {
+//         // TODO: handle condition, probably using same similar macro to impl_select!
+//         SelectionStream::ok(Ok(Selection {
+//             label: selector.label.clone(),
+//             matched: Some(Box::new(self)),
+//         }))
+//     }
+
+//     // TODO: support conditionals
+//     #[inline]
+//     fn decode<'de, D>(_selector: &'de Matcher, decoder: D) -> Result<Self, D::Error>
+//     where
+//         D: Decoder<'de>,
+//     {
+//         T::deserialize(decoder)
+//     }
+// }
+
+/// Helper macro that `impl Select<Selector, Ctx> for T where T: Representation`.
 ///
 /// Takes as parameters the type name, optional type bounds on `Ctx`, and the
 /// `Selector`s for which the type already implements `Select`.
+#[doc(hidden)]
 #[macro_export]
 macro_rules! impl_root_select {
     // TODO: support additional bounds
-    // shorthand syntax
-    ($name:ident => $($ISelector:ident),*) => {
-        $crate::impl_root_select!($name, Ctx: => $($ISelector),*);
-    };
-    // main
-    ($name:ident, Ctx : $($ctx:ident),* => $($ISelector:ident),*) => {
-        $crate::impl_root_select!(@impl_ $name, Ctx: $($ctx),* => $($ISelector),*);
-    };
     // select def
-    (@impl_ $name:ident, Ctx : $($ctx:ident),* => $($ISelector:ident),*) => {
+    ($name:ty => $($ISelector:ident),*) => {
         impl<Ctx> $crate::Select<$crate::Selector, Ctx> for $name
         where
-            Ctx: $crate::Context $(+ $ctx)*,
+            Ctx: $crate::Context,
         {
-            $crate::impl_root_select!(@select $name => $($ISelector),*);
-            $crate::impl_root_select!(@decode $name => $($ISelector),*);
-            $crate::impl_root_select!(@validate $name => $($ISelector),*);
+            $crate::impl_root_select!(@methods $($ISelector),*);
         }
     };
-    (@select $name:ident => $($ISelector:ident),*) => {
+    // generic def, where you write your own impl header
+    ($($ISelector:ident),* { $($header:tt)* }) => {
+        $($header)* {
+            $crate::impl_root_select!(@methods $($ISelector),*);
+        }
+    };
+    (@methods $($ISelector:ident),*) => {
+        $crate::impl_root_select!(@select $($ISelector),*);
+        $crate::impl_root_select!(@decode $($ISelector),*);
+        $crate::impl_root_select!(@validate $($ISelector),*);
+    };
+    (@select $($ISelector:ident),*) => {
         /// Delegates directly to the `ISelector` contained within the given
         /// `Selector`. See [`Select::select`]() for more information.
-        // fn select<Ctx: FromContext<NewCtx>>(
+        /// todo fn select<Ctx: FromContext<NewCtx>>(
         #[inline]
-        fn select(
-            self,
+        fn select<'a>(
+            &'a self,
             selector: &$crate::Selector,
             // context: &Ctx,
             // executor: &Executor<'a, Ctx>,
-        ) -> $crate::SelectionStream {
+        ) -> $crate::SelectionStream<'a, Selection<'a>> {
             use $crate::{selectors::*, Error, Select, SelectionStream};
             match selector {
                 $(Selector::$ISelector(sel) => {
-                    <$name as Select<$ISelector, Ctx>>::select(self, sel)
+                    <Self as Select<$ISelector, Ctx>>::select(self, sel)
                 },)*
-                sel => SelectionStream::of(Err(Error::unsupported_selector::<$name, Selector>(sel))),
+                sel => SelectionStream::err(Error::unsupported_selector::<Self, Selector>(sel)),
             }
         }
     };
-    (@decode $name:ident => $($ISelector:ident),*) => {
+    (@decode $($ISelector:ident),*) => {
         /// Delegates directly to the `ISelector` contained within the given
         /// `Selector`. See [`Select::decode`]() and [`serde::de::DeserializeSeed`]() for more information.
         #[inline]
         fn decode<'de, D>(selector: &'de $crate::Selector, decoder: D) -> Result<Self, D::Error>
         where
             D: $crate::Decoder<'de>,
+            Self: $crate::dev::Deserialize<'de>
         {
             use $crate::{dev::serde::de, selectors::*, Error};
             match selector {
                 $(Selector::$ISelector(sel) => {
-                    <$name as Select<$ISelector, Ctx>>::decode(sel, decoder)
+                    <Self as Select<$ISelector, Ctx>>::decode(sel, decoder)
                 },)*
                 sel => Err(de::Error::custom(
-                    Error::unsupported_selector::<$name, Selector>(sel)
+                    Error::unsupported_selector::<Self, Selector>(sel)
                 )),
             }
         }
     };
-    (@validate $name:ident => $($ISelector:ident),*) => {
+    (@validate $($ISelector:ident),*) => {
         /// Delegates directly to the `ISelector` contained within the given
         /// `Selector`. See [`Select::validate`]() for more information.
         #[inline]
@@ -342,9 +469,9 @@ macro_rules! impl_root_select {
             use $crate::{selectors::*, Error, Select};
             match selector {
                 $(Selector::$ISelector(sel) => {
-                    <$name as Select<$ISelector, Ctx>>::validate(sel)
+                    <Self as Select<$ISelector, Ctx>>::validate(sel)
                 },)*
-                sel => Err(Error::unsupported_selector::<$name, Selector>(sel)),
+                sel => Err(Error::unsupported_selector::<Self, Selector>(sel)),
             }
         }
     };

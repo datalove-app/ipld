@@ -6,8 +6,8 @@
 //!     - type implements Context
 #![allow(non_camel_case_types)]
 use crate::dev::*;
-use macros::{derive_more::From, schema};
-use std::{marker::PhantomData, ops::Deref};
+use macros::derive_more::From;
+use std::{marker::PhantomData, ops::Deref, rc::Rc};
 
 //  TODO? example impl for ExploreAll for a map:
 //  impl<K, V, S> Select<ExploreAll> for Map<K, V>
@@ -78,33 +78,42 @@ use std::{marker::PhantomData, ops::Deref};
 schema! {
     #[ipld_attr(internal)]
     #[derive(Debug, From)]
+    pub type SelectorEnvelope union {
+        | Selector "selector"
+    } representation keyed;
+}
+
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(Debug, From)]
     pub type Selector union {
         ///
         | Matcher "."
 
         ///
-        #[ipld_attr(wrapper = "Box")]
+        #[ipld_attr(wrapper = "Rc")]
         | ExploreAll "a"
 
         ///
         | ExploreFields "f"
 
         ///
-        #[ipld_attr(wrapper = "Box")]
+        #[ipld_attr(wrapper = "Rc")]
         | ExploreIndex "i"
 
         ///
-        #[ipld_attr(wrapper = "Box")]
+        #[ipld_attr(wrapper = "Rc")]
         | ExploreRange "r"
 
         ///
-        #[ipld_attr(wrapper = "Box")]
+        #[ipld_attr(wrapper = "Rc")]
         | ExploreRecursive "R"
-        //
-        // | ExploreUnion "|"
 
         ///
-        #[ipld_attr(wrapper = "Box")]
+        | ExploreUnion "|"
+
+        ///
+        #[ipld_attr(wrapper = "Rc")]
         | ExploreConditional "&"
 
         ///
@@ -190,11 +199,12 @@ schema! {
     pub type ExploreRecursiveEdge struct {};
 }
 
-// schema! {
-//     #[ipld_attr(internal)]
-//     #[derive(Debug)]
-//     pub type ExploreUnion [Selector];
-// }
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(Debug)]
+    pub type ExploreUnion null;
+    // TODO: pub type ExploreUnion [Selector];
+}
 
 schema! {
     ///
@@ -273,32 +283,61 @@ schema! {
     pub type Condition_Or struct {};
 }
 
-/// A thin, typed wrapper around a `&Selector` and the type the `Selector` is
-/// being deserialized with via `DeserializeSeed`.
-pub struct SelectorSeed<'a, S, T> {
-    selector: &'a S,
-    inner: PhantomData<T>,
+pub enum Selection2<'a, S, T> {
+    Complete(T),
+    Partial { selector: &'a S, representation: T },
 }
 
-impl<'a, S, T> SelectorSeed<'a, S, T> {
-    pub const fn into(self) -> &'a S {
+/// A thin, typed wrapper around a `&Selector` and the type the `Selector` is
+/// being deserialized with via `DeserializeSeed`.
+pub struct SelectorSeed<'a, T, S> {
+    selector: &'a S,
+    _type: PhantomData<T>,
+}
+
+impl<'a, T, S> SelectorSeed<'a, T, S>
+where
+    T: Select<S>,
+    S: ISelector,
+{
+    fn into(self) -> &'a S {
         self.selector
     }
+}
 
-    pub const fn from(selector: &'a S) -> Self {
+impl<'a, T, S> From<&'a S> for SelectorSeed<'a, T, S>
+where
+    T: Select<S>,
+    S: ISelector,
+{
+    fn from(selector: &'a S) -> Self {
         Self {
             selector,
-            inner: PhantomData,
+            _type: PhantomData,
         }
     }
 }
 
+// impl<'a, T, S> SelectorSeed<'a, T, S> {
+//     pub const fn into(self) -> &'a S {
+//         self.selector
+//     }
+
+//     pub const fn from(selector: &'a S) -> Self {
+//         Self {
+//             selector,
+//             _type: PhantomData,
+//         }
+//     }
+// }
+
 /// Blanket implementation that directly delegates to `Select::decode`.
-impl<'de, S, T> DeserializeSeed<'de> for SelectorSeed<'de, S, T>
+impl<'de, T, S> DeserializeSeed<'de> for SelectorSeed<'de, T, S>
 where
+    T: Select<S> + Deserialize<'de>,
     S: ISelector,
-    T: Select<S>,
 {
+    // TODO: make this a Complete(T)/Partial(T, &'a S) type
     type Value = T;
     // TODO: support conditionals
     #[inline]
@@ -317,11 +356,11 @@ pub trait ISelector: Representation + private::Sealed {}
 impl ISelector for Selector {}
 impl ISelector for Matcher {}
 impl ISelector for ExploreAll {}
-// impl ISelector for ExploreFields {}
+impl ISelector for ExploreFields {}
 impl ISelector for ExploreIndex {}
 impl ISelector for ExploreRange {}
 impl ISelector for ExploreRecursive {}
-// impl ISelector for ExploreUnion {}
+impl ISelector for ExploreUnion {}
 impl ISelector for ExploreConditional {}
 impl ISelector for ExploreRecursiveEdge {}
 
@@ -419,27 +458,27 @@ mod private {
     impl Sealed for Selector {}
     impl Sealed for Matcher {}
     impl Sealed for ExploreAll {}
-    // impl Sealed for ExploreFields {}
+    impl Sealed for ExploreFields {}
     impl Sealed for ExploreIndex {}
     impl Sealed for ExploreRange {}
     impl Sealed for ExploreRecursive {}
-    // impl Sealed for ExploreUnion {}
+    impl Sealed for ExploreUnion {}
     impl Sealed for ExploreConditional {}
     impl Sealed for ExploreRecursiveEdge {}
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::dev::*;
-    use ipld_macros::{schema, selector};
+    use crate::prelude::*;
 
     schema! {
+        #[ipld_attr(internal)]
         #[derive(Debug)]
         type Nullish null;
     }
 
     schema! {
+        #[ipld_attr(internal)]
         #[derive(Debug, PartialEq)]
         type Test struct {
             field1 Int,
@@ -457,7 +496,7 @@ mod tests {
         // let executor = Executor
 
         let sel1 = selector! {
-            // #[ipld_attr(internal)]
+            #[ipld_attr(internal)]
             Test,
             match(
                 label=("label")

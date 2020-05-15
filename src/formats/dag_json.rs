@@ -3,12 +3,20 @@
 use crate::dev::*;
 use delegate::delegate;
 use serde::{de, ser};
+#[cfg(not(feature = "simd"))]
 use serde_json::{
-    de::Read as JsonRead, from_reader, from_slice, to_vec, to_writer,
-    Deserializer as JsonDeserializer, Error as JsonError, Serializer as JsonSerializer,
+    de::Read as JsonRead, from_reader, to_writer, Deserializer as JsonDeserializer,
+    Error as JsonError, Serializer as JsonSerializer,
 };
-use std::fmt;
+#[cfg(feature = "simd")]
+use simd_json::{};
+use std::{
+    fmt,
+    io::{Read, Write},
+};
 
+// TODO: add support for simd-json
+#[cfg(not(feature = "simd"))]
 /// The DagJSON codec, that delegates to `serde_json`.
 pub struct DagJson;
 
@@ -16,37 +24,33 @@ impl Format for DagJson {
     const VERSION: cid::Version = cid::Version::V1;
     const CODEC: cid::Codec = cid::Codec::DagJSON;
 
+    // type Encoder<W> = JsonSerializer<W>;
+    // type Decoder<R> = JsonDeserializer<R>;
+
+    // fn encoder<W: Write>(writer: W) -> Self::Encoder<W> {
+    //     unimplemented!()
+    // }
+    // fn decoder<'de, R: Read>(reader: R) -> Self::Decoder<R> {
+    //     unimplemented!()
+    // }
+
     // type Error = JsonError;
 
-    // fn encode<S>(dag: &S) -> Result<Box<[u8]>, Self::Error>
-    // where
-    //     S: Serialize,
-    // {
-    //     Ok(to_vec(dag)?.into())
-    // }
+    fn write<T, W>(dag: &T, writer: W) -> Result<(), Error>
+    where
+        T: Representation + Serialize,
+        W: Write,
+    {
+        to_writer(writer, dag).map_err(|e| Error::Encoder(anyhow::Error::new(e)))
+    }
 
-    // fn decode<'de, D>(bytes: &'de [u8]) -> Result<D, Self::Error>
-    // where
-    //     D: Deserialize<'de>,
-    // {
-    //     Ok(from_slice(bytes)?)
-    // }
-
-    // fn write<S, W>(dag: &S, writer: W) -> Result<(), Self::Error>
-    // where
-    //     S: Serialize,
-    //     W: Write,
-    // {
-    //     Ok(to_writer(writer, dag)?)
-    // }
-
-    // fn read<D, R>(reader: R) -> Result<D, Self::Error>
-    // where
-    //     D: DeserializeOwned,
-    //     R: Read,
-    // {
-    //     Ok(from_reader(reader)?)
-    // }
+    fn read<T, R>(reader: R) -> Result<T, Error>
+    where
+        T: Representation + for<'de> Deserialize<'de>,
+        R: Read,
+    {
+        from_reader(reader).map_err(|e| Error::Decoder(anyhow::Error::new(e)))
+    }
 }
 
 impl<'a, W: Write> Encoder for &'a mut JsonSerializer<W> {
@@ -189,6 +193,7 @@ enum MapLikeVisitor {
 impl<'de> Deserialize<'de> for MapLikeVisitor {
     /// Will either deserialize a string (as a link), or a map (as bytes) -
     /// anything else is an error.
+    #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -237,7 +242,7 @@ impl<'de> Visitor<'de> for MapLikeVisitor {
             "expected a base64 multibase-encoded string",
         )))?;
 
-        if multibase::Base::Base64.eq(&mb) {
+        if Multibase::Base64.eq(&mb) {
             Ok(MapLikeVisitor::Bytes(bytes))
         } else {
             Err(de::Error::custom(
@@ -247,7 +252,7 @@ impl<'de> Visitor<'de> for MapLikeVisitor {
     }
 }
 
-/// Wraps a `MapAccess` that had it's first key removed.
+/// Wraps a `MapAccess` thats had it's first key removed.
 struct MapAccessor<'de, A> {
     first_key: Option<&'de str>,
     map: A,
@@ -256,6 +261,7 @@ struct MapAccessor<'de, A> {
 impl<'de, A: de::MapAccess<'de>> de::MapAccess<'de> for MapAccessor<'de, A> {
     type Error = A::Error;
 
+    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: de::DeserializeSeed<'de>,
@@ -281,20 +287,48 @@ impl<'de, A: de::MapAccess<'de>> de::MapAccess<'de> for MapAccessor<'de, A> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_null() {}
+    use super::_formats::test_utils::test_encode_str;
+    use crate::dev::*;
+    use std::fmt::Debug;
+
+    fn test_encode<T>(errors: &[(T, &str)])
+    where
+        T: PartialEq + Debug + Representation + Serialize,
+    {
+        test_encode_str::<DagJson, T>(errors)
+    }
 
     #[test]
-    fn test_bool() {}
+    fn test_null() {
+        // let tests = &[((), "null")];
+        // test_encode(tests);
+        // let tests = &[(None as Option<()>, "null")];
+        // test_encode(tests);
+    }
 
     #[test]
-    fn test_number() {}
+    fn test_bool() {
+        let tests = &[(true, "true"), (false, "false")];
+        test_encode(tests);
+    }
 
     #[test]
-    fn test_string() {}
+    fn test_number() {
+        // let tests = &[((), "null")];
+        // test_encode(tests);
+    }
 
     #[test]
-    fn test_bytes() {}
+    fn test_string() {
+        // let tests = &[("hello world", "hello world")];
+        // test_encode(tests);
+    }
+
+    #[test]
+    fn test_bytes() {
+        // let tests = &[((), "null")];
+        // test_encode(tests);
+    }
 
     #[test]
     fn test_link() {}

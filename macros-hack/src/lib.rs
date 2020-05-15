@@ -19,13 +19,14 @@ pub fn schema(input: TokenStream) -> TokenStream {
     TokenStream::from(schema.expand())
 }
 
+/// A no-op macro, used to help the `schema!` and `selector!` macros capture
+/// relevant arguments.
 #[proc_macro_attribute]
 pub fn ipld_attr(_attr: TokenStream, items: TokenStream) -> TokenStream {
     items
 }
 
 ///
-/// TODO? possibly parse typedefs from strings in functions?
 #[proc_macro_hack]
 pub fn selector(input: TokenStream) -> TokenStream {
     let selector = parse_macro_input!(input as RootSelectorDefinition);

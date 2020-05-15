@@ -6,27 +6,28 @@ impl ToTokens for RootSelectorDefinition {
     // TODO:
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let def = &self.def;
+        // ? parse brackets around type?
         let root_type = &self.root_type;
 
-        let imports = if self.internal {
-            quote!(
-                use crate as _ipld;
-            )
+        let use_ipld = if self.internal {
+            quote!(use crate as _ipld)
         } else {
-            quote!(
-                extern crate ipld as _ipld;
-            )
+            quote!(extern crate ipld as _ipld)
         };
 
         tokens.append_all(quote! {{
-            #imports
+            // TODO: refactor: produce a static slice of enum SelectorArgs,
+            // ? provide it to TypedSelector::from::<T = Value>() -> Self<T>
+            // ? which calls <T as Select>::new_selector
+            // ?    e.g. let sel: T = select!()
+
+            #use_ipld;
             #[allow(unused_imports)]
             use _ipld::dev::*;
 
             let selector = #def;
-            assert!(<#root_type as Select<Selector>>::validate(&selector));
+            <#root_type as Select>::validate(&selector).unwrap();
             selector
-            // Selector::new::<#root_type>(selector)
         }});
     }
 }
@@ -42,6 +43,7 @@ impl ToTokens for SelectorDefinition {
                     .map_or(quote!(None), |l| quote!(Some(String::from(#l))));
 
                 quote! {
+                    // SelectorArgs::Matcher(#label)
                     Selector::from(Matcher::from(#label))
                 }
             }

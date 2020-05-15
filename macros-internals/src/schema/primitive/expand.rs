@@ -100,7 +100,7 @@ impl expand::ExpandBasicRepresentation for BytesReprDefinition {
             },
         )
     }
-    // TODO:
+    // TODO: add support for explore range
     fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         let name = &meta.name;
         quote!(impl_root_select!(#name => Matcher);)

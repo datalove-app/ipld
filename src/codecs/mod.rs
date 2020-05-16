@@ -12,12 +12,12 @@ use std::{
     io::{Read, Write},
 };
 
-/// An IPLD Format.
-pub trait Format {
+/// An IPLD [Codec](https://github.com/ipld/specs/blob/master/block-layer/codecs/README.md).
+pub trait Codec {
     /// Version of CID used by this codec.
     const VERSION: cid::Version;
 
-    /// Multicodec content type that identifies this IPLD Format.
+    /// Multicodec content type that identifies this IPLD Codec.
     const CODEC: cid::Codec;
 
     // type Encoder: Encoder;
@@ -183,9 +183,9 @@ pub(crate) mod test_utils {
     use crate::dev::*;
     use std::{fmt::Debug, io::Read, string::ToString};
 
-    pub fn test_bytes_codec<'de, C, T>(cases: &[(T, &'de [u8])])
+    pub fn roundtrip_bytes_codec<'de, C, T>(cases: &[(T, &'de [u8])])
     where
-        C: Format,
+        C: Codec,
         T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
     {
         for (ref dag, expected) in cases {
@@ -217,9 +217,9 @@ pub(crate) mod test_utils {
         }
     }
 
-    pub fn test_str_codec<'de, C, T>(cases: &[(T, &'de str)])
+    pub fn roundtrip_str_codec<'de, C, T>(cases: &[(T, &'de str)])
     where
-        C: Format,
+        C: Codec,
         T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
     {
         for (ref dag, expected) in cases {
@@ -242,8 +242,7 @@ pub(crate) mod test_utils {
 
             // reading
             let reader = String::from(*expected);
-            let reader = reader.as_bytes();
-            let v = C::read(reader).expect(&format!(
+            let v = C::read(reader.as_bytes()).expect(&format!(
                 "Failed to read `{}` from {}",
                 dag.name(),
                 expected,
@@ -254,7 +253,7 @@ pub(crate) mod test_utils {
 
     fn encode_to_bytes<C, T>(dag: &T) -> Result<Vec<u8>, Error>
     where
-        C: Format,
+        C: Codec,
         T: Representation + Serialize,
     {
         let mut bytes = Vec::new();
@@ -264,7 +263,7 @@ pub(crate) mod test_utils {
 
     fn encode_to_str<C, T>(dag: &T) -> Result<String, Error>
     where
-        C: Format,
+        C: Codec,
         T: Representation + Serialize,
     {
         let bytes = encode_to_bytes::<C, T>(dag)?;
@@ -273,7 +272,7 @@ pub(crate) mod test_utils {
 
     fn decode_from_bytes<'de, C, T>(bytes: &'de [u8]) -> Result<T, Error>
     where
-        C: Format,
+        C: Codec,
         T: Representation + Deserialize<'de>,
     {
         C::decode(bytes)
@@ -281,7 +280,7 @@ pub(crate) mod test_utils {
 
     fn decode_from_str<'de, C, T>(s: &'de str) -> Result<T, Error>
     where
-        C: Format,
+        C: Codec,
         T: Representation + Deserialize<'de>,
     {
         C::decode(s.as_bytes())

@@ -14,10 +14,10 @@ use std::io::{Read, Write};
 /// The magic tag signifying an IPLD link.
 pub const CBOR_LINK_TAG: u64 = 42;
 
-/// The DagCBOR codec, that delegates to `serde_cbor`.
+/// The [DagCBOR](https://github.com/ipld/specs/blob/master/block-layer/codecs/dag-cbor.md) codec, that delegates to `serde_cbor`.
 pub struct DagCbor;
 
-impl Format for DagCbor {
+impl Codec for DagCbor {
     const VERSION: cid::Version = cid::Version::V1;
     const CODEC: cid::Codec = cid::Codec::DagCBOR;
 
@@ -69,9 +69,8 @@ impl Format for DagCbor {
 impl<'a, W: CborWrite> Encoder for &'a mut CborSerializer<W> {
     #[inline]
     fn serialize_link(self, cid: &Cid) -> Result<Self::Ok, CborError> {
-        let vec: Vec<u8> = cid.to_bytes();
-        let bytes: &[u8] = vec.as_ref();
-        Tagged::new(Some(CBOR_LINK_TAG), bytes).serialize(self)
+        let bytes: Vec<u8> = cid.to_bytes();
+        Tagged::new(Some(CBOR_LINK_TAG), bytes.as_slice()).serialize(self)
     }
 }
 

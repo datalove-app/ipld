@@ -20,6 +20,7 @@ use macros::derive_more::{Add, AsRef, From, Into, Mul, Sum};
 //     #[ipld_attr(internal)]
 //     pub type Value union {
 //         | Null null
+//         | Bool bool
 //         | Int int
 //         | Float float
 //         | String string
@@ -35,6 +36,12 @@ schema! {
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     pub type Null null;
 }
+
+// schema! {
+//     #[ipld_attr(internal)]
+//     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+//     pub type Bool bool;
+// }
 
 schema! {
     ///

@@ -15,14 +15,16 @@ use std::{
     io::{Read, Write},
 };
 
-const MULTIBASE: Multibase = Multibase::Base64;
+/// All bytes are encoded with the multibase `base64` w/o padding, resulting
+/// in the prefix `"m"`.
+pub const BYTES_MULTIBASE: Multibase = Multibase::Base64;
 
 // TODO: add support for simd-json
 #[cfg(not(feature = "simd"))]
-/// The DagJSON codec, that delegates to `serde_json`.
+/// The [DagJSON](https://github.com/ipld/specs/blob/master/block-layer/codecs/dag-json.md) codec, that delegates to `serde_json`.
 pub struct DagJson;
 
-impl Format for DagJson {
+impl Codec for DagJson {
     const VERSION: cid::Version = cid::Version::V1;
     const CODEC: cid::Codec = cid::Codec::DagJSON;
 
@@ -70,7 +72,7 @@ impl<'a, W: Write> Encoder for &'a mut JsonSerializer<W> {
         use ser::SerializeStructVariant as SV;
 
         let mut sv = self.serialize_struct_variant("", 0, "/", 1)?;
-        SV::serialize_field(&mut sv, "base64", &multibase::encode(MULTIBASE, bytes))?;
+        SV::serialize_field(&mut sv, "bytes", &multibase::encode(BYTES_MULTIBASE, bytes))?;
         SV::end(sv)
     }
 
@@ -233,25 +235,24 @@ impl<'de> Visitor<'de> for MapLikeVisitor {
     where
         A: de::MapAccess<'de>,
     {
-        let (base, s): (String, String) = map.next_entry()?.ok_or_else(|| {
+        let (base, byte_str): (String, String) = map.next_entry()?.ok_or_else(|| {
             de::Error::custom("expected a multibase and multibase-encoded string")
         })?;
 
-        if base.as_str() != "base64" {
+        if base.as_str() != "bytes" {
             return Err(de::Error::custom(
                 "DagJSON only supports base64-encoded strings",
             ));
         }
 
-        let (mb, bytes) = multibase::decode(s)
+        let (mb, bytes) = multibase::decode(byte_str)
             .map_err(|_| de::Error::custom("expected a base64 multibase-encoded string"))?;
 
-        if Multibase::Base64.eq(&mb) {
-            Ok(MapLikeVisitor::Bytes(bytes))
-        } else {
-            Err(de::Error::custom(
+        match mb {
+            BYTES_MULTIBASE => Ok(MapLikeVisitor::Bytes(bytes)),
+            _ => Err(de::Error::custom(
                 "DagJSON only supports base64-encoded strings",
-            ))
+            )),
         }
     }
 }
@@ -291,52 +292,52 @@ impl<'de, A: de::MapAccess<'de>> de::MapAccess<'de> for MapAccessor<A> {
 
 #[cfg(test)]
 mod tests {
-    use super::_formats::test_utils;
-    use crate::prelude::*;
-    use std::fmt::Debug;
+    use crate::{_codecs::test_utils::*, prelude::*};
 
-    fn test_dag_json<'de, T>(cases: &[(T, &'de str)])
+    fn roundtrip<'de, T>(cases: &[(T, &'de str)])
     where
         T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
     {
-        test_utils::test_str_codec::<DagJson, T>(cases)
+        roundtrip_str_codec::<DagJson, T>(cases)
     }
 
     #[test]
     fn test_null() {
         let tests = &[((), "null")];
-        test_dag_json(tests);
+        roundtrip(tests);
         let tests = &[(None as Option<Int>, "null")];
-        test_dag_json(tests);
+        roundtrip(tests);
+        let tests = &[(Null, "null")];
+        roundtrip(tests);
     }
 
     #[test]
     fn test_bool() {
         let tests = &[(true, "true"), (false, "false")];
-        test_dag_json(tests);
+        roundtrip(tests);
     }
 
     #[test]
     fn test_number() {
         let tests = &[(123, "123")];
-        test_dag_json(tests);
+        roundtrip(tests);
         let tests = &[(123.123, "123.123")];
-        test_dag_json(tests);
+        roundtrip(tests);
     }
 
     #[test]
     fn test_string() {
         let tests = &[(String::from("hello world"), "\"hello world\"")];
-        test_dag_json(tests);
+        roundtrip(tests);
     }
 
     #[test]
     fn test_bytes() {
         let tests = &[(
             Bytes::from(vec![0x01, 0x02, 0x03]),
-            "{\"/\":{\"base64\":\"mAQID\"}}",
+            r#"{"/":{"bytes":"mAQID"}}"#,
         )];
-        test_dag_json(tests);
+        roundtrip(tests);
     }
 
     #[test]
@@ -345,7 +346,7 @@ mod tests {
         //     Cid::from("QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n"),
         //     "{\"/\":\"QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n\"}",
         // )];
-        // test_dag_json(tests);
+        // roundtrip(tests);
     }
 
     #[test]

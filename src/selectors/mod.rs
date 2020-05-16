@@ -243,41 +243,49 @@ schema! {
 }
 
 schema! {
+    ///
     #[ipld_attr(internal)]
     #[derive(Debug)]
     pub type Condition_HasField struct {};
 }
 schema! {
+    ///
     #[ipld_attr(internal)]
     #[derive(Debug)]
     pub type Condition_HasValue struct {};
 }
 schema! {
+    ///
     #[ipld_attr(internal)]
     #[derive(Debug)]
     pub type Condition_HasKind struct {};
 }
 schema! {
+    ///
     #[ipld_attr(internal)]
     #[derive(Debug)]
     pub type Condition_IsLink struct {};
 }
 schema! {
+    ///
     #[ipld_attr(internal)]
     #[derive(Debug)]
     pub type Condition_GreaterThan struct {};
 }
 schema! {
+    ///
     #[ipld_attr(internal)]
     #[derive(Debug)]
     pub type Condition_LessThan struct {};
 }
 schema! {
+    ///
     #[ipld_attr(internal)]
     #[derive(Debug)]
     pub type Condition_And struct {};
 }
 schema! {
+    ///
     #[ipld_attr(internal)]
     #[derive(Debug)]
     pub type Condition_Or struct {};

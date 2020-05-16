@@ -287,51 +287,61 @@ impl<'de, A: de::MapAccess<'de>> de::MapAccess<'de> for MapAccessor<'de, A> {
 
 #[cfg(test)]
 mod tests {
-    use super::_formats::test_utils::test_encode_str;
-    use crate::dev::*;
+    use super::_formats::test_utils;
+    use crate::prelude::*;
     use std::fmt::Debug;
 
-    fn test_encode<T>(errors: &[(T, &str)])
+    fn test_str<T>(cases: &[(T, &str)])
     where
-        T: PartialEq + Debug + Representation + Serialize,
+        T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
     {
-        test_encode_str::<DagJson, T>(errors)
+        test_utils::test_str::<DagJson, T>(cases)
     }
 
     #[test]
     fn test_null() {
-        // let tests = &[((), "null")];
-        // test_encode(tests);
-        // let tests = &[(None as Option<()>, "null")];
-        // test_encode(tests);
+        let tests = &[((), "null")];
+        test_str(tests);
+        let tests = &[(None as Option<()>, "null")];
+        test_str(tests);
     }
 
     #[test]
     fn test_bool() {
         let tests = &[(true, "true"), (false, "false")];
-        test_encode(tests);
+        test_str(tests);
     }
 
     #[test]
     fn test_number() {
-        // let tests = &[((), "null")];
-        // test_encode(tests);
+        let tests = &[(123, "123")];
+        test_str(tests);
+        let tests = &[(123.123, "123.123")];
+        test_str(tests);
     }
 
     #[test]
     fn test_string() {
-        // let tests = &[("hello world", "hello world")];
-        // test_encode(tests);
+        let dag = String::from("hello world");
+        let tests = &[(dag, "\"hello world\"")];
+        test_str(tests);
     }
 
     #[test]
     fn test_bytes() {
-        // let tests = &[((), "null")];
-        // test_encode(tests);
+        let dag = Bytes::from(vec![0x01, 0x02, 0x03]);
+        let tests = &[(dag.clone(), "{\"/\":{\"base64\":\"AQID\"}}")];
+        test_str(tests);
     }
 
     #[test]
-    fn test_link() {}
+    fn test_link() {
+        // let tests = &[(
+        //     Cid::from("QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n"),
+        //     "{\"/\":\"QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n\"}",
+        // )];
+        // test_str(tests);
+    }
 
     #[test]
     fn test_seq() {}

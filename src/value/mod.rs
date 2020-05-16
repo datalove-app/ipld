@@ -15,19 +15,6 @@ pub use map::Map;
 use crate::dev::*;
 use macros::derive_more::{Add, AsRef, From, Into, Mul, Sum};
 
-schema! {
-    #[ipld_attr(internal)]
-    #[derive(Debug, Eq, Hash, PartialEq)]
-    pub type Null null;
-}
-
-schema! {
-    #[ipld_attr(internal)]
-    #[derive(AsRef, Debug, From, Eq, Hash, PartialEq)]
-    #[as_ref(forward)]
-    pub type Bytes bytes;
-}
-
 // schema! {
 //     #[ipld_macros_internal]
 //     pub type Value union {
@@ -42,12 +29,25 @@ schema! {
 //     } representation kinded;
 // }
 
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+    pub type Null null;
+}
+
+schema! {
+    #[ipld_attr(internal)]
+    #[derive(AsRef, Clone, Debug, Eq, From, Hash, PartialEq)]
+    #[as_ref(forward)]
+    #[from(forward)]
+    pub type Bytes bytes;
+}
+
 macro_rules! def_num {
     (@int $name:ident $type:ident) => {
         schema! {
             #[ipld_attr(internal)]
             #[derive(AsRef, Debug, Eq, From, Hash, Into, PartialEq, Ord, PartialOrd, Add, Mul, Sum)]
-            // #[from(forward)]
             #[as_ref(forward)]
             pub type $name $type;
         }
@@ -57,7 +57,6 @@ macro_rules! def_num {
             #[ipld_attr(internal)]
             #[derive(AsRef, Debug, From, Into, PartialEq, PartialOrd, Add, Mul, Sum)]
             #[as_ref(forward)]
-            // #[from(forward)]
             pub type $name $type;
         }
     };

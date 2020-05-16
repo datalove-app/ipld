@@ -29,7 +29,7 @@ pub trait Format {
     /// Given a `Read`, deserialize a dag.
     fn read<T, R>(reader: R) -> Result<T, Error>
     where
-        T: Representation + for<'de> Deserialize<'de>,
+        T: Representation + DeserializeOwned,
         R: Read;
 }
 
@@ -179,45 +179,64 @@ pub(crate) mod test_utils {
     //     };
     // }
 
-    pub fn test_encode_str<F, T>(errors: &[(T, &str)])
+    pub fn test_str<C, T>(cases: &[(T, &str)])
     where
-        F: Format,
-        T: PartialEq + Debug + Representation + Serialize,
+        C: Format,
+        T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
     {
-        for (ref dag, out) in errors {
+        for (ref dag, out) in cases {
             let out = out.to_string();
 
             // encoding
-            let s = encode_str::<F, T>(dag).expect(&format!(
+            let s = encode_to_str::<C, T>(dag).expect(&format!(
                 "Failed to encode {}: {:?}",
                 dag.name(),
                 dag
             ));
-            assert_eq!(s, out);
+            assert_eq!(out, s);
 
             // decoding
-            // let v = to_value(&dag).unwrap();
-            // let s = to_string(&v).unwrap();
-            // assert_eq!(s, out);
+            let v = decode_from_str::<C, T>(&out).expect(&format!(
+                "Failed to decode {}: {}",
+                dag.name(),
+                &out,
+            ));
+            assert_eq!(*dag, v);
         }
     }
 
-    fn encode_bytes<F, T>(dag: &T) -> Result<Vec<u8>, Error>
+    fn encode_to_bytes<C, T>(dag: &T) -> Result<Vec<u8>, Error>
     where
-        F: Format,
+        C: Format,
         T: Representation + Serialize,
     {
         let mut bytes = Vec::new();
-        F::write(dag, &mut bytes);
+        C::write(dag, &mut bytes);
         Ok(bytes)
     }
 
-    fn encode_str<F, T>(dag: &T) -> Result<String, Error>
+    fn encode_to_str<C, T>(dag: &T) -> Result<String, Error>
     where
-        F: Format,
+        C: Format,
         T: Representation + Serialize,
     {
-        let bytes = encode_bytes::<F, T>(dag)?;
+        let bytes = encode_to_bytes::<C, T>(dag)?;
         Ok(String::from_utf8(bytes).unwrap())
+    }
+
+    fn decode_from_bytes<C, T>(bytes: &[u8]) -> Result<T, Error>
+    where
+        C: Format,
+        T: Representation + DeserializeOwned,
+    {
+        C::read(bytes)
+    }
+
+    fn decode_from_str<C, T>(s: &str) -> Result<T, Error>
+    where
+        C: Format,
+        T: Representation + DeserializeOwned,
+    {
+        decode_from_bytes::<C, T>(s.as_bytes())
     }
 }

@@ -64,11 +64,6 @@ pub mod dev {
     pub use bytes;
     pub use futures::{self, Stream, StreamExt};
     pub use ipld_macros_internals as macros;
-    pub use serde::{
-        self,
-        de::{DeserializeOwned, DeserializeSeed, Visitor},
-        Deserialize, Deserializer, Serialize, Serializer,
-    };
     pub use serde_repr;
 }
 
@@ -81,4 +76,9 @@ pub mod prelude {
     pub use cid::{self, Cid, ToCid};
     pub use multibase::{self, Base as Multibase};
     pub use multihash::{self, Multihash, MultihashDigest, MultihashRef};
+    pub use serde::{
+        self,
+        de::{DeserializeOwned, DeserializeSeed, Visitor},
+        Deserialize, Deserializer, Serialize, Serializer,
+    };
 }

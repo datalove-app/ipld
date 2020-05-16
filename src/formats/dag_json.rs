@@ -295,47 +295,48 @@ mod tests {
     use crate::prelude::*;
     use std::fmt::Debug;
 
-    fn test_str<'de, T>(cases: &[(T, &'de str)])
+    fn test_dag_json<'de, T>(cases: &[(T, &'de str)])
     where
         T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
     {
-        test_utils::test_str::<DagJson, T>(cases)
+        test_utils::test_str_codec::<DagJson, T>(cases)
     }
 
     #[test]
     fn test_null() {
         let tests = &[((), "null")];
-        test_str(tests);
-        let tests = &[(None as Option<()>, "null")];
-        test_str(tests);
+        test_dag_json(tests);
+        let tests = &[(None as Option<Int>, "null")];
+        test_dag_json(tests);
     }
 
     #[test]
     fn test_bool() {
         let tests = &[(true, "true"), (false, "false")];
-        test_str(tests);
+        test_dag_json(tests);
     }
 
     #[test]
     fn test_number() {
         let tests = &[(123, "123")];
-        test_str(tests);
+        test_dag_json(tests);
         let tests = &[(123.123, "123.123")];
-        test_str(tests);
+        test_dag_json(tests);
     }
 
     #[test]
     fn test_string() {
-        let dag = String::from("hello world");
-        let tests = &[(dag, "\"hello world\"")];
-        test_str(tests);
+        let tests = &[(String::from("hello world"), "\"hello world\"")];
+        test_dag_json(tests);
     }
 
     #[test]
     fn test_bytes() {
-        let dag = Bytes::from(vec![0x01, 0x02, 0x03]);
-        let tests = &[(dag.clone(), "{\"/\":{\"base64\":\"mAQID\"}}")];
-        test_str(tests);
+        let tests = &[(
+            Bytes::from(vec![0x01, 0x02, 0x03]),
+            "{\"/\":{\"base64\":\"mAQID\"}}",
+        )];
+        test_dag_json(tests);
     }
 
     #[test]
@@ -344,7 +345,7 @@ mod tests {
         //     Cid::from("QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n"),
         //     "{\"/\":\"QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n\"}",
         // )];
-        // test_str(tests);
+        // test_dag_json(tests);
     }
 
     #[test]

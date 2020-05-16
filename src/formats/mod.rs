@@ -183,23 +183,58 @@ pub(crate) mod test_utils {
     use crate::dev::*;
     use std::{fmt::Debug, io::Read, string::ToString};
 
-    pub fn test_str<'de, C, T>(cases: &[(T, &'de str)])
+    pub fn test_bytes_codec<'de, C, T>(cases: &[(T, &'de [u8])])
     where
         C: Format,
         T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
     {
         for (ref dag, expected) in cases {
             // encoding
-            let s = encode_to_str::<C, T>(dag).expect(&format!(
-                "Failed to encode {}: {:?}",
+            let bytes = encode_to_bytes::<C, T>(dag).expect(&format!(
+                "Failed to encode `{}` {:?} into {:?}",
                 dag.name(),
-                dag
+                dag,
+                expected,
             ));
-            assert_eq!(expected, &s.as_str(), "Encoding failure");
+            assert_eq!(expected, &bytes.as_slice(), "Encoding failure");
+
+            // decoding
+            let v = decode_from_bytes::<'de, C, T>(expected).expect(&format!(
+                "Failed to decode `{}` from {:?}",
+                dag.name(),
+                expected,
+            ));
+            assert_eq!(*dag, v, "Decoding failure");
+
+            // reading
+            let reader = Vec::from(*expected);
+            let v = C::read(reader.as_slice()).expect(&format!(
+                "Failed to read `{}` from {:?}",
+                dag.name(),
+                expected,
+            ));
+            assert_eq!(*dag, v, "Reading failure");
+        }
+    }
+
+    pub fn test_str_codec<'de, C, T>(cases: &[(T, &'de str)])
+    where
+        C: Format,
+        T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
+    {
+        for (ref dag, expected) in cases {
+            // encoding
+            let string = encode_to_str::<C, T>(dag).expect(&format!(
+                "Failed to encode `{}` {:?} into {}",
+                dag.name(),
+                dag,
+                expected,
+            ));
+            assert_eq!(expected, &string.as_str(), "Encoding failure");
 
             // decoding
             let v = decode_from_str::<'de, C, T>(expected).expect(&format!(
-                "Failed to decode {}: {}",
+                "Failed to decode `{}` from {}",
                 dag.name(),
                 expected,
             ));
@@ -208,8 +243,11 @@ pub(crate) mod test_utils {
             // reading
             let reader = String::from(*expected);
             let reader = reader.as_bytes();
-            let v =
-                C::read(reader).expect(&format!("Failed to decode {}: {}", dag.name(), expected,));
+            let v = C::read(reader).expect(&format!(
+                "Failed to read `{}` from {}",
+                dag.name(),
+                expected,
+            ));
             assert_eq!(*dag, v, "Reading failure");
         }
     }

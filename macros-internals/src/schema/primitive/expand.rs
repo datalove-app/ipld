@@ -62,7 +62,8 @@ impl expand::ExpandBasicRepresentation for BytesReprDefinition {
         let impl_ser = expand::impl_serialize(
             meta,
             quote! {
-                <S as Encoder>::serialize_bytes(serializer, &self.0)
+                use bytes::buf::Buf;
+                <S as Encoder>::serialize_bytes(serializer, self.bytes())
             },
         );
         let (visitor, impl_visitor) = expand::impl_visitor(

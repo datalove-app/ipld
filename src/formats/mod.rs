@@ -172,13 +172,6 @@ pub(crate) mod test_utils {
     use crate::dev::*;
     use std::{fmt::Debug, io::Read, string::ToString};
 
-    // #[macro_export(local_inner_macros)]
-    // macro_rules! test_encode {
-    //     (@str $type: $expected:literal) => {
-
-    //     };
-    // }
-
     pub fn test_str<C, T>(cases: &[(T, &str)])
     where
         C: Format,
@@ -193,15 +186,15 @@ pub(crate) mod test_utils {
                 dag.name(),
                 dag
             ));
-            assert_eq!(out, s);
+            assert_eq!(out, s, "Encoding failure");
 
             // decoding
-            let v = decode_from_str::<C, T>(&out).expect(&format!(
+            let v = decode_from_str::<C, T>(out.as_str()).expect(&format!(
                 "Failed to decode {}: {}",
                 dag.name(),
                 &out,
             ));
-            assert_eq!(*dag, v);
+            assert_eq!(*dag, v, "Decoding failure");
         }
     }
 

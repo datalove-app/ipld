@@ -15,6 +15,8 @@ use std::{
     io::{Read, Write},
 };
 
+const MULTIBASE: Multibase = Multibase::Base64;
+
 // TODO: add support for simd-json
 #[cfg(not(feature = "simd"))]
 /// The DagJSON codec, that delegates to `serde_json`.
@@ -61,7 +63,7 @@ impl<'a, W: Write> Encoder for &'a mut JsonSerializer<W> {
         use ser::SerializeStructVariant as SV;
 
         let mut sv = self.serialize_struct_variant("", 0, "/", 1)?;
-        SV::serialize_field(&mut sv, "base64", &Multibase::Base64.encode(bytes))?;
+        SV::serialize_field(&mut sv, "base64", &multibase::encode(MULTIBASE, bytes))?;
         SV::end(sv)
     }
 
@@ -134,8 +136,8 @@ impl<'de, V: IpldVisitorExt<'de>> Visitor<'de> for JsonVisitor<V> {
     where
         A: de::MapAccess<'de>,
     {
-        let first_key: Option<&'de str> = map.next_key()?;
-        if first_key == Some("/") {
+        let first_key: Option<String> = map.next_key()?;
+        if let Some("/") = first_key.as_deref() {
             match map.next_value::<MapLikeVisitor>() {
                 Ok(MapLikeVisitor::Bytes(b)) => self.0.visit_byte_buf(b),
                 Ok(MapLikeVisitor::Cid(cid)) => self.0.visit_link(cid),
@@ -215,7 +217,7 @@ impl<'de> Visitor<'de> for MapLikeVisitor {
     where
         E: de::Error,
     {
-        let cid = ToCid::to_cid(s).or(Err(de::Error::custom("expected a CID")))?;
+        let cid = ToCid::to_cid(s).map_err(|_| de::Error::custom("expected a CID"))?;
         Ok(MapLikeVisitor::Cid(cid))
     }
 
@@ -224,23 +226,18 @@ impl<'de> Visitor<'de> for MapLikeVisitor {
     where
         A: de::MapAccess<'de>,
     {
-        let pair: Option<(&'de str, &'de str)> = map.next_entry()?;
-        if pair.is_none() {
-            return Err(de::Error::custom(
-                "expected a multibase and multibase-encoded string",
-            ));
-        }
+        let (base, s): (String, String) = map.next_entry()?.ok_or_else(|| {
+            de::Error::custom("expected a multibase and multibase-encoded string")
+        })?;
 
-        let (base, s) = pair.unwrap();
-        if base != "base64" {
+        if base.as_str() != "base64" {
             return Err(de::Error::custom(
                 "DagJSON only supports base64-encoded strings",
             ));
         }
 
-        let (mb, bytes) = multibase::decode(s).or(Err(de::Error::custom(
-            "expected a base64 multibase-encoded string",
-        )))?;
+        let (mb, bytes) = multibase::decode(s)
+            .map_err(|_| de::Error::custom("expected a base64 multibase-encoded string"))?;
 
         if Multibase::Base64.eq(&mb) {
             Ok(MapLikeVisitor::Bytes(bytes))
@@ -253,12 +250,12 @@ impl<'de> Visitor<'de> for MapLikeVisitor {
 }
 
 /// Wraps a `MapAccess` thats had it's first key removed.
-struct MapAccessor<'de, A> {
-    first_key: Option<&'de str>,
+struct MapAccessor<A> {
+    first_key: Option<String>,
     map: A,
 }
 
-impl<'de, A: de::MapAccess<'de>> de::MapAccess<'de> for MapAccessor<'de, A> {
+impl<'de, A: de::MapAccess<'de>> de::MapAccess<'de> for MapAccessor<A> {
     type Error = A::Error;
 
     #[inline]
@@ -266,11 +263,11 @@ impl<'de, A: de::MapAccess<'de>> de::MapAccess<'de> for MapAccessor<'de, A> {
     where
         K: de::DeserializeSeed<'de>,
     {
-        use de::value::BorrowedStrDeserializer as Deserializer;
+        use de::IntoDeserializer;
 
-        if let Some(first_key) = self.first_key {
-            self.first_key = None;
-            seed.deserialize(Deserializer::new(first_key)).map(Some)
+        if self.first_key.is_some() {
+            let first_key = self.first_key.take().unwrap();
+            seed.deserialize(first_key.into_deserializer()).map(Some)
         } else {
             self.map.next_key_seed(seed)
         }
@@ -330,7 +327,7 @@ mod tests {
     #[test]
     fn test_bytes() {
         let dag = Bytes::from(vec![0x01, 0x02, 0x03]);
-        let tests = &[(dag.clone(), "{\"/\":{\"base64\":\"AQID\"}}")];
+        let tests = &[(dag.clone(), "{\"/\":{\"base64\":\"mAQID\"}}")];
         test_str(tests);
     }
 

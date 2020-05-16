@@ -5,7 +5,7 @@ use delegate::delegate;
 use serde::{de, ser};
 #[cfg(not(feature = "simd"))]
 use serde_json::{
-    de::Read as JsonRead, from_reader, to_writer, Deserializer as JsonDeserializer,
+    de::Read as JsonRead, from_reader, from_slice, to_writer, Deserializer as JsonDeserializer,
     Error as JsonError, Serializer as JsonSerializer,
 };
 #[cfg(feature = "simd")]
@@ -38,12 +38,19 @@ impl Format for DagJson {
 
     // type Error = JsonError;
 
-    fn write<T, W>(dag: &T, writer: W) -> Result<(), Error>
+    fn encode<T, W>(dag: &T, writer: W) -> Result<(), Error>
     where
         T: Representation + Serialize,
         W: Write,
     {
         to_writer(writer, dag).map_err(|e| Error::Encoder(anyhow::Error::new(e)))
+    }
+
+    fn decode<'de, T>(bytes: &'de [u8]) -> Result<T, Error>
+    where
+        T: Representation + Deserialize<'de>,
+    {
+        from_slice(bytes).map_err(|e| Error::Decoder(anyhow::Error::new(e)))
     }
 
     fn read<T, R>(reader: R) -> Result<T, Error>
@@ -288,9 +295,9 @@ mod tests {
     use crate::prelude::*;
     use std::fmt::Debug;
 
-    fn test_str<T>(cases: &[(T, &str)])
+    fn test_str<'de, T>(cases: &[(T, &'de str)])
     where
-        T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
+        T: PartialEq + Debug + Representation + Serialize + Deserialize<'de>,
     {
         test_utils::test_str::<DagJson, T>(cases)
     }

@@ -4,7 +4,7 @@ use crate::dev::*;
 use serde::de;
 use serde_cbor::{
     de::Read as CborRead,
-    from_reader,
+    from_reader, from_slice,
     ser::Write as CborWrite,
     tags::{current_cbor_tag, Tagged},
     to_writer, Deserializer as CborDeserializer, Error as CborError, Serializer as CborSerializer,
@@ -42,12 +42,19 @@ impl Format for DagCbor {
     //     CborSerializer::from_reader(reader)
     // }
 
-    fn write<T, W>(dag: &T, writer: W) -> Result<(), Error>
+    fn encode<T, W>(dag: &T, writer: W) -> Result<(), Error>
     where
         T: Representation + Serialize,
         W: Write,
     {
         to_writer(writer, dag).map_err(|e| Error::Encoder(anyhow::Error::new(e)))
+    }
+
+    fn decode<'de, T>(bytes: &'de [u8]) -> Result<T, Error>
+    where
+        T: Representation + Deserialize<'de>,
+    {
+        from_slice(bytes).map_err(|e| Error::Decoder(anyhow::Error::new(e)))
     }
 
     fn read<T, R>(reader: R) -> Result<T, Error>

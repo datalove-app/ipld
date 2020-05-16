@@ -16,7 +16,8 @@ use crate::dev::*;
 use macros::derive_more::{Add, AsRef, From, Into, Mul, Sum};
 
 // schema! {
-//     #[ipld_macros_internal]
+//     ///
+//     #[ipld_attr(internal)]
 //     pub type Value union {
 //         | Null null
 //         | Int int
@@ -36,6 +37,7 @@ schema! {
 }
 
 schema! {
+    ///
     #[ipld_attr(internal)]
     #[derive(AsRef, Clone, Debug, Eq, From, Hash, PartialEq)]
     #[as_ref(forward)]

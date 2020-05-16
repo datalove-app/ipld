@@ -20,11 +20,22 @@ pub trait Format {
     /// Multicodec content type that identifies this IPLD Format.
     const CODEC: cid::Codec;
 
-    /// Given a dag and a `Write`, serialize it to the writer.
-    fn write<T, W>(dag: &T, writer: W) -> Result<(), Error>
+    // type Encoder: Encoder;
+    // type Decoder<'de>: Decoder<'de>;
+
+    // fn encoder<W: Write>(writer: W) -> Self::Encoder;
+    // fn decoder<'de, R: Read>(reader: R) -> Self::Decoder<'de>;
+
+    /// Given a dag and a `Write`, encode it to the writer.
+    fn encode<T, W>(dag: &T, writer: W) -> Result<(), Error>
     where
         T: Representation + Serialize,
         W: Write;
+
+    /// Given some bytes, deserialize a dag.
+    fn decode<'de, T>(bytes: &'de [u8]) -> Result<T, Error>
+    where
+        T: Representation + Deserialize<'de>;
 
     /// Given a `Read`, deserialize a dag.
     fn read<T, R>(reader: R) -> Result<T, Error>
@@ -172,27 +183,25 @@ pub(crate) mod test_utils {
     use crate::dev::*;
     use std::{fmt::Debug, io::Read, string::ToString};
 
-    pub fn test_str<C, T>(cases: &[(T, &str)])
+    pub fn test_str<'de, C, T>(cases: &[(T, &'de str)])
     where
         C: Format,
-        T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
+        T: PartialEq + Debug + Representation + Serialize + Deserialize<'de>,
     {
-        for (ref dag, out) in cases {
-            let out = out.to_string();
-
+        for (ref dag, expected) in cases {
             // encoding
             let s = encode_to_str::<C, T>(dag).expect(&format!(
                 "Failed to encode {}: {:?}",
                 dag.name(),
                 dag
             ));
-            assert_eq!(out, s, "Encoding failure");
+            assert_eq!(expected, &s.as_str(), "Encoding failure");
 
             // decoding
-            let v = decode_from_str::<C, T>(out.as_str()).expect(&format!(
+            let v = decode_from_str::<'de, C, T>(expected).expect(&format!(
                 "Failed to decode {}: {}",
                 dag.name(),
-                &out,
+                expected,
             ));
             assert_eq!(*dag, v, "Decoding failure");
         }
@@ -204,7 +213,7 @@ pub(crate) mod test_utils {
         T: Representation + Serialize,
     {
         let mut bytes = Vec::new();
-        C::write(dag, &mut bytes);
+        C::encode(dag, &mut bytes);
         Ok(bytes)
     }
 
@@ -217,19 +226,19 @@ pub(crate) mod test_utils {
         Ok(String::from_utf8(bytes).unwrap())
     }
 
-    fn decode_from_bytes<C, T>(bytes: &[u8]) -> Result<T, Error>
+    fn decode_from_bytes<'de, C, T>(bytes: &'de [u8]) -> Result<T, Error>
     where
         C: Format,
-        T: Representation + DeserializeOwned,
+        T: Representation + Deserialize<'de>,
     {
-        C::read(bytes)
+        C::decode(bytes)
     }
 
-    fn decode_from_str<C, T>(s: &str) -> Result<T, Error>
+    fn decode_from_str<'de, C, T>(s: &'de str) -> Result<T, Error>
     where
         C: Format,
-        T: Representation + DeserializeOwned,
+        T: Representation + Deserialize<'de>,
     {
-        decode_from_bytes::<C, T>(s.as_bytes())
+        C::decode(s.as_bytes())
     }
 }

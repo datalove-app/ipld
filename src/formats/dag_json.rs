@@ -297,7 +297,7 @@ mod tests {
 
     fn test_str<'de, T>(cases: &[(T, &'de str)])
     where
-        T: PartialEq + Debug + Representation + Serialize + Deserialize<'de>,
+        T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
     {
         test_utils::test_str::<DagJson, T>(cases)
     }

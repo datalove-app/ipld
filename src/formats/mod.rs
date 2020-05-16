@@ -186,7 +186,7 @@ pub(crate) mod test_utils {
     pub fn test_str<'de, C, T>(cases: &[(T, &'de str)])
     where
         C: Format,
-        T: PartialEq + Debug + Representation + Serialize + Deserialize<'de>,
+        T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
     {
         for (ref dag, expected) in cases {
             // encoding
@@ -204,6 +204,13 @@ pub(crate) mod test_utils {
                 expected,
             ));
             assert_eq!(*dag, v, "Decoding failure");
+
+            // reading
+            let reader = String::from(*expected);
+            let reader = reader.as_bytes();
+            let v =
+                C::read(reader).expect(&format!("Failed to decode {}: {}", dag.name(), expected,));
+            assert_eq!(*dag, v, "Reading failure");
         }
     }
 

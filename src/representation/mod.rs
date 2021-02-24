@@ -270,9 +270,6 @@ impl<'a, T> Stream for SelectionStream<'a, T> {
 }
 
 ///
-///
-
-///
 pub trait Select<S = Selector, Ctx = DefaultContext>: Representation + 'static
 where
     S: ISelector,
@@ -334,33 +331,33 @@ where
     }
 }
 
-///
-impl<Ctx, T> Select<Matcher, Ctx> for T
-where
-    Ctx: Context,
-    T: Representation + 'static,
-{
-    // TODO: handle conditionals, probably using same similar macro to impl_select!
-    #[inline]
-    fn select<'a>(
-        &'a self,
-        selector: &Matcher,
-        // context: &Ctx,
-        // executor: &Executor<'a, Ctx>,
-    ) -> SelectionStream<'a, Selection<'a>> {
-        SelectionStream::ok(Selection::new(self, selector.label.clone()))
-    }
+// ///
+// impl<Ctx, T> Select<Matcher, Ctx> for T
+// where
+//     Ctx: Context,
+//     T: Representation + 'static,
+// {
+//     // TODO: handle conditionals, probably using same similar macro to impl_select!
+//     #[inline]
+//     fn select<'a>(
+//         &'a self,
+//         selector: &Matcher,
+//         // context: &Ctx,
+//         // executor: &Executor<'a, Ctx>,
+//     ) -> SelectionStream<'a, Selection<'a>> {
+//         SelectionStream::ok(Selection::new(self, selector.label.clone()))
+//     }
 
-    // TODO: handle conditionals
-    #[inline]
-    fn decode<'de, D>(_selector: &'de Matcher, decoder: D) -> Result<Self, D::Error>
-    where
-        D: Decoder<'de>,
-        Self: Deserialize<'de>,
-    {
-        T::deserialize(decoder)
-    }
-}
+//     // TODO: handle conditionals
+//     #[inline]
+//     fn decode<'de, D>(_selector: &'de Matcher, decoder: D) -> Result<Self, D::Error>
+//     where
+//         D: Decoder<'de>,
+//         Self: Deserialize<'de>,
+//     {
+//         T::deserialize(decoder)
+//     }
+// }
 
 // TODO: how to decode? cache decoded value?
 ///

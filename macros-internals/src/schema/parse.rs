@@ -187,8 +187,8 @@ impl<T: Parse> Parse for Fields<T> {
 //     }
 // }
 
-// TODO: impl `fn rest(input)`, which grabs the rest of the tokens, but asserts that it ends with a semicolon
-
+///
+/// TODO: impl `fn rest(input)`, which grabs the rest of the tokens, but asserts that it ends with a semicolon
 ///
 pub(crate) fn parse_rest(input: ParseStream) -> ParseResult<TokenStream> {
     let args;

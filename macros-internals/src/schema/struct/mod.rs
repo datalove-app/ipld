@@ -10,8 +10,6 @@ use proc_macro2::TokenStream;
 use std::ops::Deref;
 use syn::{punctuated::Punctuated, Expr, Generics, Ident, LitStr, Path, Token, Visibility};
 
-pub type StructFields = Punctuated<StructField, Token![,]>;
-
 #[derive(Debug)]
 pub enum StructReprDefinition {
     Map(BasicStructReprDefinition),
@@ -96,6 +94,8 @@ pub struct AdvancedStructReprDefinition {
     pub fields: StructFields,
     pub rest: TokenStream,
 }
+
+pub type StructFields = Punctuated<StructField, Token![,]>;
 
 #[derive(Debug)]
 pub struct StructField {

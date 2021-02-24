@@ -23,7 +23,7 @@ pub use _codecs::{Codec, Decoder, Encoder, IpldVisitorExt};
 pub use error::Error;
 // pub use ipld::borrowed::Ipld as BorrowedIpld;
 #[doc(inline)]
-pub use representation::{Context, Representation, Select, Selection, SelectionStream};
+pub use representation::{Context, Representation, Select};
 #[doc(inline)]
 pub use selectors::Selector;
 // #[doc(inline)]

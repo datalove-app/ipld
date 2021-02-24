@@ -44,10 +44,11 @@ proptest = "0.9"
 default = ["multicodec"]
 dag-cbor = ["serde_cbor/tags"]
 dag-json = ["delegate", "serde_json"]
+dag-pb = []
 # enables all available multicodecs
 multicodec = ["dag-cbor", "dag-json"]
 # enables simd-related implementations, including an alternate dag-json
-# simd = ["simd-json"]
+simd = ["dag-json", "simd-json"]
 
 [workspace]
 members = [

@@ -168,15 +168,8 @@ mod specialization {
         where
             V: IpldVisitorExt<'de>,
         {
-            // TODO:
-            // let bytes = <&'de [u8]>::deserialize(self)?;
-            // let cid: CidGeneric = bytes
-            //     .try_from()
-            //     .map_err(|_| de::Error::custom("expected a CID"))?;
-            // visitor.visit_link(cid)
-            //
-            // visitor.visit_link(Vec::new())
-            unimplemented!()
+            let bytes = <&'de [u8]>::deserialize(self)?;
+            visitor.visit_link(bytes.into())
         }
     }
 }
@@ -191,14 +184,14 @@ pub(crate) mod test_utils {
         T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
     {
         for (ref dag, expected) in cases {
-            // encoding
+            // writing
             let bytes = write_to_bytes::<C, T>(dag).expect(&format!(
                 "Failed to encode `{}` {:?} into {:?}",
                 dag.name(),
                 dag,
                 expected,
             ));
-            assert_eq!(expected, &bytes.as_slice(), "Encoding failure");
+            assert_eq!(expected, &bytes.as_slice(), "Writing failure");
 
             // decoding
             let v = decode_from_bytes::<'de, C, T>(expected).expect(&format!(
@@ -224,14 +217,14 @@ pub(crate) mod test_utils {
         T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
     {
         for (ref dag, expected) in cases {
-            // encoding
+            // writing
             let string = write_to_str::<C, T>(dag).expect(&format!(
                 "Failed to encode `{}` {:?} into {}",
                 dag.name(),
                 dag,
                 expected,
             ));
-            assert_eq!(expected, &string.as_str(), "Encoding failure");
+            assert_eq!(expected, &string.as_str(), "Writing failure");
 
             // decoding
             let v = decode_from_str::<'de, C, T>(expected).expect(&format!(
@@ -242,8 +235,7 @@ pub(crate) mod test_utils {
             assert_eq!(*dag, v, "Decoding failure");
 
             // reading
-            let reader = String::from(*expected);
-            let v = C::read(reader.as_bytes()).expect(&format!(
+            let v = C::read(expected.as_bytes()).expect(&format!(
                 "Failed to read `{}` from {}",
                 dag.name(),
                 expected,

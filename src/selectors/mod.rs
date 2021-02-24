@@ -166,7 +166,7 @@ schema! {
     pub type ExploreRecursive struct {
         pub sequence Selector (rename ":>"),
         pub limit RecursionLimit (rename "l"),
-        stopAt optional Condition (rename "!"),
+        pub stopAt optional Condition (rename "!"),
     };
 }
 
@@ -221,7 +221,7 @@ schema! {
     #[ipld_attr(internal)]
     #[derive(Debug, From)]
     pub type Matcher struct {
-        // onlyIf optional Condition,
+        pub onlyIf optional Condition,
         pub label optional String,
     };
 }
@@ -308,6 +308,7 @@ where
     T: Select<S>,
     S: ISelector,
 {
+    #[inline]
     fn as_selector(self) -> &'a S {
         self.selector
     }
@@ -325,19 +326,6 @@ where
         }
     }
 }
-
-// impl<'a, T, S> SelectorSeed<'a, T, S> {
-//     pub const fn into(self) -> &'a S {
-//         self.selector
-//     }
-
-//     pub const fn from(selector: &'a S) -> Self {
-//         Self {
-//             selector,
-//             _type: PhantomData,
-//         }
-//     }
-// }
 
 /// Blanket implementation that directly delegates to `Select::decode`.
 impl<'de, T, S> DeserializeSeed<'de> for SelectorSeed<'de, T, S>
@@ -503,13 +491,13 @@ mod tests {
 
         // let executor = Executor
 
-        let sel1 = selector! {
-            #[ipld_attr(internal)]
-            Test,
-            match(
-                label=("label")
-            )
-        };
+        // let sel1 = selector! {
+        //     #[ipld_attr(internal)]
+        //     Test,
+        //     match(
+        //         label=("label")
+        //     )
+        // };
 
         // let sel1 = Selector::Matcher({ Matcher { label: None } });
         // let Selector::Matcher(matcher) = sel1;

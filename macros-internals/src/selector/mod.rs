@@ -96,6 +96,14 @@ pub enum Interpolated<T> {
 //     Ident(Ident),
 // }
 
+pub type SelectorAttrs = std::collections::HashSet<SelectorAttr>;
+
+#[derive(Debug, PartialEq)]
+pub enum SelectorAttr {
+    Internal,
+    Root(Type),
+}
+
 pub(crate) mod kw {
     // // Helper macro for parsing interpolated values
     // #[macro_export(local_inner_macros)]

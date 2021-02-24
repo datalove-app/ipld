@@ -139,8 +139,9 @@ pub(crate) trait ExpandBasicRepresentation {
     ///     instantiates ReprSelectorSeed(selector, repr_visitor)
     ///     matches on selector, delegates to one deserializer method
     fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
-        let name = &meta.name;
-        quote!(impl_root_select!(#name => Matcher);)
+        // let name = &meta.name;
+        // quote!(impl_root_select!(#name => Matcher);)
+        TokenStream::default()
     }
 
     /// Derives conversions between the type and `Value`, as well as `ipfs::Ipld`

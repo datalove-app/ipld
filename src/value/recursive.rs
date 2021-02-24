@@ -7,7 +7,7 @@ use std::{cmp::Ord, collections::BTreeMap, ops::Deref, str::FromStr};
 #[derive(Debug, From)]
 pub enum List<T> {
     Full(Vec<T>),
-    Selection(Selector, Vec<T>),
+    // Selection(Selector, Vec<T>),
 }
 
 // impl<I> Representation for Vec<I>
@@ -24,7 +24,7 @@ impl<T> AsRef<Vec<T>> for List<T> {
     fn as_ref(&self) -> &Vec<T> {
         match &self {
             Self::Full(vec) => vec,
-            Self::Selection(_, vec) => vec,
+            // Self::Selection(_, vec) => vec,
         }
     }
 }
@@ -51,7 +51,7 @@ where
 #[derive(Debug, From)]
 pub enum Map<K, V> {
     Full(BTreeMap<K, V>),
-    Selection(Selector, BTreeMap<K, V>),
+    // Selection(Selector, BTreeMap<K, V>),
 }
 
 // impl<K, V> Representation for Map<K, V>
@@ -69,7 +69,7 @@ impl<K, V> AsRef<BTreeMap<K, V>> for Map<K, V> {
     fn as_ref(&self) -> &BTreeMap<K, V> {
         match &self {
             Self::Full(map) => map,
-            Self::Selection(_, map) => map,
+            // Self::Selection(_, map) => map,
         }
     }
 }

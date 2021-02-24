@@ -108,6 +108,15 @@ impl<T> Deref for Fields<T> {
     }
 }
 
+pub type SchemaAttrs = std::collections::HashSet<SchemaAttr>;
+
+#[derive(Debug, PartialEq)]
+pub enum SchemaAttr {
+    Internal,
+    TryFrom(LitStr),
+    Wrapper(Type),
+}
+
 // #[derive(Debug)]
 // pub struct FieldAttr {
 //     wrapper: Option<Ident>,

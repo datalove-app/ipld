@@ -27,7 +27,7 @@ impl Into<u64> for DagCbor {
     }
 }
 
-impl std::convert::TryFrom<u64> for DagCbor {
+impl TryFrom<u64> for DagCbor {
     type Error = Error;
     fn try_from(code: u64) -> Result<Self, Self::Error> {
         match code {

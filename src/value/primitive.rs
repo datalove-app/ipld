@@ -3,7 +3,7 @@ use crate::dev::*;
 impl Representation for () {
     const NAME: &'static str = "Null";
 }
-impl_root_select!(() => Matcher);
+// impl_root_select!(() => Matcher);
 
 #[doc(hidden)]
 #[macro_export(local_inner_macros)]
@@ -15,7 +15,7 @@ macro_rules! def_primitive {
             // const KIND: Kind = Kind::$kind;
         }
 
-        $crate::impl_root_select!($type => Matcher);
+        // $crate::impl_root_select!($type => Matcher);
     };
 }
 
@@ -47,12 +47,12 @@ impl Representation for &str {
 impl<T> Representation for Option<T> {
     const NAME: &'static str = "Null";
 }
-impl_root_select!(Matcher {
-    impl<Ctx, T> Select<Selector, Ctx> for Option<T>
-    where
-        Ctx: Context,
-        T: Representation + 'static
-});
+// impl_root_select!(Matcher {
+//     impl<Ctx, T> Select<Selector, Ctx> for Option<T>
+//     where
+//         Ctx: Context,
+//         T: Representation + 'static
+// });
 
 // TODO: cid
 

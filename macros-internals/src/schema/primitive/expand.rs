@@ -78,13 +78,13 @@ impl expand::ExpandBasicRepresentation for BytesReprDefinition {
                 }
             },
         );
+        let impl_visitor_ext = expand::impl_visitor_ext(meta, None);
         let impl_de = expand::impl_deserialize(
             meta,
             quote! {
                 <D as Decoder>::deserialize_bytes(deserializer, #visitor)
             },
         );
-        let impl_visitor_ext = expand::impl_visitor_ext(meta, None);
 
         quote! {
             #impl_ser
@@ -103,8 +103,9 @@ impl expand::ExpandBasicRepresentation for BytesReprDefinition {
     }
     // TODO: add support for explore range
     fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
-        let name = &meta.name;
-        quote!(impl_root_select!(#name => Matcher);)
+        // let name = &meta.name;
+        // quote!(impl_root_select!(#name => Matcher);)
+        TokenStream::default()
     }
 }
 
@@ -128,6 +129,6 @@ impl expand::ExpandBasicRepresentation for LinkReprDefinition {
         }
     }
     fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
-        unimplemented!()
+        TokenStream::default()
     }
 }

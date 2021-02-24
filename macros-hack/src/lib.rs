@@ -47,3 +47,8 @@ pub fn selector(input: TokenStream) -> TokenStream {
 // );
 // def_attributes!(try_from);
 // def_attributes!(wrap);
+
+// #[proc_macro_hack]
+// pub fn derive_root_select(input: TokenStream) -> TokenStream {
+//     let expanded
+// }

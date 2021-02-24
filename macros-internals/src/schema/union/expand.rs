@@ -35,9 +35,10 @@ impl ExpandBasicRepresentation for KeyedUnionReprDefinition {
         )
     }
     fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
-        let name = &meta.name;
+        // let name = &meta.name;
         // let lib = &meta.ipld_schema_lib;
-        quote!(impl_root_select!(#name => Matcher);)
+        // quote!(impl_root_select!(#name => Matcher);)
+        TokenStream::default()
     }
 }
 

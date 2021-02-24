@@ -44,23 +44,13 @@ fn field_typedef(field: &StructField) -> TokenStream {
     let vis = &field.vis;
     let key = &field.key;
     let value = field_value(field);
-    let generics = &field
-        .generics
+    let generics = field.generics.as_ref().map(|g| quote!(#g));
+
+    let implicit_attr = field.implicit.as_ref().map(|_| quote!(#[serde(default)]));
+    let rename_attr = field
+        .rename
         .as_ref()
-        .map(|g| quote!(#g))
-        .unwrap_or(TokenStream::default());
-
-    let implicit_attr = if let Some(implicit) = &field.implicit {
-        quote!(#[serde(default)])
-    } else {
-        TokenStream::default()
-    };
-
-    let rename_attr = if let Some(rename) = &field.rename {
-        quote!(#[serde(rename = #rename)])
-    } else {
-        TokenStream::default()
-    };
+        .map(|name| quote!(#[serde(rename = #name)]));
 
     quote! {
         #(#attrs)*
@@ -167,7 +157,7 @@ impl ExpandBasicRepresentation for StructReprDefinition {
         // TODO:
         quote! {
             #repr
-            impl_root_select!(#name => Matcher);
+            // impl_root_select!(#name => Matcher);
         }
     }
 

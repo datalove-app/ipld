@@ -28,6 +28,9 @@ pub enum Error {
         selector_name: &'static str,
     },
 
+    #[error("Unknown codec error: {0}")]
+    UnknownCodec(u64),
+
     #[error("Other error: {0}")]
     Other(String),
 }

@@ -8,39 +8,40 @@ use serde_json::{
     de::Read as JsonRead, from_reader, from_slice, to_writer, Deserializer as JsonDeserializer,
     Error as JsonError, Serializer as JsonSerializer,
 };
-#[cfg(feature = "simd")]
-use simd_json::{};
-use std::{
-    fmt,
-    io::{Read, Write},
-};
+// #[cfg(feature = "simd")]
+// use simd_json::{};
+use std::convert::TryFrom;
 
 /// All bytes are encoded with the multibase `base64` w/o padding, resulting
 /// in the prefix `"m"`.
-pub const BYTES_MULTIBASE: Multibase = Multibase::Base64;
+pub const DEFAULT_MB: Multibase = Multibase::Base64;
 
 // TODO: add support for simd-json
 #[cfg(not(feature = "simd"))]
 /// The [DagJSON](https://github.com/ipld/specs/blob/master/block-layer/codecs/dag-json.md) codec, that delegates to `serde_json`.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct DagJson;
 
+impl Into<u64> for DagJson {
+    fn into(self) -> u64 {
+        Self::CODE
+    }
+}
+
+impl TryFrom<u64> for DagJson {
+    type Error = Error;
+    fn try_from(code: u64) -> Result<Self, Self::Error> {
+        match code {
+            Self::CODE => Ok(Self),
+            _ => Err(Error::UnknownCodec(code)),
+        }
+    }
+}
+
 impl Codec for DagJson {
-    const VERSION: cid::Version = cid::Version::V1;
-    const CODEC: cid::Codec = cid::Codec::DagJSON;
+    const CODE: u64 = 0x0129;
 
-    // type Encoder<W> = JsonSerializer<W>;
-    // type Decoder<R> = JsonDeserializer<R>;
-
-    // fn encoder<W: Write>(writer: W) -> Self::Encoder<W> {
-    //     unimplemented!()
-    // }
-    // fn decoder<'de, R: Read>(reader: R) -> Self::Decoder<R> {
-    //     unimplemented!()
-    // }
-
-    // type Error = JsonError;
-
-    fn encode<T, W>(dag: &T, writer: W) -> Result<(), Error>
+    fn write<T, W>(dag: &T, writer: W) -> Result<(), Error>
     where
         T: Representation + Serialize,
         W: Write,
@@ -72,14 +73,22 @@ impl<'a, W: Write> Encoder for &'a mut JsonSerializer<W> {
         use ser::SerializeStructVariant as SV;
 
         let mut sv = self.serialize_struct_variant("", 0, "/", 1)?;
-        SV::serialize_field(&mut sv, "bytes", &multibase::encode(BYTES_MULTIBASE, bytes))?;
+        SV::serialize_field(&mut sv, "bytes", &multibase::encode(DEFAULT_MB, bytes))?;
         SV::end(sv)
     }
 
     /// Serializes links as a newtype variant, e.g.  `{ "/": "Qm..." }`.
     #[inline]
-    fn serialize_link(self, cid: &Cid) -> Result<Self::Ok, JsonError> {
-        self.serialize_newtype_variant("", 0, "/", &cid.to_string())
+    fn serialize_link<S>(self, cid: &CidGeneric<S>) -> Result<Self::Ok, JsonError>
+    where
+        S: MultihashSize,
+    {
+        let mb = match cid.version() {
+            cid::Version::V0 => Multibase::Base58Btc,
+            cid::Version::V1 => Multibase::Base32Lower,
+        };
+        let cid_str = multibase::encode(mb, cid.to_bytes());
+        self.serialize_newtype_variant("", 0, "/", &cid_str)
     }
 }
 
@@ -87,8 +96,8 @@ impl<'de, 'a, R: JsonRead<'de>> Decoder<'de> for &'a mut JsonDeserializer<R> {
     /// In the DagJSON IPLD codec, three IPLD types map to the map as represented
     /// in the Serde data model:
     ///     - maps
-    ///     - links, e.g. `{ "/": "Qm..." }`
-    ///     - byte sequences, e.g. `{ "/": { "base64": <some base64-encoded string> } }`
+    ///     - Base58Btc- or Base32Lower-encoded links, e.g. `{ "/": "Qm..." }`
+    ///     - Base64-encoded byte sequences, e.g. `{ "/": { "bytes": "m..." } }`
     ///
     /// This method wraps the provided `Visitor`, delegating the visiting of all
     /// types found in the input data to the provided `Visitor` (except for maps,
@@ -114,7 +123,7 @@ impl<'de, 'a, R: JsonRead<'de>> Decoder<'de> for &'a mut JsonDeserializer<R> {
     where
         V: IpldVisitorExt<'de>,
     {
-        self.deserialize_map(JsonVisitor(visitor))
+        Deserializer::deserialize_map(self, JsonVisitor(visitor))
     }
 
     #[inline]
@@ -122,7 +131,7 @@ impl<'de, 'a, R: JsonRead<'de>> Decoder<'de> for &'a mut JsonDeserializer<R> {
     where
         V: IpldVisitorExt<'de>,
     {
-        self.deserialize_map(JsonVisitor(visitor))
+        Deserializer::deserialize_map(self, JsonVisitor(visitor))
     }
 }
 
@@ -134,7 +143,7 @@ impl<'de, V: IpldVisitorExt<'de>> Visitor<'de> for JsonVisitor<V> {
     type Value = V::Value;
 
     #[inline]
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter.write_str("a JSON map, link object or byte object")
     }
 
@@ -149,7 +158,7 @@ impl<'de, V: IpldVisitorExt<'de>> Visitor<'de> for JsonVisitor<V> {
         if let Some("/") = first_key.as_deref() {
             match map.next_value::<MapLikeVisitor>() {
                 Ok(MapLikeVisitor::Bytes(b)) => self.0.visit_byte_buf(b),
-                Ok(MapLikeVisitor::Cid(cid)) => self.0.visit_link(cid),
+                Ok(MapLikeVisitor::Cid(b)) => self.0.visit_link(b),
                 _ => Err(de::Error::custom("expected a CID or byte string")),
             }
         } else {
@@ -195,10 +204,11 @@ impl<'de, V: IpldVisitorExt<'de>> Visitor<'de> for JsonVisitor<V> {
 }
 
 /// Visits the IPLD types in DagJSON that are map-like (i.e. bytes and links).
+#[derive(Debug)]
 enum MapLikeVisitor {
     Default,
     Bytes(Vec<u8>),
-    Cid(Cid),
+    Cid(Box<[u8]>),
 }
 
 impl<'de> Deserialize<'de> for MapLikeVisitor {
@@ -217,26 +227,36 @@ impl<'de> Visitor<'de> for MapLikeVisitor {
     type Value = Self;
 
     #[inline]
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter.write_str("a JSON map, link object or byte object")
     }
 
+    /// TODO:
+    /// In the dag-json codec, links are represented as either Base58 or Base32
+    /// strings
     #[inline]
     fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
-        let cid = ToCid::to_cid(s).map_err(|_| de::Error::custom("expected a CID"))?;
-        Ok(MapLikeVisitor::Cid(cid))
+        // TODO
+        // let cid = ToCid::to_cid(s).map_err(|_| de::Error::custom("expected a CID"))?;
+        // Ok(MapLikeVisitor::Cid(cid))
+        unimplemented!()
     }
 
+    /// TODO:
+    /// In the dag-json codec, bytes are represented as maps, with the key
+    /// always being the string "bytes" and the value always being the bytes
+    /// multibase-encoded as a string.
     #[inline]
     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
     where
         A: de::MapAccess<'de>,
     {
+        // TODO: why do these have to be Strings instead of &str?
         let (base, byte_str): (String, String) = map.next_entry()?.ok_or_else(|| {
-            de::Error::custom("expected a multibase and multibase-encoded string")
+            de::Error::custom("expected a base string + multibase-encoded string key-value pair")
         })?;
 
         if base.as_str() != "bytes" {
@@ -249,7 +269,7 @@ impl<'de> Visitor<'de> for MapLikeVisitor {
             .map_err(|_| de::Error::custom("expected a base64 multibase-encoded string"))?;
 
         match mb {
-            BYTES_MULTIBASE => Ok(MapLikeVisitor::Bytes(bytes)),
+            DEFAULT_MB => Ok(MapLikeVisitor::Bytes(bytes)),
             _ => Err(de::Error::custom(
                 "DagJSON only supports base64-encoded strings",
             )),
@@ -293,6 +313,7 @@ impl<'de, A: de::MapAccess<'de>> de::MapAccess<'de> for MapAccessor<A> {
 #[cfg(test)]
 mod tests {
     use crate::{_codecs::test_utils::*, prelude::*};
+    use std::str::FromStr;
 
     fn roundtrip<'de, T>(cases: &[(T, &'de str)])
     where
@@ -342,11 +363,12 @@ mod tests {
 
     #[test]
     fn test_link() {
-        // let tests = &[(
-        //     Cid::from("QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n"),
-        //     "{\"/\":\"QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n\"}",
-        // )];
-        // roundtrip(tests);
+        let s = String::from("QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n");
+        let cid = CidGeneric::<typenum::U32>::from_str(&s).unwrap();
+        let json = format!("{{\"/\":\"{}\"}}", s);
+
+        let tests = &[(Link::<Null, typenum::U32>::from(cid), json.as_str())];
+        roundtrip(tests);
     }
 
     #[test]

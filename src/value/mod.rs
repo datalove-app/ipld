@@ -2,13 +2,13 @@
 
 // pub mod borrowed;
 // mod canon;
-// mod link;
+mod link;
 mod list;
 mod map;
 mod primitive;
 mod recursive;
 
-// pub use link::Link;
+pub use link::Link;
 pub use list::List;
 pub use map::Map;
 
@@ -56,7 +56,7 @@ macro_rules! def_num {
     (@int $name:ident $type:ident) => {
         schema! {
             #[ipld_attr(internal)]
-            #[derive(AsRef, Debug, Eq, From, Hash, Into, PartialEq, Ord, PartialOrd, Add, Mul, Sum)]
+            #[derive(AsRef, Debug, From, Hash, Into, Eq, PartialEq, Ord, PartialOrd, Add, Mul, Sum)]
             #[as_ref(forward)]
             pub type $name $type;
         }

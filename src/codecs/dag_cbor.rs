@@ -9,40 +9,38 @@ use serde_cbor::{
     tags::{current_cbor_tag, Tagged},
     to_writer, Deserializer as CborDeserializer, Error as CborError, Serializer as CborSerializer,
 };
-use std::io::{Read, Write};
+use std::{
+    convert::TryFrom,
+    io::{Read, Write},
+};
 
 /// The magic tag signifying an IPLD link.
 pub const CBOR_LINK_TAG: u64 = 42;
 
 /// The [DagCBOR](https://github.com/ipld/specs/blob/master/block-layer/codecs/dag-cbor.md) codec, that delegates to `serde_cbor`.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct DagCbor;
 
+impl Into<u64> for DagCbor {
+    fn into(self) -> u64 {
+        Self::CODE
+    }
+}
+
+impl std::convert::TryFrom<u64> for DagCbor {
+    type Error = Error;
+    fn try_from(code: u64) -> Result<Self, Self::Error> {
+        match code {
+            Self::CODE => Ok(Self),
+            _ => Err(Error::UnknownCodec(code)),
+        }
+    }
+}
+
 impl Codec for DagCbor {
-    const VERSION: cid::Version = cid::Version::V1;
-    const CODEC: cid::Codec = cid::Codec::DagCBOR;
+    const CODE: u64 = 0x71;
 
-    // type Encoder<W: Write> = CborSerializer<W>;
-    // type Decoder<R: Read> = CborDeserializer<R>;
-
-    // fn encoder<W: Write>(writer: W) -> Self::Encoder<W> {
-    //     unimplemented!()
-    // }
-    // fn decoder<'de, R: Read>(reader: R) -> Self::Decoder<R> {
-    //     unimplemented!()
-    // }
-
-    // type Encoder = CborSerializer;
-    // type Decoder = CborDeserializer;
-    // type Error = CborError;
-
-    // fn encoder<W: Write>(&self, writer: W) -> CborSerializer<W> {
-    //     CborSerializer::from_writer(writer)
-    // }
-    // fn decoder<R: Read>(&self, reader: R) -> CborDeserializer<R> {
-    //     CborSerializer::from_reader(reader)
-    // }
-
-    fn encode<T, W>(dag: &T, writer: W) -> Result<(), Error>
+    fn write<T, W>(dag: &T, writer: W) -> Result<(), Error>
     where
         T: Representation + Serialize,
         W: Write,
@@ -68,8 +66,11 @@ impl Codec for DagCbor {
 
 impl<'a, W: CborWrite> Encoder for &'a mut CborSerializer<W> {
     #[inline]
-    fn serialize_link(self, cid: &Cid) -> Result<Self::Ok, CborError> {
-        let bytes: Vec<u8> = cid.to_bytes();
+    fn serialize_link<S>(self, cid: &CidGeneric<S>) -> Result<Self::Ok, CborError>
+    where
+        S: MultihashSize,
+    {
+        let bytes = cid.to_bytes();
         Tagged::new(Some(CBOR_LINK_TAG), bytes.as_slice()).serialize(self)
     }
 }
@@ -82,12 +83,18 @@ impl<'de, 'a, R: CborRead<'de>> Decoder<'de> for &'a mut CborDeserializer<R> {
     {
         match current_cbor_tag() {
             Some(CBOR_LINK_TAG) => {
-                let bytes = <&'de [u8]>::deserialize(self)?;
-                let cid = ToCid::to_cid(bytes)
-                    .or::<CborError>(Err(de::Error::custom("expected a CID")))?;
-                visitor.visit_link(cid)
+                // TODO:
+                // let bytes = <Box[u8]>::deserialize(self)?;
+                // let cid: Cid = bytes
+                //     .try_from()
+                //     .map_err(|e| de::Error::custom("expected a CID"))?;
+                // visitor.visit_link(cid)
+                unimplemented!()
             }
-            Some(tag) => Err(de::Error::custom(format!("unexpected CBOR tag: {}", tag))),
+            Some(tag) => Err(de::Error::custom(format!(
+                "unexpected CBOR tag for CID: {}",
+                tag
+            ))),
             _ => Err(de::Error::custom("expected a CID")),
         }
     }

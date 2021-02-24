@@ -11,10 +11,8 @@
 
 #[path = "codecs/mod.rs"]
 mod _codecs;
-mod block;
 mod error;
-// mod ipld;
-// #[doc(inline)]
+
 pub mod representation;
 pub mod selectors;
 pub mod value;
@@ -45,6 +43,29 @@ pub mod codecs {
     pub use crate::_codecs::dag_json::DagJson;
 }
 
+/// All the exports and re-exports necessary for using `ipld`.
+pub mod prelude {
+    pub use crate::*;
+    pub use codecs::*;
+    pub use value::*;
+    // pub use async_trait::async_trait;
+    pub use cid::{self, Cid, CidGeneric};
+    pub use multibase::{self, Base as Multibase};
+    pub use multihash::{
+        self, typenum, Code as DefaultMultihash, MultihashDigest, Size as MultihashSize,
+        U64 as DefaultMultihashSize,
+    };
+    pub use serde::{
+        self,
+        de::{DeserializeOwned, DeserializeSeed, Visitor},
+        Deserialize, Deserializer, Serialize, Serializer,
+    };
+    pub use std::{
+        fmt::Debug,
+        io::{Read, Write},
+    };
+}
+
 /// All exports from `ipld::prelude`, plus re-exports of first- and third-party
 /// dependencies to aid developers wanting to implement or extend `ipld` behaviour.
 pub mod dev {
@@ -62,24 +83,4 @@ pub mod dev {
     pub use futures::{self, Stream, StreamExt};
     pub use ipld_macros_internals as macros;
     pub use serde_repr;
-}
-
-/// All the exports and re-exports necessary for using `ipld`.
-pub mod prelude {
-    pub use crate::*;
-    pub use codecs::*;
-    pub use value::*;
-    // pub use async_trait::async_trait;
-    pub use cid::{self, Cid, ToCid};
-    pub use multibase::{self, Base as Multibase};
-    pub use multihash::{self, Multihash, MultihashDigest, MultihashRef};
-    pub use serde::{
-        self,
-        de::{DeserializeOwned, DeserializeSeed, Visitor},
-        Deserialize, Deserializer, Serialize, Serializer,
-    };
-    pub use std::{
-        fmt::Debug,
-        io::{Read, Write},
-    };
 }

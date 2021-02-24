@@ -58,8 +58,8 @@ impl ToTokens for SchemaDefinition {
                 let defs = [
                     ("SERDE_IMPLS", $def.derive_serde($meta)),
                     ("REPR_IMPL", $def.derive_repr($meta)),
-                    ("SELECT_IMPLS", $def.derive_selects($meta)),
-                    // ("VALUE_CONV_IMPLS", $def.derive_conv($meta)),
+                    // TODO ("SELECT_IMPLS", $def.derive_selects($meta)),
+                    // TODO ("VALUE_CONV_IMPLS", $def.derive_conv($meta)),
                 ];
                 let scoped_impls = defs
                     .iter()
@@ -77,7 +77,6 @@ impl ToTokens for SchemaDefinition {
                 quote! {
                     #typedef
                     #(#scoped_impls)*
-                    // #conv
                 }
             }};
         }

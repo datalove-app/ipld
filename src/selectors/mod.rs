@@ -7,7 +7,7 @@
 #![allow(non_camel_case_types)]
 use crate::dev::*;
 use macros::derive_more::From;
-use std::{marker::PhantomData, ops::Deref, rc::Rc};
+use std::{boxed::Box, marker::PhantomData, ops::Deref};
 
 //  TODO? example impl for ExploreAll for a map:
 //  impl<K, V, S> Select<ExploreAll> for Map<K, V>
@@ -91,29 +91,29 @@ schema! {
         | Matcher "."
 
         ///
-        #[ipld_attr(wrapper = "Rc")]
+        #[ipld_attr(wrapper = "Box")]
         | ExploreAll "a"
 
         ///
         | ExploreFields "f"
 
         ///
-        #[ipld_attr(wrapper = "Rc")]
+        #[ipld_attr(wrapper = "Box")]
         | ExploreIndex "i"
 
         ///
-        #[ipld_attr(wrapper = "Rc")]
+        #[ipld_attr(wrapper = "Box")]
         | ExploreRange "r"
 
         ///
-        #[ipld_attr(wrapper = "Rc")]
+        #[ipld_attr(wrapper = "Box")]
         | ExploreRecursive "R"
 
         ///
         | ExploreUnion "|"
 
         ///
-        #[ipld_attr(wrapper = "Rc")]
+        #[ipld_attr(wrapper = "Box")]
         | ExploreConditional "&"
 
         ///
@@ -291,13 +291,13 @@ schema! {
     pub type Condition_Or struct {};
 }
 
-pub enum Selection2<'a, S, T> {
-    Complete(T),
-    Partial { selector: &'a S, representation: T },
-}
+// pub enum Selection2<'a, S, T> {
+//     Complete(T),
+//     Partial { selector: &'a S, representation: T },
+// }
 
 /// A thin, typed wrapper around a `&Selector` and the type the `Selector` is
-/// being deserialized with via `DeserializeSeed`.
+/// selectively deserializing via `DeserializeSeed`.
 pub struct SelectorSeed<'a, T, S> {
     selector: &'a S,
     _type: PhantomData<T>,
@@ -308,7 +308,7 @@ where
     T: Select<S>,
     S: ISelector,
 {
-    fn into(self) -> &'a S {
+    fn as_selector(self) -> &'a S {
         self.selector
     }
 }
@@ -353,7 +353,7 @@ where
     where
         D: Deserializer<'de>,
     {
-        <T as Select<S>>::decode(self.into(), deserializer)
+        <T as Select<S>>::decode(self.as_selector(), deserializer)
     }
 }
 

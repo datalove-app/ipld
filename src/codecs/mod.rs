@@ -7,27 +7,16 @@ pub mod dag_json;
 
 use crate::dev::*;
 use serde::{de, ser};
-use std::{
-    error::Error as StdError,
-    io::{Read, Write},
-};
+use std::{convert::TryFrom, error::Error as StdError};
 
 /// An IPLD [Codec](https://github.com/ipld/specs/blob/master/block-layer/codecs/README.md).
-pub trait Codec {
-    /// Version of CID used by this codec.
-    const VERSION: cid::Version;
-
-    /// Multicodec content type that identifies this IPLD Codec.
-    const CODEC: cid::Codec;
-
-    // type Encoder: Encoder;
-    // type Decoder<'de>: Decoder<'de>;
-
-    // fn encoder<W: Write>(writer: W) -> Self::Encoder;
-    // fn decoder<'de, R: Read>(reader: R) -> Self::Decoder<'de>;
+/// TODO const generic over CODE?
+pub trait Codec: Into<u64> + TryFrom<u64> + Copy {
+    /// The multicodec code that identifies this IPLD Codec.
+    const CODE: u64;
 
     /// Given a dag and a `Write`, encode it to the writer.
-    fn encode<T, W>(dag: &T, writer: W) -> Result<(), Error>
+    fn write<T, W>(dag: &T, writer: W) -> Result<(), Error>
     where
         T: Representation + Serialize,
         W: Write;
@@ -56,7 +45,6 @@ pub trait Codec {
 /// The IPLD and Serde data models do not map 1:1. As a result, Serde may
 /// encounter types that require special handling when serializing (i.e. bytes
 /// and links).
-///
 pub trait Encoder: Serializer {
     /// Serialize a sequence of bytes.
     ///
@@ -65,7 +53,11 @@ pub trait Encoder: Serializer {
     fn serialize_bytes(self, bytes: &[u8]) -> Result<Self::Ok, Self::Error>;
 
     /// Serialize an IPLD link.
-    fn serialize_link(self, cid: &Cid) -> Result<Self::Ok, Self::Error>;
+    /// TODO: cid_bytes?
+    fn serialize_link<S>(self, cid: &CidGeneric<S>) -> Result<Self::Ok, Self::Error>
+    where
+        S: MultihashSize;
+    // fn serialize_link(self, cid_bytes: Box<[u8]>) -> Result<Self::Ok, Self::Error>;
 }
 
 /// The IPLD and Serde data models do not map 1:1. As a result, Serde may
@@ -100,10 +92,11 @@ pub trait Decoder<'de>: Deserializer<'de> {
 ///
 /// Should be implemented by any types representing IPLD links and maps.
 pub trait IpldVisitorExt<'de>: Visitor<'de> {
-    /// The input contains a `Cid`.
+    /// The input contains the bytes of a `Cid`.
     ///
     /// The default implementation fails with a type error.
-    fn visit_link<E>(self, cid: Cid) -> Result<Self::Value, E>
+    /// TODO: vec or box?
+    fn visit_link<E>(self, cid_bytes: Box<[u8]>) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
@@ -119,7 +112,7 @@ mod specialization {
 
     /// Default (specialized) implementation for all `Serializer`s (to avoid having
     /// to introduce an extension to `Serialize`).
-    impl<S: Serializer> Encoder for S {
+    impl<Se: Serializer> Encoder for Se {
         /// Default behaviour is to delegate to `Serializer::serialize_bytes`.
         #[inline]
         default fn serialize_bytes(self, bytes: &[u8]) -> Result<Self::Ok, Self::Error> {
@@ -128,7 +121,10 @@ mod specialization {
 
         /// Default behaviour is to serialize the link directly as bytes.
         #[inline]
-        default fn serialize_link(self, cid: &Cid) -> Result<Self::Ok, Self::Error> {
+        default fn serialize_link<S>(self, cid: &CidGeneric<S>) -> Result<Self::Ok, Self::Error>
+        where
+            S: MultihashSize,
+        {
             Serializer::serialize_bytes(self, cid.to_bytes().as_ref())
         }
     }
@@ -172,9 +168,15 @@ mod specialization {
         where
             V: IpldVisitorExt<'de>,
         {
-            let bytes = <&'de [u8]>::deserialize(self)?;
-            let cid = ToCid::to_cid(bytes).or_else(|_| Err(de::Error::custom("expected a CID")))?;
-            visitor.visit_link(cid)
+            // TODO:
+            // let bytes = <&'de [u8]>::deserialize(self)?;
+            // let cid: CidGeneric = bytes
+            //     .try_from()
+            //     .map_err(|_| de::Error::custom("expected a CID"))?;
+            // visitor.visit_link(cid)
+            //
+            // visitor.visit_link(Vec::new())
+            unimplemented!()
         }
     }
 }
@@ -190,7 +192,7 @@ pub(crate) mod test_utils {
     {
         for (ref dag, expected) in cases {
             // encoding
-            let bytes = encode_to_bytes::<C, T>(dag).expect(&format!(
+            let bytes = write_to_bytes::<C, T>(dag).expect(&format!(
                 "Failed to encode `{}` {:?} into {:?}",
                 dag.name(),
                 dag,
@@ -207,8 +209,7 @@ pub(crate) mod test_utils {
             assert_eq!(*dag, v, "Decoding failure");
 
             // reading
-            let reader = Vec::from(*expected);
-            let v = C::read(reader.as_slice()).expect(&format!(
+            let v = C::read(*expected).expect(&format!(
                 "Failed to read `{}` from {:?}",
                 dag.name(),
                 expected,
@@ -224,7 +225,7 @@ pub(crate) mod test_utils {
     {
         for (ref dag, expected) in cases {
             // encoding
-            let string = encode_to_str::<C, T>(dag).expect(&format!(
+            let string = write_to_str::<C, T>(dag).expect(&format!(
                 "Failed to encode `{}` {:?} into {}",
                 dag.name(),
                 dag,
@@ -251,22 +252,22 @@ pub(crate) mod test_utils {
         }
     }
 
-    fn encode_to_bytes<C, T>(dag: &T) -> Result<Vec<u8>, Error>
+    fn write_to_bytes<C, T>(dag: &T) -> Result<Vec<u8>, Error>
     where
         C: Codec,
         T: Representation + Serialize,
     {
         let mut bytes = Vec::new();
-        C::encode(dag, &mut bytes);
+        C::write(dag, &mut bytes)?;
         Ok(bytes)
     }
 
-    fn encode_to_str<C, T>(dag: &T) -> Result<String, Error>
+    fn write_to_str<C, T>(dag: &T) -> Result<String, Error>
     where
         C: Codec,
         T: Representation + Serialize,
     {
-        let bytes = encode_to_bytes::<C, T>(dag)?;
+        let bytes = write_to_bytes::<C, T>(dag)?;
         Ok(String::from_utf8(bytes).unwrap())
     }
 

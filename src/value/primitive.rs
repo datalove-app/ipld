@@ -37,6 +37,12 @@ def_primitive!(String: String, "String");
 impl Representation for &str {
     const NAME: &'static str = "str";
 }
+// impl_root_select!(Matcher {
+//     impl<Ctx> Select<Selector, Ctx> for &str
+//     where
+//         Ctx: Context,
+//         Self:
+// });
 
 impl<T> Representation for Option<T> {
     const NAME: &'static str = "Null";

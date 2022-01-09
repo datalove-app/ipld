@@ -44,7 +44,7 @@ impl ToTokens for SchemaDefinition {
             ($meta:ident, $def:ident) => {{
                 let name = &$meta.name;
                 let typedef = $def.define_type($meta);
-                let lib = &$meta.lib();
+                let lib = &$meta.lib;
 
                 let use_ipld = if $meta.internal {
                     quote!(use crate as _ipld)

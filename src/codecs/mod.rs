@@ -9,7 +9,9 @@ use crate::dev::*;
 use serde::{de, ser};
 use std::{convert::TryFrom, error::Error as StdError};
 
-/// An IPLD [Codec](https://github.com/ipld/specs/blob/master/block-layer/codecs/README.md).
+/// An IPLD
+/// [Codec](https://github.com/ipld/specs/blob/master/block-layer/codecs/README.md)
+/// for reading and writing blocks.
 /// TODO const generic over CODE?
 pub trait Codec: Into<u64> + TryFrom<u64> + Copy {
     /// The multicodec code that identifies this IPLD Codec.
@@ -18,18 +20,18 @@ pub trait Codec: Into<u64> + TryFrom<u64> + Copy {
     /// Given a dag and a `Write`, encode it to the writer.
     fn write<T, W>(dag: &T, writer: W) -> Result<(), Error>
     where
-        T: Representation + Serialize,
+        T: Representation,
         W: Write;
 
     /// Given some bytes, deserialize a dag.
     fn decode<'de, T>(bytes: &'de [u8]) -> Result<T, Error>
     where
-        T: Representation + Deserialize<'de>;
+        T: Representation;
 
     /// Given a `Read`, deserialize a dag.
     fn read<T, R>(reader: R) -> Result<T, Error>
     where
-        T: Representation + DeserializeOwned,
+        T: Representation,
         R: Read;
 }
 
@@ -112,7 +114,7 @@ mod specialization {
 
     /// Default (specialized) implementation for all `Serializer`s (to avoid having
     /// to introduce an extension to `Serialize`).
-    impl<Se: Serializer> Encoder for Se {
+    impl<S: Serializer> Encoder for S {
         /// Default behaviour is to delegate to `Serializer::serialize_bytes`.
         #[inline]
         default fn serialize_bytes(self, bytes: &[u8]) -> Result<Self::Ok, Self::Error> {
@@ -121,9 +123,9 @@ mod specialization {
 
         /// Default behaviour is to serialize the link directly as bytes.
         #[inline]
-        default fn serialize_link<S>(self, cid: &CidGeneric<S>) -> Result<Self::Ok, Self::Error>
+        default fn serialize_link<Si>(self, cid: &CidGeneric<Si>) -> Result<Self::Ok, Self::Error>
         where
-            S: MultihashSize,
+            Si: MultihashSize,
         {
             Serializer::serialize_bytes(self, cid.to_bytes().as_ref())
         }
@@ -181,7 +183,7 @@ pub(crate) mod test_utils {
     pub fn roundtrip_bytes_codec<'de, C, T>(cases: &[(T, &'de [u8])])
     where
         C: Codec,
-        T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
+        T: PartialEq + Debug + Representation,
     {
         for (ref dag, expected) in cases {
             // writing
@@ -194,7 +196,7 @@ pub(crate) mod test_utils {
             assert_eq!(expected, &bytes.as_slice(), "Writing failure");
 
             // decoding
-            let v = decode_from_bytes::<'de, C, T>(expected).expect(&format!(
+            let v = decode_from_bytes::<C, T>(expected).expect(&format!(
                 "Failed to decode `{}` from {:?}",
                 dag.name(),
                 expected,
@@ -214,7 +216,7 @@ pub(crate) mod test_utils {
     pub fn roundtrip_str_codec<'de, C, T>(cases: &[(T, &'de str)])
     where
         C: Codec,
-        T: PartialEq + Debug + Representation + Serialize + DeserializeOwned,
+        T: PartialEq + Debug + Representation,
     {
         for (ref dag, expected) in cases {
             // writing
@@ -224,10 +226,10 @@ pub(crate) mod test_utils {
                 dag,
                 expected,
             ));
-            assert_eq!(expected, &string.as_str(), "Writing failure");
+            assert_eq!(*expected, string.as_str(), "Writing failure");
 
             // decoding
-            let v = decode_from_str::<'de, C, T>(expected).expect(&format!(
+            let v = decode_from_str::<C, T>(expected).expect(&format!(
                 "Failed to decode `{}` from {}",
                 dag.name(),
                 expected,
@@ -247,7 +249,7 @@ pub(crate) mod test_utils {
     fn write_to_bytes<C, T>(dag: &T) -> Result<Vec<u8>, Error>
     where
         C: Codec,
-        T: Representation + Serialize,
+        T: Representation,
     {
         let mut bytes = Vec::new();
         C::write(dag, &mut bytes)?;
@@ -257,7 +259,7 @@ pub(crate) mod test_utils {
     fn write_to_str<C, T>(dag: &T) -> Result<String, Error>
     where
         C: Codec,
-        T: Representation + Serialize,
+        T: Representation,
     {
         let bytes = write_to_bytes::<C, T>(dag)?;
         Ok(String::from_utf8(bytes).unwrap())
@@ -266,7 +268,7 @@ pub(crate) mod test_utils {
     fn decode_from_bytes<'de, C, T>(bytes: &'de [u8]) -> Result<T, Error>
     where
         C: Codec,
-        T: Representation + Deserialize<'de>,
+        T: Representation,
     {
         C::decode(bytes)
     }
@@ -274,7 +276,7 @@ pub(crate) mod test_utils {
     fn decode_from_str<'de, C, T>(s: &'de str) -> Result<T, Error>
     where
         C: Codec,
-        T: Representation + Deserialize<'de>,
+        T: Representation,
     {
         C::decode(s.as_bytes())
     }

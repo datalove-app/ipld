@@ -9,7 +9,7 @@ use syn::{Ident, Type};
 
 impl expand::ExpandBasicRepresentation for NullReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
-        let lib = meta.lib();
+        let lib = &meta.lib;
         let attrs = &meta.attrs;
         let vis = &meta.vis;
         let ident = &meta.name;
@@ -25,7 +25,7 @@ impl expand::ExpandBasicRepresentation for NullReprDefinition {
         expand::impl_repr(
             meta,
             quote! {
-                // const KIND: #lib::dev::Kind = #lib::dev::Kind::Null;
+                const KIND: _ipld::dev::Kind = _ipld::dev::Kind::Null;
             },
         )
     }
@@ -58,7 +58,7 @@ impl expand::ExpandBasicRepresentation for BytesReprDefinition {
     fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
         let name = &meta.name;
 
-        // TODO? correctness?
+        // TODO correctness?
         let impl_ser = expand::impl_serialize(
             meta,
             quote! {
@@ -97,7 +97,7 @@ impl expand::ExpandBasicRepresentation for BytesReprDefinition {
         expand::impl_repr(
             meta,
             quote! {
-                // const KIND: #lib::dev::Kind = #lib::dev::Kind::Bytes;
+                const KIND: _ipld::dev::Kind = _ipld::dev::Kind::Bytes;
             },
         )
     }

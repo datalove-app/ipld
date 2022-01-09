@@ -3,15 +3,20 @@
 //! While a `Representation` defines how a type traverses it's fields and maps them to bytes or blocks, the `Context` determines what happens with the bytes when encountering nested types, links, etc, before writing to or after reading from the byte stream.
 //!
 //! For example:
-//!     - An `impl Context for EncryptedContext` can provide a byte stream that encrypts bytes written from a type/decrypts bytes read into a type. Later, a `Representation` can be provided with an `EncyptedContext` initialized with a key, transparently encrypting/decrypting the provided byte streams.
+//!     - An `impl Context for EncryptedContext` can provide a byte stream that encrypts bytes written by a type/decrypts bytes read into a type. Later, a `Representation` can be provided with an `EncyptedContext` initialized with a key, transparently encrypting/decrypting the provided byte streams.
 //!     - Additionally, we can define an `impl State for Encrypted<R, W>: Context<R, W>` and a type whose `Representation` implementation could derive an encryption/decryption key from within the type, ensuring that the type can only be stored in ciphertext.
 
+#[cfg(feature = "ipfs")]
+mod ipfs;
+
+use crate::dev::*;
+
 use super::Representation;
-use async_trait::async_trait;
+// use async_trait::async_trait;
 
 ///
-#[async_trait]
-pub trait Context {
+#[async_trait::async_trait]
+pub trait Context: Sized {
     // /// Internally, this will:
     // ///     - get a (concrete?) BlockWriter from a BlockService
     // ///     - determine the Codec + Format from the BlockMeta
@@ -21,41 +26,45 @@ pub trait Context {
     // /// ```
     // /// Context::write(&ipld).await?;
     // /// ```
-    // async fn write<B, R>(&self, dag: &R, block_meta: B) -> Result<(), ()>
+    // async fn write<B, R>(&mut self, dag: &R, block_meta: B) -> Result<(), ()>
     // where
-    //     R: Representation,
+    //     R: Representation<Self>,
     //     B: Into<BlockMeta>;
+
+    // async fn resolve(&mut self)
 }
 
 // impl<'a, Ctx: Context> Context for &'a Ctx {}
 
-pub trait ContextExt {}
+// pub trait ContextExt {}
 
 static NULL_CONTEXT: () = ();
 
-pub struct DefaultContext;
-impl Context for DefaultContext {}
+pub struct MemoryContext {}
+impl Context for MemoryContext {}
+// impl<S: ISelector> Context<S> for MemoryContext {}
 
 // impl Context for () {}
 
-pub trait FromContext<Ctx> {
-    fn from(ctx: &Ctx) -> &Self;
-}
+// pub trait FromContext<Ctx> {
+//     fn from(ctx: &Ctx) -> &Self;
+// }
 
-impl<Ctx> FromContext<Ctx> for () {
-    fn from(_ctx: &Ctx) -> &Self {
-        &NULL_CONTEXT
-    }
-}
+// impl<Ctx> FromContext<Ctx> for () {
+//     fn from(_ctx: &Ctx) -> &Self {
+//         &NULL_CONTEXT
+//     }
+// }
 
-impl<Ctx> FromContext<Ctx> for Ctx
-where
-    Ctx: Context,
-{
-    fn from(ctx: &Ctx) -> &Self {
-        ctx
-    }
-}
+// impl<Ctx> FromContext<Ctx> for Ctx
+// where
+//     Ctx: Context<S>,
+//     S: ISelector,
+// {
+//     fn from(ctx: &Ctx) -> &Self {
+//         ctx
+//     }
+// }
 
 // /// An execution context for `Representation`s to `Read`/`Write` themselves from/to bytes by signalling `State` changes to the `Context`.
 // #[async_trait]

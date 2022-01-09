@@ -2,17 +2,19 @@ use crate::dev::*;
 
 impl Representation for () {
     const NAME: &'static str = "Null";
+    const SCHEMA: &'static str = "Null";
+    const KIND: Kind = Kind::Null;
 }
 // impl_root_select!(() => Matcher);
 
 #[doc(hidden)]
 #[macro_export(local_inner_macros)]
 macro_rules! def_primitive {
-    ($type:ident: $kind:ident, $schema:expr) => {
+    ($type:ident: $kind:ident, $name:expr) => {
         impl Representation for $type {
-            const NAME: &'static str = $schema;
-            // const SCHEMA: &'static str = $schema;
-            // const KIND: Kind = Kind::$kind;
+            const NAME: &'static str = $name;
+            const SCHEMA: &'static str = $name;
+            const KIND: Kind = Kind::$kind;
         }
 
         // $crate::impl_root_select!($type => Matcher);
@@ -32,11 +34,17 @@ def_primitive!(u64: Integer, "Uint64");
 def_primitive!(u128: Integer, "Uint128");
 def_primitive!(f32: Float, "Float32");
 def_primitive!(f64: Float, "Float64");
-def_primitive!(String: String, "String");
+// def_primitive!(String: String, "String");
 
-impl Representation for &str {
-    const NAME: &'static str = "str";
+impl Representation for String {
+    const NAME: &'static str = "String";
+    const SCHEMA: &'static str = "String";
+    const KIND: Kind = Kind::String;
 }
+
+// impl Representation for &str {
+//     const NAME: &'static str = "str";
+// }
 // impl_root_select!(Matcher {
 //     impl<Ctx> Select<Selector, Ctx> for &str
 //     where
@@ -44,8 +52,27 @@ impl Representation for &str {
 //         Self:
 // });
 
-impl<T> Representation for Option<T> {
-    const NAME: &'static str = "Null";
+impl<T> Representation for Option<T>
+where
+    T: Representation,
+{
+    const NAME: &'static str = "Option";
+    const KIND: Kind = Kind::Union;
+    const SCHEMA: &'static str = "Option<T>";
+
+    fn name(&self) -> &'static str {
+        match self {
+            Self::None => Null::NAME,
+            Self::Some(t) => t.name(),
+        }
+    }
+
+    fn kind(&self) -> Kind {
+        match self {
+            Self::None => Null::KIND,
+            Self::Some(t) => t.kind(),
+        }
+    }
 }
 // impl_root_select!(Matcher {
 //     impl<Ctx, T> Select<Selector, Ctx> for Option<T>

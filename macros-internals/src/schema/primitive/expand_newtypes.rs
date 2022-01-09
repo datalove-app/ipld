@@ -14,7 +14,7 @@ use syn::Type;
 #[macro_export(local_inner_macros)]
 macro_rules! define_newtype {
     ($self:ident, $meta:ident => $type:ident) => {{
-        let lib = $meta.lib();
+        let lib = &$meta.lib;
         let attrs = &$meta.attrs;
         let vis = &$meta.vis;
         let ident = &$meta.name;
@@ -57,10 +57,11 @@ macro_rules! define_newtype {
 /// Derives `Representation` for this type, delegating to the inner type.
 macro_rules! derive_newtype_repr {
     ($self:ident, $meta:ident => $type:ident) => {{
+        let lib = &$meta.lib;
         expand::impl_repr(
             $meta,
             quote! {
-                // const KIND: #lib::dev::Kind = <#$type as #lib::dev::Representation>::KIND;
+                const KIND: #lib::dev::Kind = <#$type as #lib::dev::Representation>::KIND;
             },
         )
     }};

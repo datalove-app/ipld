@@ -9,7 +9,7 @@ use syn::{parse_quote, Type};
 
 impl ExpandBasicRepresentation for ListpairsStructReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
-        let lib = meta.lib();
+        let lib = &meta.lib;
         let attrs = &meta.attrs;
         let vis = &meta.vis;
         let ident = &meta.name;

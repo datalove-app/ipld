@@ -1,42 +1,49 @@
 use crate::dev::*;
 use std::{convert::TryFrom, marker::PhantomData, rc::Rc};
 
-/// Link type, used to switch between a `cid::CidGeneric` and it's underlying dag.
 ///
-/// Under the hood, `Link` uses a `std::cell::Cell` in order to load links while
-/// reading into the dag.
-/// TODO: impl Serialize for Link, checking if impls!(S: Encoder)
-#[derive(Debug, Eq, PartialEq)]
-pub struct Link<T, S = DefaultMultihashSize>(InnerLink<T, S>)
-where
-    T: Representation,
-    S: MultihashSize;
-
-#[derive(Debug, Eq, PartialEq)]
-enum InnerLink<T, S = DefaultMultihashSize>
-where
-    T: Representation,
-    S: MultihashSize,
-{
-    /// Represents a raw `cid::CidGeneric` contained within a dag.
-    Cid(CidGeneric<S>),
-
-    /// Represents a parsed subset of a dag and its original `cid::CidGeneric`.
-    Selection {
-        cid: CidGeneric<S>,
-        // selector: Rc<Selector>,
-        dag: T,
-    },
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Link<T: Representation = Value, Si: MultihashSize = DefaultMultihashSize> {
+    cid: CidGeneric<Si>,
+    t: PhantomData<T>,
 }
 
-impl<T, S> Representation for Link<T, S>
+// /// Link type, used to switch between a `cid::CidGeneric` and it's underlying dag.
+// ///
+// /// Under the hood, `Link` uses a `std::cell::Cell` in order to load links while
+// /// reading into the dag.
+// /// TODO: impl Serialize for Link, checking if impls!(S: Encoder)
+// #[derive(Clone, Debug, Eq, PartialEq)]
+// pub struct Link<T = Box<Value>, Si = DefaultMultihashSize>(InnerLink<T, Si>)
+// where
+//     T: Representation,
+//     Si: MultihashSize;
+
+// #[derive(Clone, Debug, Eq, PartialEq)]
+// enum InnerLink<T, Si = DefaultMultihashSize>
+// where
+//     T: Representation,
+//     Si: MultihashSize,
+// {
+//     /// Represents a raw `cid::CidGeneric` contained within a dag.
+//     Cid(CidGeneric<Si>),
+
+//     /// Represents a parsed subset of a dag and its original `cid::CidGeneric`.
+//     Selection {
+//         cid: CidGeneric<Si>,
+//         // selector: Rc<Selector>,
+//         dag: T,
+//     },
+// }
+
+impl<T, Si> Representation for Link<T, Si>
 where
     T: Representation,
-    S: MultihashSize,
+    Si: MultihashSize,
 {
     const NAME: &'static str = "Link";
-    // const SCHEMA: &'static str = format!("type {} = &{}", Self::NAME, T::NAME);
-    // const KIND: Kind = Kind::Link;
+    // const SCHEMA: &'static str = "type" + Self::NAME + " = " + T::NAME;
+    const KIND: Kind = Kind::Link;
 }
 
 // TODO: impl_root_selector for each IS => T: Select<IS> (Ctx: Block for recursive)
@@ -162,87 +169,84 @@ where
 // additional implementations
 ////////////////////////////////////////////////////////////////////////////////
 
-impl<T, S> From<CidGeneric<S>> for Link<T, S>
+impl<T, Si> From<CidGeneric<Si>> for Link<T, Si>
 where
     T: Representation,
-    S: MultihashSize,
+    Si: MultihashSize,
 {
-    #[inline]
-    fn from(cid: CidGeneric<S>) -> Self {
-        Link(InnerLink::Cid(cid))
+    fn from(cid: CidGeneric<Si>) -> Self {
+        Link {
+            cid,
+            t: PhantomData,
+        }
     }
 }
 
-impl<T, S> Serialize for Link<T, S>
+impl<T, Si> Serialize for Link<T, Si>
 where
     T: Representation,
-    S: MultihashSize,
+    Si: MultihashSize,
 {
     fn serialize<Se>(&self, serializer: Se) -> Result<Se::Ok, Se::Error>
     where
         Se: Serializer,
     {
-        match &self.0 {
-            InnerLink::Cid(cid) => <Se as Encoder>::serialize_link(serializer, cid),
-            _ => Err(<Se::Error as serde::ser::Error>::custom(
-                "cannot serialize IPLD selection",
-            )),
-        }
+        // match &self.0 {
+        //     InnerLink::Cid(cid) => <Se as Encoder>::serialize_link(serializer, cid),
+        //     _ => Err(<Se::Error as serde::ser::Error>::custom(
+        //         "cannot serialize IPLD selection",
+        //     )),
+        // }
+
+        <Se as Encoder>::serialize_link(serializer, &self.cid)
     }
 }
 
-impl<'de, T, S> Deserialize<'de> for Link<T, S>
+impl<'de, T, Si> Deserialize<'de> for Link<T, Si>
 where
     T: Representation,
-    S: MultihashSize,
+    Si: MultihashSize,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct LinkVisitor<T, S = DefaultMultihashSize>
-        where
-            T: Representation,
-            S: MultihashSize,
-        {
-            t: PhantomData<T>,
-            size: PhantomData<S>,
-        }
+        struct LinkVisitor<T, Si: MultihashSize = DefaultMultihashSize>(
+            PhantomData<T>,
+            PhantomData<Si>,
+        );
 
-        impl<'de, T, S> Visitor<'de> for LinkVisitor<T, S>
+        impl<'de, T, Si> Visitor<'de> for LinkVisitor<T, Si>
         where
             T: Representation,
-            S: MultihashSize,
+            Si: MultihashSize,
         {
-            type Value = Link<T, S>;
+            type Value = Link<T, Si>;
 
             #[inline]
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 formatter.write_str("an IPLD link")
             }
         }
 
-        impl<'de, T, S> IpldVisitorExt<'de> for LinkVisitor<T, S>
+        impl<'de, T, Si> IpldVisitorExt<'de> for LinkVisitor<T, Si>
         where
             T: Representation,
-            S: MultihashSize,
+            Si: MultihashSize,
         {
             fn visit_link<E>(self, cid_bytes: Box<[u8]>) -> Result<Self::Value, E>
             where
                 E: serde::de::Error,
             {
-                let cid = CidGeneric::<S>::try_from(cid_bytes.as_ref()).map_err(E::custom)?;
-                Ok(Link::from(cid))
+                let cid = CidGeneric::<Si>::try_from(cid_bytes.as_ref()).map_err(E::custom)?;
+                Ok(Link {
+                    cid,
+                    t: PhantomData,
+                })
             }
         }
 
-        <D as Decoder<'de>>::deserialize_link(
-            deserializer,
-            LinkVisitor {
-                t: PhantomData,
-                size: PhantomData,
-            },
-        )
+        <D as Decoder<'de>>::deserialize_link(deserializer, LinkVisitor(PhantomData, PhantomData))
     }
 }
 

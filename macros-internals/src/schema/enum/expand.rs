@@ -1,11 +1,14 @@
 use super::*;
-use crate::dev::{schema::expand::ExpandBasicRepresentation, SchemaMeta};
+use crate::dev::{
+    schema::expand::{self, ExpandBasicRepresentation},
+    SchemaMeta,
+};
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens, TokenStreamExt};
 
 impl ExpandBasicRepresentation for EnumReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
-        let lib = meta.lib();
+        let lib = &meta.lib;
         let attrs = &meta.attrs;
         let vis = &meta.vis;
         let ident = &meta.name;
@@ -31,7 +34,14 @@ impl ExpandBasicRepresentation for EnumReprDefinition {
         }
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        TokenStream::default()
+        expand::impl_repr(
+            meta,
+            quote! {
+                const KIND: _ipld::dev::Kind =
+                    _ipld::dev::Kind::Enum;
+                // const FIELDS: _ipld::dev::Fields = _ipld::dev::Fields::Keyed(&[#(#fields,)*]);
+            },
+        )
     }
     fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()

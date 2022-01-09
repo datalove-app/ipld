@@ -4,22 +4,22 @@ mod display;
 pub(crate) mod expand;
 pub(crate) mod parse;
 
+mod compound;
 mod r#enum;
 mod primitive;
-mod recursive;
 mod r#struct;
 mod union;
 
+pub use compound::*;
 pub use primitive::*;
 pub use r#enum::*;
 pub use r#struct::*;
-pub use recursive::*;
 pub use union::*;
 
 use super::common::*;
 use crate::dev::*;
 use proc_macro2::{Span, TokenStream};
-use proc_macro_crate::crate_name;
+use proc_macro_crate::{crate_name, FoundCrate};
 use quote::quote;
 use std::ops::Deref;
 use syn::{parse_str, Attribute, Generics, Ident, ItemFn, LitStr, Path, Type, Visibility};
@@ -27,6 +27,7 @@ use syn::{parse_str, Attribute, Generics, Ident, ItemFn, LitStr, Path, Type, Vis
 ///
 #[derive(Debug, Clone)]
 pub struct SchemaMeta {
+    pub lib: TokenStream,
     pub typedef_str: String,
     pub internal: bool,
     pub try_from: Option<LitStr>,
@@ -38,18 +39,23 @@ pub struct SchemaMeta {
 
 impl SchemaMeta {
     /// Creates a `TokenStream` of the `ipld` lib used (either `crate` or the `ipld` crate name).
-    pub fn lib(&self) -> TokenStream {
-        if self.internal {
-            quote!(crate)
-        } else {
-            let path = crate_name(attr::IPLD_CRATE_NAME).map_or(
-                Path::from(Ident::new(attr::IPLD_CRATE_NAME, Span::call_site())),
-                |name| {
-                    parse_str::<Path>(&name).expect("`ipld` is either not present in Cargo.toml")
-                },
-            );
-            quote!(#path)
+    pub fn lib(is_internal: bool) -> TokenStream {
+        if is_internal {
+            return quote!(crate);
         }
+
+        let path = crate_name(attr::IPLD_CRATE_NAME).map_or(
+            Path::from(Ident::new(attr::IPLD_CRATE_NAME, Span::call_site())),
+            |found_crate_name| {
+                match found_crate_name {
+                    FoundCrate::Itself => parse_str::<Path>(attr::IPLD_CRATE_NAME),
+                    FoundCrate::Name(name) => parse_str::<Path>(&name),
+                }
+                .expect("`ipld` is either not present in Cargo.toml")
+            },
+        );
+
+        quote!(#path)
     }
 
     /// Returns the `Ident` of the `Visitor` generated for this type.
@@ -138,7 +144,7 @@ pub(crate) mod kw {
         // main keywords
         representation advanced
         // schema data types
-        null bool bytes string list map link copy
+        null bool boolean bytes string list map link copy
         int uint8 uint16 uint32 uint64 uint128 int8 int16 int32 int64 int128
         float float32 float64
         // representation types

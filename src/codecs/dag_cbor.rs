@@ -42,7 +42,7 @@ impl Codec for DagCbor {
 
     fn write<T, W>(dag: &T, writer: W) -> Result<(), Error>
     where
-        T: Representation + Serialize,
+        T: Representation,
         W: Write,
     {
         to_writer(writer, dag).map_err(|e| Error::Encoder(anyhow::Error::new(e)))
@@ -50,14 +50,14 @@ impl Codec for DagCbor {
 
     fn decode<'de, T>(bytes: &'de [u8]) -> Result<T, Error>
     where
-        T: Representation + Deserialize<'de>,
+        T: Representation,
     {
         from_slice(bytes).map_err(|e| Error::Decoder(anyhow::Error::new(e)))
     }
 
     fn read<T, R>(reader: R) -> Result<T, Error>
     where
-        T: Representation + for<'de> Deserialize<'de>,
+        T: Representation,
         R: Read,
     {
         from_reader(reader).map_err(|e| Error::Decoder(anyhow::Error::new(e)))

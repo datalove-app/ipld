@@ -10,7 +10,7 @@ use syn::{Ident, Type};
 
 impl ExpandBasicRepresentation for KeyedUnionReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
-        let lib = meta.lib();
+        let lib = &meta.lib;
         let attrs = &meta.attrs;
         let vis = &meta.vis;
         let ident = &meta.name;
@@ -25,11 +25,12 @@ impl ExpandBasicRepresentation for KeyedUnionReprDefinition {
         }
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+        let lib = &meta.lib;
         expand::impl_repr(
             meta,
             quote! {
-                // const KIND: _ipld::dev::Kind =
-                //     _ipld::dev::Kind::Union;
+                const KIND: #lib::dev::Kind =
+                    #lib::dev::Kind::Union;
                 // const FIELDS: _ipld::dev::Fields = _ipld::dev::Fields::Keyed(&[#(#fields,)*]);
             },
         )
@@ -46,11 +47,12 @@ fn field_typedef(field: &UnionField<LitStr>) -> TokenStream {
     let attrs = &field.attrs;
     let value = &field.value;
     let key = &field.key;
+    let generics = &field.generics;
 
     let value_tokens: TokenStream = if let Some(wrapper_type) = &field.wrapper {
         quote!(#wrapper_type<#value>)
     } else {
-        quote!(#value)
+        quote!(#value #generics)
     };
 
     let rename_attr = quote!(#[serde(rename = #key)]);
@@ -76,7 +78,7 @@ impl ExpandBasicRepresentation for UnionReprDefinition {
             // Self::Envelope(def) => def.define_type(meta),
             // Self::Inline(def) => def.define_type(meta),
             // Self::BytePrefix(def) => def.define_type(meta),
-            // Self::Kinded(def) => def.define_type(meta),
+            Self::Kinded(def) => def.define_type(meta),
             _ => unimplemented!(),
         }
     }
@@ -86,7 +88,7 @@ impl ExpandBasicRepresentation for UnionReprDefinition {
             // Self::Envelope(def) => def.derive_repr(meta),
             // Self::Inline(def) => def.derive_repr(meta),
             // Self::BytePrefix(def) => def.derive_repr(meta),
-            // Self::Kinded(def) => def.derive_repr(meta),
+            Self::Kinded(def) => def.derive_repr(meta),
             _ => unimplemented!(),
         }
     }
@@ -96,7 +98,7 @@ impl ExpandBasicRepresentation for UnionReprDefinition {
             // Self::Envelope(def) => def.derive_selects(meta),
             // Self::Inline(def) => def.derive_selects(meta),
             // Self::BytePrefix(def) => def.derive_selects(meta),
-            // Self::Kinded(def) => def.derive_selects(meta),
+            Self::Kinded(def) => def.derive_selects(meta),
             _ => unimplemented!(),
         }
     }

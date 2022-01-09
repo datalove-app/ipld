@@ -32,6 +32,7 @@ impl Parse for SchemaMeta {
 
         Ok(Self {
             // TODO: fix this
+            lib: Self::lib(internal),
             typedef_str: String::default(),
             internal,
             try_from,

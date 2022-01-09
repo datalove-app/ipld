@@ -6,43 +6,48 @@ mod link;
 mod list;
 mod map;
 mod primitive;
-mod recursive;
+// mod recursive;
 
 pub use link::Link;
 pub use list::List;
 pub use map::Map;
+pub use primitive::*;
 
 use crate::dev::*;
 use macros::derive_more::{Add, AsRef, From, Into, Mul, Sum};
 
-// schema! {
-//     ///
-//     #[ipld_attr(internal)]
-//     pub type Value union {
-//         | Null null
-//         | Bool bool
-//         | Int int
-//         | Float float
-//         | String string
-//         | Bytes bytes
-//         | List list
-//         | Map map
-//         | Link link
-//     } representation kinded;
-// }
+schema! {
+    ///
+    #[ipld_attr(internal)]
+    #[derive(Clone, Debug, PartialEq)]
+    pub type Value union {
+        | Null null
+        | Bool bool
+        | Int int
+        | Float float
+        | String string
+        | Bytes bytes
+        | List<Value> list
+        | Map<String, Value> map
+        | Link<Value> link
+    } representation kinded;
+}
 
 schema! {
     /// The `null` type.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
     pub type Null null;
 }
 
-// schema! {
-//     #[ipld_attr(internal)]
-//     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-//     pub type Bool bool;
-// }
+schema! {
+    /// The `bool` type.
+    #[ipld_attr(internal)]
+    #[derive(AsRef, Copy, Clone, Debug, Eq, From, Hash, PartialEq)]
+    #[as_ref(forward)]
+    #[from(forward)]
+    pub type Bool bool;
+}
 
 schema! {
     /// A `bytes` type.
@@ -58,7 +63,7 @@ macro_rules! def_num {
         schema! {
             #[doc = $doc_str]
             #[ipld_attr(internal)]
-            #[derive(AsRef, Debug, From, Hash, Into, Eq, PartialEq, Ord, PartialOrd, Add, Mul, Sum)]
+            #[derive(AsRef, Copy, Clone, Debug, From, Hash, Into, Eq, PartialEq, Ord, PartialOrd, Add, Mul, Sum)]
             #[as_ref(forward)]
             pub type $name $type;
         }
@@ -67,7 +72,7 @@ macro_rules! def_num {
         schema! {
             #[doc = $doc_str]
             #[ipld_attr(internal)]
-            #[derive(AsRef, Debug, From, Into, PartialEq, PartialOrd, Add, Mul, Sum)]
+            #[derive(AsRef, Clone, Debug, From, Into, PartialEq, PartialOrd, Add, Mul, Sum)]
             #[as_ref(forward)]
             pub type $name $type;
         }

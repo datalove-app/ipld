@@ -5,7 +5,7 @@ use quote::{quote, ToTokens, TokenStreamExt};
 
 impl ExpandBasicRepresentation for InlineUnionReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
-        let lib = meta.lib();
+        let lib = &meta.lib;
         let attrs = &meta.attrs;
         let vis = &meta.vis;
         let ident = &meta.name;

@@ -3,7 +3,7 @@
 use super::*;
 use crate::dev::{
     common, impl_advanced_parse, parse_kwarg,
-    schema::{kw, parse, recursive::parse::parse_stringpair_args},
+    schema::{compound::parse::parse_stringpair_args, kw, parse},
     InnerAttributes,
 };
 use quote::quote;

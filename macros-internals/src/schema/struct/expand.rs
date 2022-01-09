@@ -9,7 +9,7 @@ use syn::{parse_quote, Type};
 
 impl ExpandBasicRepresentation for BasicStructReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
-        let lib = meta.lib();
+        let lib = &meta.lib;
         let attrs = &meta.attrs;
         let vis = &meta.vis;
         let ident = &meta.name;
@@ -64,7 +64,7 @@ pub(super) fn impl_repr<'a>(
     iter: impl Iterator<Item = &'a StructField>,
     meta: &SchemaMeta,
 ) -> TokenStream {
-    // let lib = &meta.ipld_schema_lib;
+    let lib = &meta.lib;
     let name = &meta.name;
     let fields: Vec<TokenStream> = iter
         .map(
@@ -86,7 +86,7 @@ pub(super) fn impl_repr<'a>(
     let repr_body = expand::impl_repr(
         meta,
         quote! {
-            // const KIND: #lib::dev::Kind = #lib::dev::Kind::Struct;
+            const KIND: #lib::dev::Kind = #lib::dev::Kind::Struct;
             // const FIELDS: #lib::dev::Fields = #lib::dev::Fields::Struct(&[#(#fields,)*]);
         },
     );

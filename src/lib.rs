@@ -4,6 +4,29 @@
 //! [Representations](https://github.com/ipld/specs/blob/master/schemas/representations.md), and
 //! [Selectors](https://github.com/ipld/specs/blob/master/selectors/selectors.md)
 //! [specifications](https://github.com/ipld/specs).
+//!
+//! Notes, 20220108:
+//! Encoder/Decoder knows how to write to block writers, read from block readers
+//! Context:
+//!     needs to know how to provide readers and writers
+//!     for other use cases (super traits?):
+//!         SigningContext: must be signer-aware
+//!         Transform/Encryption: must know how
+//!         ? SelectionContext
+//! [new] Representation, that uses a Context to:
+//!     request readers to decode block, then selects within it
+//!         may be able to use a SelectorSeed to get a specific val
+//!     request writers for writing itself
+//!         if dirty, will first fetch writers for nested items
+//!
+//! I really want three things:
+//! - Representation method to merge a type at a path, and update all parent blocks
+//!     ?Context
+//!     ::merge(&mut self, Value, path)
+//!         -> by default, acts as a register
+//! - VerifiableRepresentation
+//!     ::resolve(&self, path) -> (Value, Proof, ?RemPath?)
+//!     ::verify(path, value, proof)
 
 // #![feature(generic_associated_types)]
 #![feature(specialization)]
@@ -11,6 +34,7 @@
 
 #[path = "codecs/mod.rs"]
 mod _codecs;
+mod block;
 mod error;
 
 pub mod representation;
@@ -23,9 +47,9 @@ pub use _codecs::{Codec, Decoder, Encoder, IpldVisitorExt};
 pub use error::Error;
 // pub use ipld::borrowed::Ipld as BorrowedIpld;
 #[doc(inline)]
-pub use representation::{Context, Representation, Select};
-#[doc(inline)]
-pub use selectors::Selector;
+pub use representation::{Context, Representation};
+// #[doc(inline)]
+// pub use selectors::Selector;
 // #[doc(inline)]
 // pub use value::Value;
 
@@ -45,6 +69,7 @@ pub mod codecs {
 
 /// All the exports and re-exports necessary for using `ipld`.
 pub mod prelude {
+    pub use crate::block::BlockMeta;
     pub use crate::*;
     pub use codecs::*;
     pub use value::*;
@@ -80,7 +105,7 @@ pub mod dev {
     // pub use async_stream::stream;
     pub use anyhow;
     pub use bytes;
-    pub use futures::{self, Stream, StreamExt};
+    // pub use futures::{self, Stream, StreamExt};
     pub use ipld_macros_internals as macros;
-    pub use serde_repr;
+    // pub use serde_repr;
 }

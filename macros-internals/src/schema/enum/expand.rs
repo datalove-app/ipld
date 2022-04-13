@@ -25,6 +25,7 @@ impl ExpandBasicRepresentation for EnumReprDefinition {
                 fields: EnumIntFields { repr_type, fields },
             } => quote! {
                 #(#attrs)*
+                /// TODO: endianness?
                 #[derive(#lib::dev::serde_repr::Deserialize_repr, #lib::dev::serde_repr::Serialize_repr)]
                 #[repr(#repr_type)]
                 #vis enum #ident {
@@ -37,13 +38,16 @@ impl ExpandBasicRepresentation for EnumReprDefinition {
         expand::impl_repr(
             meta,
             quote! {
-                const KIND: _ipld::dev::Kind =
-                    _ipld::dev::Kind::Enum;
-                // const FIELDS: _ipld::dev::Fields = _ipld::dev::Fields::Keyed(&[#(#fields,)*]);
+                const KIND: Kind =
+                    Kind::Enum;
+                // const FIELDS: Fields = Fields::Keyed(&[#(#fields,)*]);
             },
+            // quote! {
+            //     unimplemented!()
+            // },
         )
     }
-    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
 }

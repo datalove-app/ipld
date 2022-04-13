@@ -84,11 +84,11 @@ impl_advanced_parse!(AdvancedBytesSchemaDefinition => Bytes, BytesReprDefinition
 //         //     resolve(&self) -> juniper::Value {
 //         //         juniper::Value::string(&self.0)
 //         //     }
-
+//
 //         //     from_input_value(v: &juniper::InputValue) -> Option<$name> {
 //         //         v.as_string_value().map(|s| $name(s.to_owned()))
 //         //     }
-
+//
 //         //     from_str<'a>(value: juniper::ScalarToken<'a>) -> juniper::ParseScalarResult<'a> {
 //         //         <String as juniper::ParseScalarValue>::from_str(value)
 //         //     }
@@ -128,7 +128,7 @@ impl_advanced_parse!(AdvancedBytesSchemaDefinition => Bytes, BytesReprDefinition
 //             {
 //                 Ok($name(<$type>::read(ctx).await?))
 //             }
-
+//
 //             #[inline]
 //             async fn write(&self, ctx: &Ctx) -> Result<(), ::libipld_schema::Error>
 //             where

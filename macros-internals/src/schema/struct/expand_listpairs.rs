@@ -15,7 +15,7 @@ impl ExpandBasicRepresentation for ListpairsStructReprDefinition {
         let ident = &meta.name;
         let fields: Vec<TokenStream> = self
             .iter()
-            .map(super::expand::default_field_typdef)
+            .map(super::expand::default_field_def)
             .collect();
 
         quote! {
@@ -31,7 +31,7 @@ impl ExpandBasicRepresentation for ListpairsStructReprDefinition {
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         super::expand::impl_repr(self.iter(), meta)
     }
-    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
 }

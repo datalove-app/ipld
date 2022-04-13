@@ -20,16 +20,19 @@
 //!         if dirty, will first fetch writers for nested items
 //!
 //! I really want three things:
-//! - Representation method to merge a type at a path, and update all parent blocks
+//! - a Representation method to merge a type at a path, and update all parent blocks
 //!     ?Context
 //!     ::merge(&mut self, Value, path)
 //!         -> by default, acts as a register
-//! - VerifiableRepresentation
+//!     ? how do we know what blocks are interested in updated links?
+//! - Verifiable val/range selectors
 //!     ::resolve(&self, path) -> (Value, Proof, ?RemPath?)
 //!     ::verify(path, value, proof)
 
 // #![feature(generic_associated_types)]
+#![feature(box_patterns)]
 #![feature(specialization)]
+// #![recursion_limit = "256"]
 #![warn(rust_2018_idioms, missing_debug_implementations, missing_docs)]
 
 #[path = "codecs/mod.rs"]
@@ -37,6 +40,7 @@ mod _codecs;
 mod block;
 mod error;
 
+pub mod advanced_layouts;
 pub mod representation;
 pub mod selectors;
 pub mod value;
@@ -47,11 +51,11 @@ pub use _codecs::{Codec, Decoder, Encoder, IpldVisitorExt};
 pub use error::Error;
 // pub use ipld::borrowed::Ipld as BorrowedIpld;
 #[doc(inline)]
-pub use representation::{Context, Representation};
-// #[doc(inline)]
-// pub use selectors::Selector;
-// #[doc(inline)]
-// pub use value::Value;
+pub use representation::Representation;
+#[doc(inline)]
+pub use selectors::{Context, Select, Selector};
+#[doc(inline)]
+pub use value::Value;
 
 #[doc(inline)]
 pub use ipld_macros::{ipld_attr, schema, selector};
@@ -65,10 +69,17 @@ pub mod codecs {
 
     #[cfg(feature = "dag-json")]
     pub use crate::_codecs::dag_json::DagJson;
+
+    #[cfg(feature = "dag-pb")]
+    pub use crate::_codecs::dag_pb::DagPb;
+
+    #[cfg(feature = "multicodec")]
+    pub use crate::_codecs::multicodec::Multicodec;
 }
 
 /// All the exports and re-exports necessary for using `ipld`.
 pub mod prelude {
+    pub use crate::advanced_layouts::*;
     pub use crate::block::BlockMeta;
     pub use crate::*;
     pub use codecs::*;
@@ -77,14 +88,10 @@ pub mod prelude {
     pub use cid::{self, Cid, CidGeneric};
     pub use multibase::{self, Base as Multibase};
     pub use multihash::{
-        self, typenum, Code as DefaultMultihash, MultihashDigest, Size as MultihashSize,
-        U64 as DefaultMultihashSize,
+        self, typenum, Code as Multihash, Digest, Multihash as DefaultMultihash, MultihashDigest,
+        Size as MultihashSize, U64 as DefaultMultihashSize,
     };
-    pub use serde::{
-        self,
-        de::{DeserializeOwned, DeserializeSeed, Visitor},
-        Deserialize, Deserializer, Serialize, Serializer,
-    };
+    pub use serde::{Deserialize, Serialize};
     pub use std::{
         fmt::Debug,
         io::{Read, Write},
@@ -94,18 +101,28 @@ pub mod prelude {
 /// All exports from `ipld::prelude`, plus re-exports of first- and third-party
 /// dependencies to aid developers wanting to implement or extend `ipld` behaviour.
 pub mod dev {
-    // pub use crate::_codecs::*;
+    pub use crate::_codecs::*;
     #[doc(inline)]
     pub use crate::impl_root_select;
     pub use crate::prelude::*;
     pub use crate::representation::*;
+    // pub use crate::runtime::*;
     pub use crate::selectors::*;
 
     // dependency re-exports for macro convenience
     // pub use async_stream::stream;
     pub use anyhow;
     pub use bytes;
+    pub use erased_serde::{Deserializer as ErasedDeserializer, Serializer as ErasedSerializer};
     // pub use futures::{self, Stream, StreamExt};
+    pub use impls;
     pub use ipld_macros_internals as macros;
-    // pub use serde_repr;
+    pub use serde::{
+        de::{
+            DeserializeOwned, DeserializeSeed, EnumAccess, Error as _, MapAccess, SeqAccess,
+            VariantAccess, Visitor,
+        },
+        Deserialize, Deserializer, Serialize, Serializer,
+    };
+    pub use serde_repr;
 }

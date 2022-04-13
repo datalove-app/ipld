@@ -9,7 +9,6 @@ use syn::{parse_quote, Type};
 
 impl ExpandBasicRepresentation for BasicStructReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
-        let lib = &meta.lib;
         let attrs = &meta.attrs;
         let vis = &meta.vis;
         let ident = &meta.name;
@@ -18,11 +17,11 @@ impl ExpandBasicRepresentation for BasicStructReprDefinition {
             .as_ref()
             .map(|g| quote!(#g))
             .unwrap_or(TokenStream::default());
-        let fields: Vec<TokenStream> = self.iter().map(field_typedef).collect();
+        let fields: Vec<TokenStream> = self.iter().map(field_def).collect();
 
         quote! {
             #(#attrs)*
-            #[derive(#lib::dev::Deserialize, #lib::dev::Serialize)]
+            #[derive(Deserialize, Serialize)]
             #vis struct #ident #generics {
                 #(#fields,)*
             }
@@ -34,29 +33,8 @@ impl ExpandBasicRepresentation for BasicStructReprDefinition {
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         impl_repr(self.iter(), meta)
     }
-    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
-    }
-}
-
-fn field_typedef(field: &StructField) -> TokenStream {
-    let attrs = &field.attrs;
-    let vis = &field.vis;
-    let key = &field.key;
-    let value = field_value(field);
-    let generics = field.generics.as_ref().map(|g| quote!(#g));
-
-    let implicit_attr = field.implicit.as_ref().map(|_| quote!(#[serde(default)]));
-    let rename_attr = field
-        .rename
-        .as_ref()
-        .map(|name| quote!(#[serde(rename = #name)]));
-
-    quote! {
-        #(#attrs)*
-        #implicit_attr
-        #rename_attr
-        #vis #key: #value #generics
     }
 }
 
@@ -77,7 +55,7 @@ pub(super) fn impl_repr<'a>(
                     .map(|s| s.value())
                     .unwrap_or_else(|| key.clone());
                 quote! {
-                    (#key, _ipld::dev::Field::new::<#value>(#rename))
+                    (#key, Field::new::<#value>(#rename))
                 }
             },
         )
@@ -86,24 +64,15 @@ pub(super) fn impl_repr<'a>(
     let repr_body = expand::impl_repr(
         meta,
         quote! {
-            const KIND: #lib::dev::Kind = #lib::dev::Kind::Struct;
-            // const FIELDS: #lib::dev::Fields = #lib::dev::Fields::Struct(&[#(#fields,)*]);
+            const KIND: Kind = Kind::Struct;
+            // const FIELDS: Fields = Fields::Struct(&[#(#fields,)*]);
         },
     );
     let selector_bodies = quote! {};
     repr_body
 }
 
-pub(super) fn field_value(field: &StructField) -> TokenStream {
-    let value = &field.value;
-    if field.optional || field.nullable {
-        quote!(Option<#value>)
-    } else {
-        quote!(#value)
-    }
-}
-
-pub(crate) fn default_field_typdef(field: &StructField) -> TokenStream {
+pub(crate) fn default_field_def(field: &StructField) -> TokenStream {
     let attrs = &field.attrs;
     let vis = &field.vis;
     let key = &field.key;
@@ -112,6 +81,36 @@ pub(crate) fn default_field_typdef(field: &StructField) -> TokenStream {
     quote! {
         #(#attrs)*
         #vis #key: #value
+    }
+}
+
+fn field_def(field: &StructField) -> TokenStream {
+    let attrs = &field.attrs;
+    let vis = &field.vis;
+    let key = &field.key;
+    let value = field_value(field);
+    let generics = field.generics.as_ref().map(|g| quote!(#g));
+
+    let implicit_attr = field.implicit.as_ref().map(|_| quote!(#[serde(default)]));
+    let rename_attr = field
+        .rename
+        .as_ref()
+        .map(|name| quote!(#[serde(rename = #name)]));
+
+    quote! {
+        #(#attrs)*
+        #implicit_attr
+        #rename_attr
+        #vis #key: #value #generics
+    }
+}
+
+pub(super) fn field_value(field: &StructField) -> TokenStream {
+    let value = &field.value;
+    if field.optional || field.nullable {
+        quote!(Option<#value>)
+    } else {
+        quote!(#value)
     }
 }
 
@@ -142,7 +141,7 @@ impl ExpandBasicRepresentation for StructReprDefinition {
         let name = &meta.name;
         // let lib = &meta.ipld_schema_lib;
         // let repr_body = quote! {
-        //     const KIND: #lib::dev::Kind = #lib::dev::Kind::Struct;
+        //     const KIND: Kind = Kind::Struct;
         // };
         // expand::impl_repr(meta, repr_body)
         let repr = match self {
@@ -161,13 +160,13 @@ impl ExpandBasicRepresentation for StructReprDefinition {
         }
     }
 
-    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         match self {
-            Self::Map(repr) => repr.derive_selects(meta),
-            Self::Listpairs(repr) => repr.derive_selects(meta),
-            Self::Tuple(repr) => repr.derive_selects(meta),
-            Self::Stringpairs(repr) => repr.derive_selects(meta),
-            Self::Stringjoin(repr) => repr.derive_selects(meta),
+            Self::Map(repr) => repr.derive_select(meta),
+            Self::Listpairs(repr) => repr.derive_select(meta),
+            Self::Tuple(repr) => repr.derive_select(meta),
+            Self::Stringpairs(repr) => repr.derive_select(meta),
+            Self::Stringjoin(repr) => repr.derive_select(meta),
             Self::Advanced(_) => unreachable!(),
         }
     }

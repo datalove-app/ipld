@@ -14,6 +14,7 @@ impl Parse for ListReprDefinition {
         // parse list typedef
         let mut nullable = false;
         let typedef_stream;
+        
         bracketed!(typedef_stream in input);
         if typedef_stream.peek(kw::nullable) {
             typedef_stream.parse::<kw::nullable>()?;
@@ -46,6 +47,7 @@ impl Parse for MapReprDefinition {
         let mut nullable = false;
         let typedef_stream;
         braced!(typedef_stream in input);
+
         let key = typedef_stream.parse::<Type>()?;
         typedef_stream.parse::<Token![:]>()?;
         if typedef_stream.peek(kw::nullable) {

@@ -4,36 +4,47 @@
 pub mod dag_cbor;
 #[cfg(feature = "dag-json")]
 pub mod dag_json;
+#[cfg(feature = "dag-pb")]
+pub mod dag_pb;
+
+#[cfg(feature = "multicodec")]
+pub mod multicodec;
 
 use crate::dev::*;
 use serde::{de, ser};
-use std::{convert::TryFrom, error::Error as StdError};
+use std::{convert::TryFrom, error::Error as StdError, marker::PhantomData};
 
 /// An IPLD
 /// [Codec](https://github.com/ipld/specs/blob/master/block-layer/codecs/README.md)
 /// for reading and writing blocks.
 /// TODO const generic over CODE?
-pub trait Codec: Into<u64> + TryFrom<u64> + Copy {
-    /// The multicodec code that identifies this IPLD Codec.
-    const CODE: u64;
-
+pub trait Codec: Into<u64> + TryFrom<u64, Error = Error> {
     /// Given a dag and a `Write`, encode it to the writer.
-    fn write<T, W>(dag: &T, writer: W) -> Result<(), Error>
+    fn write<T, W>(&mut self, dag: &T, writer: W) -> Result<(), Error>
     where
         T: Representation,
         W: Write;
 
     /// Given some bytes, deserialize a dag.
-    fn decode<'de, T>(bytes: &'de [u8]) -> Result<T, Error>
+    fn decode<'de, T>(&mut self, bytes: &'de [u8]) -> Result<T, Error>
     where
         T: Representation;
 
     /// Given a `Read`, deserialize a dag.
-    fn read<T, R>(reader: R) -> Result<T, Error>
+    fn read<T, R>(&mut self, reader: R) -> Result<T, Error>
     where
         T: Representation,
         R: Read;
 }
+
+// pub trait CodecExt<'de>: Codec {
+//     type Encoder: Encoder;
+//     type Decoder: Decoder<'de>;
+
+//     fn encoder<W: Write>(writer: W) -> Result<Self::Encoder, Error>;
+
+//     fn decoder<R: Read>(reader: R) -> Result<Self::Decoder, Error>;
+// }
 
 // ///
 // #[derive(Debug, thiserror::Error)]
@@ -90,6 +101,15 @@ pub trait Decoder<'de>: Deserializer<'de> {
         V: IpldVisitorExt<'de>;
 }
 
+///
+pub trait Transcoder<'de> {
+    type Serializer: Serializer;
+    type Deserializer: Deserializer<'de>;
+
+    fn serializer(&mut self) -> Option<&mut Self::Serializer>;
+    fn deserializer(&mut self) -> &mut Self::Deserializer;
+}
+
 /// A helper trait for visiting special and recursive IPLD types.
 ///
 /// Should be implemented by any types representing IPLD links and maps.
@@ -97,8 +117,17 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
     /// The input contains the bytes of a `Cid`.
     ///
     /// The default implementation fails with a type error.
-    /// TODO: vec or box?
-    fn visit_link<E>(self, cid_bytes: Box<[u8]>) -> Result<Self::Value, E>
+    fn visit_link_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Err(de::Error::invalid_type(de::Unexpected::Other("CID"), &self))
+    }
+
+    /// The input contains a string representation of a `Cid`.
+    ///
+    /// The default implementation fails with a type error.
+    fn visit_link_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
@@ -106,88 +135,163 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
     }
 }
 
+/// Helper [`Visitor`] for visiting [`CidGeneric`]s.
+///
+/// [`Visitor`]: serde::de::Visitor
+/// [`CidGeneric`]: cid::CidGeneric
+#[derive(Debug, Default)]
+pub struct CidVisitor<Si: MultihashSize>(PhantomData<Si>);
+
+impl<'de, Si: MultihashSize> Visitor<'de> for CidVisitor<Si> {
+    type Value = CidGeneric<Si>;
+
+    #[inline]
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a CID")
+    }
+}
+
+impl<'de, Si: MultihashSize> IpldVisitorExt<'de> for CidVisitor<Si> {
+    /// The input contains the bytes of a `Cid`.
+    #[inline]
+    fn visit_link_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Self::Value::try_from(cid_str).map_err(E::custom)
+    }
+
+    /// The input contains a string representation of a `Cid`.
+    #[inline]
+    fn visit_link_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Self::Value::try_from(cid_bytes).map_err(E::custom)
+    }
+}
+
 ///
 /// TODO: potentially get rid of this, in order to support raw JSON and CBOR codecs
 mod specialization {
     use crate::dev::*;
-    use serde::de;
+    use std::rc::Rc;
 
-    /// Default (specialized) implementation for all `Serializer`s (to avoid having
-    /// to introduce an extension to `Serialize`).
-    impl<S: Serializer> Encoder for S {
-        /// Default behaviour is to delegate to `Serializer::serialize_bytes`.
-        #[inline]
-        default fn serialize_bytes(self, bytes: &[u8]) -> Result<Self::Ok, Self::Error> {
-            Serializer::serialize_bytes(self, bytes)
-        }
+    macro_rules! default_impl_codec {
+        (@ser {$($generics:tt)*} $ty:ty) => {
+            /// Default (specialized) implementation for all `Serializer`s (to avoid having
+            /// to introduce an extension to `Serialize`).
+            impl<$($generics)*> Encoder for $ty
+            // where
+            //     <$ty as serde::Serializer>::Error: 'static
+            {
+                /// Default behaviour is to delegate to `Serializer::serialize_bytes`.
+                #[inline]
+                default fn serialize_bytes(self, bytes: &[u8]) -> Result<Self::Ok, Self::Error> {
+                    Serializer::serialize_bytes(self, bytes)
+                }
 
-        /// Default behaviour is to serialize the link directly as bytes.
-        #[inline]
-        default fn serialize_link<Si>(self, cid: &CidGeneric<Si>) -> Result<Self::Ok, Self::Error>
-        where
-            Si: MultihashSize,
-        {
-            Serializer::serialize_bytes(self, cid.to_bytes().as_ref())
-        }
+                /// Default behaviour is to serialize the link directly as bytes.
+                #[inline]
+                default fn serialize_link<Si>(self, cid: &CidGeneric<Si>) -> Result<Self::Ok, Self::Error>
+                where
+                    Si: MultihashSize,
+                {
+                    Serializer::serialize_bytes(self, cid.to_bytes().as_ref())
+                }
+            }
+        };
+
+        (@de {$($generics:tt)*} $ty:ty) => {
+            /// Default (specialized) implementation for all `Deserializer`s (to avoid
+            /// having to introduce an extension to `Deserialize`).
+            impl<'de, $($generics)*> Decoder<'de> for $ty
+            // where
+            //     <$ty as serde::Deserializer<'de>>::Error: 'static
+            {
+                /// Default behaviour is to delegate directly to `Deserializer::deserialize_any`.
+                #[inline]
+                default fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+                where
+                    V: IpldVisitorExt<'de>,
+                {
+                    Deserializer::deserialize_any(self, visitor)
+                }
+
+                /// Default behaviour is to delegate directly to
+                /// `Deserializer::deserialize_bytes`.
+                #[inline]
+                default fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+                where
+                    V: IpldVisitorExt<'de>,
+                {
+                    Deserializer::deserialize_bytes(self, visitor)
+                }
+
+                /// Default behaviour is to delegate directly to
+                /// `Deserializer::deserialize_byte_buf`.
+                #[inline]
+                default fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+                where
+                    V: IpldVisitorExt<'de>,
+                {
+                    Deserializer::deserialize_byte_buf(self, visitor)
+                }
+
+                /// Default behaviour is to deserialize some bytes and parse them directly
+                /// as a `Cid`.
+                #[inline]
+                default fn deserialize_link<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+                where
+                    V: IpldVisitorExt<'de>,
+                {
+                    if self.is_human_readable() {
+                        let s = <&'de str>::deserialize(self)?;
+                        visitor.visit_link_str(s)
+                    } else {
+                        let bytes = <&'de [u8]>::deserialize(self)?;
+                        visitor.visit_link_bytes(bytes)
+                    }
+                }
+            }
+        };
     }
 
-    /// Default (specialized) implementation for all `Deserializer`s (to avoid
-    /// having to introduce an extension to `Deserialize`).
-    impl<'de, D: Deserializer<'de> + Sized> Decoder<'de> for D {
-        /// Default behaviour is to delegate directly to `Deserializer::deserialize_any`.
-        #[inline]
-        default fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: IpldVisitorExt<'de>,
-        {
-            Deserializer::deserialize_any(self, visitor)
-        }
+    default_impl_codec!(@ser {S: Serializer} S);
+    default_impl_codec!(@de {D: Deserializer<'de>} D);
 
-        /// Default behaviour is to delegate directly to
-        /// `Deserializer::deserialize_bytes`.
-        #[inline]
-        default fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: IpldVisitorExt<'de>,
-        {
-            Deserializer::deserialize_bytes(self, visitor)
-        }
+    default_impl_codec!(@ser {'a} &'a mut dyn ErasedSerializer);
+    default_impl_codec!(@ser {'a} &'a mut (dyn ErasedSerializer + Send));
+    default_impl_codec!(@ser {'a} &'a mut (dyn ErasedSerializer + Sync));
+    default_impl_codec!(@ser {'a} &'a mut (dyn ErasedSerializer + Send + Sync));
+    default_impl_codec!(@de {'a} &'a mut dyn ErasedDeserializer<'de>);
+    default_impl_codec!(@de {'a} &'a mut (dyn ErasedDeserializer<'de> + Send));
+    default_impl_codec!(@de {'a} &'a mut (dyn ErasedDeserializer<'de> + Sync));
+    default_impl_codec!(@de {'a} &'a mut (dyn ErasedDeserializer<'de> + Send + Sync));
 
-        /// Default behaviour is to delegate directly to
-        /// `Deserializer::deserialize_byte_buf`.
-        #[inline]
-        default fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: IpldVisitorExt<'de>,
-        {
-            Deserializer::deserialize_byte_buf(self, visitor)
-        }
-
-        /// Default behaviour is to deserialize some bytes and parse them directly
-        /// as a `Cid`.
-        #[inline]
-        default fn deserialize_link<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: IpldVisitorExt<'de>,
-        {
-            let bytes = <&'de [u8]>::deserialize(self)?;
-            visitor.visit_link(bytes.into())
-        }
-    }
+    default_impl_codec!(@de {} Box<dyn ErasedDeserializer<'de>>);
+    default_impl_codec!(@de {} Box<dyn ErasedDeserializer<'de> + Send>);
+    default_impl_codec!(@de {} Box<dyn ErasedDeserializer<'de> + Sync>);
+    default_impl_codec!(@de {} Box<dyn ErasedDeserializer<'de> + Send + Sync>);
+    // default_impl_codec!(@de {} Rc<dyn ErasedDeserializer<'de>>);
+    // default_impl_codec!(@de {} Rc<dyn ErasedDeserializer<'de> + Send>);
+    // default_impl_codec!(@de {} Rc<dyn ErasedDeserializer<'de> + Sync>);
+    // default_impl_codec!(@de {} Rc<dyn ErasedDeserializer<'de> + Send + Sync>);
 }
 
 pub(crate) mod test_utils {
     use crate::dev::*;
-    use std::{fmt::Debug, io::Read, string::ToString};
+    use std::{convert::TryFrom, fmt::Debug, io::Read, string::ToString};
 
-    pub fn roundtrip_bytes_codec<'de, C, T>(cases: &[(T, &'de [u8])])
+    pub fn roundtrip_bytes_codec<'de, T>(code: u64, cases: &[(T, &'de [u8])])
     where
-        C: Codec,
         T: PartialEq + Debug + Representation,
     {
+        let mut codec = Multicodec::try_from(code).expect("should find codec");
+
         for (ref dag, expected) in cases {
             // writing
-            let bytes = write_to_bytes::<C, T>(dag).expect(&format!(
+            let bytes = write_to_bytes::<T>(&mut codec, dag).expect(&format!(
                 "Failed to encode `{}` {:?} into {:?}",
                 dag.name(),
                 dag,
@@ -196,7 +300,7 @@ pub(crate) mod test_utils {
             assert_eq!(expected, &bytes.as_slice(), "Writing failure");
 
             // decoding
-            let v = decode_from_bytes::<C, T>(expected).expect(&format!(
+            let v = decode_from_bytes::<T>(&mut codec, expected).expect(&format!(
                 "Failed to decode `{}` from {:?}",
                 dag.name(),
                 expected,
@@ -204,7 +308,7 @@ pub(crate) mod test_utils {
             assert_eq!(*dag, v, "Decoding failure");
 
             // reading
-            let v = C::read(*expected).expect(&format!(
+            let v = codec.read(*expected).expect(&format!(
                 "Failed to read `{}` from {:?}",
                 dag.name(),
                 expected,
@@ -213,14 +317,15 @@ pub(crate) mod test_utils {
         }
     }
 
-    pub fn roundtrip_str_codec<'de, C, T>(cases: &[(T, &'de str)])
+    pub fn roundtrip_str_codec<'de, T>(code: u64, cases: &[(T, &'de str)])
     where
-        C: Codec,
         T: PartialEq + Debug + Representation,
     {
+        let mut codec = Multicodec::try_from(code).expect("should find codec");
+
         for (ref dag, expected) in cases {
             // writing
-            let string = write_to_str::<C, T>(dag).expect(&format!(
+            let string = write_to_str::<T>(&mut codec, dag).expect(&format!(
                 "Failed to encode `{}` {:?} into {}",
                 dag.name(),
                 dag,
@@ -229,7 +334,7 @@ pub(crate) mod test_utils {
             assert_eq!(*expected, string.as_str(), "Writing failure");
 
             // decoding
-            let v = decode_from_str::<C, T>(expected).expect(&format!(
+            let v = decode_from_str::<T>(&mut codec, expected).expect(&format!(
                 "Failed to decode `{}` from {}",
                 dag.name(),
                 expected,
@@ -237,7 +342,7 @@ pub(crate) mod test_utils {
             assert_eq!(*dag, v, "Decoding failure");
 
             // reading
-            let v = C::read(expected.as_bytes()).expect(&format!(
+            let v = codec.read(expected.as_bytes()).expect(&format!(
                 "Failed to read `{}` from {}",
                 dag.name(),
                 expected,
@@ -246,38 +351,34 @@ pub(crate) mod test_utils {
         }
     }
 
-    fn write_to_bytes<C, T>(dag: &T) -> Result<Vec<u8>, Error>
+    fn write_to_bytes<T>(codec: &mut Multicodec, dag: &T) -> Result<Vec<u8>, Error>
     where
-        C: Codec,
         T: Representation,
     {
         let mut bytes = Vec::new();
-        C::write(dag, &mut bytes)?;
+        codec.write(dag, &mut bytes)?;
         Ok(bytes)
     }
 
-    fn write_to_str<C, T>(dag: &T) -> Result<String, Error>
+    fn write_to_str<T>(codec: &mut Multicodec, dag: &T) -> Result<String, Error>
     where
-        C: Codec,
         T: Representation,
     {
-        let bytes = write_to_bytes::<C, T>(dag)?;
+        let bytes = write_to_bytes::<T>(codec, dag)?;
         Ok(String::from_utf8(bytes).unwrap())
     }
 
-    fn decode_from_bytes<'de, C, T>(bytes: &'de [u8]) -> Result<T, Error>
+    fn decode_from_bytes<'de, T>(codec: &mut Multicodec, bytes: &'de [u8]) -> Result<T, Error>
     where
-        C: Codec,
         T: Representation,
     {
-        C::decode(bytes)
+        codec.decode(bytes)
     }
 
-    fn decode_from_str<'de, C, T>(s: &'de str) -> Result<T, Error>
+    fn decode_from_str<'de, T>(codec: &mut Multicodec, s: &'de str) -> Result<T, Error>
     where
-        C: Codec,
         T: Representation,
     {
-        C::decode(s.as_bytes())
+        codec.decode(s.as_bytes())
     }
 }

@@ -4,7 +4,7 @@ use super::*;
 use crate::dev::{
     common, impl_advanced_parse, parse_kwarg,
     schema::{compound::parse::parse_stringpair_args, kw, parse},
-    InnerAttributes,
+    InnerAttributes, OuterAttributes,
 };
 use quote::quote;
 use syn::{
@@ -39,7 +39,7 @@ impl Parse for StructReprDefinition {
             // TODO? assert that any fields do not have optional + implicit?
             _ if input.peek(kw::tuple) => {
                 input.parse::<kw::tuple>()?;
-                if input.is_empty() {
+                if input.is_empty() | input.peek(Token![;]) {
                     Self::Tuple(TupleStructReprDefinition {
                         fields,
                         field_order: None,
@@ -98,7 +98,7 @@ impl Parse for StructField {
         let mut implicit = None;
         let mut rename = None;
 
-        let attrs = input.parse::<InnerAttributes>()?;
+        let attrs = input.parse::<OuterAttributes>()?;
         let vis = input.parse::<Visibility>()?;
         let key = input.parse::<Ident>()?;
 

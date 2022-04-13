@@ -13,10 +13,7 @@ impl ExpandBasicRepresentation for StringpairsStructReprDefinition {
         let attrs = &meta.attrs;
         let vis = &meta.vis;
         let ident = &meta.name;
-        let fields: Vec<TokenStream> = self
-            .iter()
-            .map(super::expand::default_field_typdef)
-            .collect();
+        let fields: Vec<TokenStream> = self.iter().map(super::expand::default_field_def).collect();
 
         quote! {
             #(#attrs)*
@@ -32,7 +29,7 @@ impl ExpandBasicRepresentation for StringpairsStructReprDefinition {
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         super::expand::impl_repr(self.iter(), meta)
     }
-    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
 }

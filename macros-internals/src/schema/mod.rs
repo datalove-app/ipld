@@ -16,13 +16,12 @@ pub use r#enum::*;
 pub use r#struct::*;
 pub use union::*;
 
-use super::common::*;
-use crate::dev::*;
+use crate::{common::*, dev::*};
 use proc_macro2::{Span, TokenStream};
 use proc_macro_crate::{crate_name, FoundCrate};
 use quote::quote;
 use std::ops::Deref;
-use syn::{parse_str, Attribute, Generics, Ident, ItemFn, LitStr, Path, Type, Visibility};
+use syn::{parse_str, Attribute, Generics, Ident, LitStr, Path, Type, Visibility};
 
 ///
 #[derive(Debug, Clone)]
@@ -64,6 +63,13 @@ impl SchemaMeta {
             &format!("_{}Visitor", &self.name.to_string()),
             Span::call_site(),
         )
+    }
+
+    pub fn generics_tokens(&self) -> TokenStream {
+        self.generics
+            .as_ref()
+            .map(|g| quote!(#g))
+            .unwrap_or(TokenStream::default())
     }
 }
 
@@ -128,6 +134,31 @@ pub enum SchemaAttr {
 //     wrapper: Option<Ident>,
 // }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub enum DataModelKind {
+    Null,
+    Bool,
+    Int,
+    // Int8,
+    // Int16,
+    // Int32,
+    // Int64,
+    // Int128,
+    // Uint8,
+    // Uint16,
+    // Uint32,
+    // Uint64,
+    // Uint128,
+    Float,
+    // Float32,
+    // Float64,
+    Bytes,
+    String,
+    List,
+    Map,
+    Link,
+}
+
 /// Keywords unique to IPLD Schemas and Representations
 #[macro_use]
 pub(crate) mod kw {
@@ -156,7 +187,7 @@ pub(crate) mod kw {
         fieldOrder discriminantKey contentKey
 
         // custom container and field attributes
-        internal try_from wrapper
+        internal wrapper ctx_bounds
     }
 
     // pub struct Directive<K, T>(pub Option<T>, pub std::marker::PhantomData<K>);
@@ -212,4 +243,4 @@ impl ReprDefinition {
     }
 }
 
-struct Methods(Vec<ItemFn>);
+// struct Methods(Vec<ItemFn>);

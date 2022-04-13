@@ -47,31 +47,43 @@ impl ToTokens for SchemaDefinition {
                 let lib = &$meta.lib;
 
                 let use_ipld = if $meta.internal {
-                    quote!(use crate as _ipld)
+                    quote! {
+                        use crate as _ipld;
+                        #[allow(unused_imports)]
+                        use _ipld::dev::*;
+                    }
                 } else {
                     quote! {
                         // #[allow(clippy::useless_attribute)]
                         extern crate #lib as _ipld
+                        #[allow(unused_imports)]
+                        use _ipld::dev::*;
                     }
                 };
 
                 let defs = [
-                    ("SERDE_IMPLS", $def.derive_serde($meta)),
-                    ("REPR_IMPL", $def.derive_repr($meta)),
-                    // TODO ("SELECT_IMPLS", $def.derive_selects($meta)),
-                    // TODO ("VALUE_CONV_IMPLS", $def.derive_conv($meta)),
+                    ("IMPL_SERDE", $def.derive_serde($meta)),
+                    ("IMPL_REPR", $def.derive_repr($meta)),
+                    ("IMPL_SELECT", $def.derive_select($meta)),
+                    ("IMPL_CONV", $def.derive_conv($meta)),
                 ];
                 let scoped_impls = defs
                     .iter()
-                    .map(|(kind, def)| (Ident::new(&format!("_IPLD_{}_FOR_{}", kind, name), Span::call_site()), def))
-                    .map(|(ident, def)| quote! {
-                        #[doc(hidden)]
-                        const #ident: () = {
-                            #use_ipld;
-                            #[allow(unused_imports)]
-                            use _ipld::dev::{*, serde::de};
-                            #def
-                        };
+                    .map(|(kind, def)| {
+                        (
+                            Ident::new(&format!("_IPLD_{}_FOR_{}", kind, name), Span::call_site()),
+                            def,
+                        )
+                    })
+                    .map(|(ident, def)| {
+                        quote! {
+                            #[doc(hidden)]
+                            const #ident: () = {
+                                #use_ipld
+
+                                #def
+                            };
+                        }
                     });
 
                 quote! {
@@ -118,7 +130,7 @@ pub(crate) trait ExpandBasicRepresentation {
     /// Derives `Representation` for the defined type.
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream;
 
-    /// Derive Serde impls for the defined type.
+    /// Derive Serde impls for the defined type, as well as core-logic types like [`ipld::context::ContextSeed`].
     ///
     /// Optional because many types can use `#[derive(Deserialize, Serialize)]`
     /// directly.
@@ -138,7 +150,7 @@ pub(crate) trait ExpandBasicRepresentation {
     /// - `impl DeserializeSeed<'de, Value = Self> for Selector`
     ///     instantiates ReprSelectorSeed(selector, repr_visitor)
     ///     matches on selector, delegates to one deserializer method
-    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         // let name = &meta.name;
         // quote!(impl_root_select!(#name => Matcher);)
         TokenStream::default()
@@ -147,7 +159,7 @@ pub(crate) trait ExpandBasicRepresentation {
     /// Derives conversions between the type and `Value`, as well as `ipfs::Ipld`
     /// (if `#[cfg(feature = "ipld/ipfs")]` is enabled)
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        unimplemented!()
+        TokenStream::default()
     }
 }
 
@@ -225,7 +237,7 @@ pub(crate) fn impl_visitor(
     // TODO? else:
     //  - def ReprVisitor
     //  - `impl Visitor<Value = Repr> for ReprVisitor`
-
+    //
     // body = if let Some(try_from_name) = &meta.try_from {
     //     let try_from_ident = Ident::new(&try_from_name.value(), Span::call_site());
     //     let methods = expand_try_from_visitor_methods(body, try_from_ident);
@@ -296,52 +308,62 @@ pub(crate) fn impl_deserialize(meta: &SchemaMeta, mut body: TokenStream) -> Toke
     }
 }
 
-pub(crate) fn impl_repr(meta: &SchemaMeta, body: TokenStream) -> TokenStream {
+pub(crate) fn impl_repr(meta: &SchemaMeta, consts_and_simple_methods: TokenStream) -> TokenStream {
+    let lib = &meta.lib;
     let name = &meta.name;
     // let typedef_str = &meta.typedef_str;
-    let generics = &meta
-        .generics
-        .as_ref()
-        .map(|g| quote!(#g))
-        .unwrap_or(TokenStream::default());
+    let generics = meta.generics_tokens();
     quote! {
         #[automatically_derived]
-        impl #generics Representation for #name #generics {
+        impl #generics #lib::dev::Representation for #name #generics {
             const NAME: &'static str = ::std::stringify!(#name);
+            // TODO:
             // const SCHEMA: &'static str = #typedef_str;
-            #body
+
+            #consts_and_simple_methods
         }
     }
 }
 
-pub(crate) fn impl_select_for(
+pub(crate) fn impl_context_seed_visitor(
     meta: &SchemaMeta,
-    selector: Ident,
-    body: TokenStream,
+    expecting: &'static str,
+    mut body: TokenStream,
 ) -> TokenStream {
     let name = &meta.name;
+    let generics = meta.generics_tokens();
+
     quote! {
         #[automatically_derived]
-        impl<Ctx> Select<Ctx, #selector> for #name
+        impl<'a, 'de, T, #generics> Visitor<'de> for ContextSeed<'a, C, #name, T>
         where
-            Ctx: Context,
+            C: Context
+            T: Representation,
         {
+            type Value = Option<T>;
+            fn expecting(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                fmt.write_str(#expecting)
+            }
             #body
         }
     }
 }
 
-pub(crate) fn impl_de_seed_for(
-    meta: &SchemaMeta,
-    selector: Ident,
-    body: TokenStream,
-) -> TokenStream {
+pub(crate) fn impl_context_seed_deseed(meta: &SchemaMeta, mut body: TokenStream) -> TokenStream {
     let name = &meta.name;
-    // let lib = &meta.ipld_schema_lib;
+    let generics = meta.generics_tokens();
+
     quote! {
         #[automatically_derived]
-        impl<'de> DeserializeSeed<'de> for SelectorSeed<'de, #selector, #name> {
-            type Value = #name;
+        impl<'a, 'de, T, #generics> DeserializeSeed<'de> for ContextSeed<'a, C, #name, T>
+        where
+            C: Context
+            T: Representation,
+            ContextSeed<'a, C, #name, T>: Visitor<'de, Value = Option<T>>,
+        {
+            type Value = Option<T>;
+
+            #[inline]
             fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
                 D: Deserializer<'de>,
@@ -349,6 +371,89 @@ pub(crate) fn impl_de_seed_for(
                 #body
             }
         }
+    }
+}
+
+pub(crate) fn impl_select(
+    meta: &SchemaMeta,
+    match_impl: TokenStream,
+    select_impl: TokenStream,
+) -> TokenStream {
+    let name = &meta.name;
+    let generics = meta.generics_tokens();
+    quote! {
+        #[automatically_derived]
+        impl<Ctx: Context> Select<Ctx> for #name {
+            fn r#match(
+                selector: &Selector,
+                state: &mut SelectorState,
+                ctx: &mut Ctx,
+            ) -> Result<Option<Self>, Error> {
+                #match_impl
+            }
+
+            /// Produces a stream of [`Selection`]s.
+            fn select<S: Select<Ctx>>(
+                selector: &Selector,
+                state: &mut SelectorState,
+                ctx: &mut Ctx,
+            ) -> Result<Option<S>, Error> {
+                #select_impl
+            }
+        }
+    }
+}
+
+//
+// pub(crate) fn impl_de_seed_for(
+//     meta: &SchemaMeta,
+//     selector: Ident,
+//     body: TokenStream,
+// ) -> TokenStream {
+//     let name = &meta.name;
+//     // let lib = &meta.ipld_schema_lib;
+//     quote! {
+//         #[automatically_derived]
+//         impl<'de> DeserializeSeed<'de> for SelectorSeed<'de, #selector, #name> {
+//             type Value = #name;
+//             fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+//             where
+//                 D: Deserializer<'de>,
+//             {
+//                 #body
+//             }
+//         }
+//     }
+// }
+
+impl DataModelKind {
+    pub(crate) fn to_ident(&self) -> Ident {
+        Ident::new(
+            match self {
+                Self::Null => "Null",
+                Self::Bool => "Bool",
+                Self::Int => "Int",
+                // Self::Int8 => "Int8",
+                // Self::Int16 => "Int16",
+                // Self::Int32 => "In32t",
+                // Self::Int64 => "Int64",
+                // Self::Int128 => "Int128",
+                // Self::Uint8 => "Uint8",
+                // Self::Uint16 => "Uint16",
+                // Self::Uint32 => "Uint32",
+                // Self::Uint64 => "Uint64",
+                // Self::Uint128 => "Uint128",
+                Self::Float => "Float",
+                // Self::Float32 => "Float32",
+                // Self::Float64 => "Float64",
+                Self::Bytes => "Bytes",
+                Self::String => "String",
+                Self::List => "List",
+                Self::Map => "Map",
+                Self::Link => "Link",
+            },
+            Span::call_site(),
+        )
     }
 }
 
@@ -376,16 +481,16 @@ pub(crate) fn impl_de_seed_for(
 // fn expand_try_from_visitor_methods(tokens: TokenStream) -> TokenStream {
 //     let tokens = tokens.into::<proc_macro::TokenStream>();
 //     let methods = parse_macro_input!(tokens as super::Methods);
-
+//
 //     &methods.0.iter().map(|item_fn| {
 //         let sig = &item_fn.sig;
 //         let block = &item_fn.block;
-
+//
 //         quote! {
 //             use ::std::convert::TryFrom;
 //             // let t = #try_from_ident::deserialize(deserializer)?;
 //             // Ok(#name::try_from(t).map_err(D::Error::custom)?)
-
+//
 //             #sig {
 //                 let
 //             }

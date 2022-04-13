@@ -1,6 +1,6 @@
 mod expand;
-#[macro_use]
-mod expand_newtypes;
+mod expand_bytes;
+mod expand_link;
 mod parse;
 
 use crate::dev::SchemaMeta;

@@ -12,11 +12,13 @@ pub use schema::SchemaDefinition;
 pub use selector::{RootSelectorDefinition, SelectorDefinition};
 
 pub mod dev {
-    pub use crate::common::{self, *};
+    pub use crate::common::*;
+    pub use crate::define_newtype;
     pub use crate::impl_advanced_parse;
     pub use crate::parse_kwarg;
-    pub use crate::schema::{self, *};
-    pub use crate::selector::{self, *};
+    pub use crate::schema::{expand::*, parse::*, *};
+    pub use crate::selector::*;
+    pub use crate::*;
 
     pub use derive_more;
     // pub use impls;

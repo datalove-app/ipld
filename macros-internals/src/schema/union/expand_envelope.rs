@@ -26,7 +26,7 @@ impl ExpandBasicRepresentation for EnvelopeUnionReprDefinition {
         // impl_repr(self.iter(), meta)
         TokenStream::default()
     }
-    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
 }

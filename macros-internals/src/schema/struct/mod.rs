@@ -5,10 +5,12 @@ mod expand_stringpairs;
 mod expand_tuple;
 mod parse;
 
-use crate::dev::{InnerAttributes, SchemaMeta};
+use crate::dev::{OuterAttributes, SchemaMeta};
 use proc_macro2::TokenStream;
 use std::ops::Deref;
-use syn::{punctuated::Punctuated, Expr, Generics, Ident, LitStr, Path, Token, Visibility};
+use syn::{
+    punctuated::Punctuated, Attribute, Expr, Generics, Ident, LitStr, Path, Token, Visibility,
+};
 
 #[derive(Debug)]
 pub enum StructReprDefinition {
@@ -99,7 +101,7 @@ pub type StructFields = Punctuated<StructField, Token![,]>;
 
 #[derive(Debug)]
 pub struct StructField {
-    pub attrs: InnerAttributes,
+    pub attrs: OuterAttributes,
     pub vis: Visibility,
     pub key: Ident,
     pub value: Ident,

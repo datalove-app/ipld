@@ -9,11 +9,11 @@ impl ToTokens for RootSelectorDefinition {
         // ? parse brackets around type?
         let root_type = &self.root_type;
 
-        let use_ipld = if self.internal {
-            quote!(use crate as _ipld)
-        } else {
-            quote!(extern crate ipld as _ipld)
-        };
+        // let use_ipld = if self.internal {
+        //     quote!(use crate as _ipld)
+        // } else {
+        //     quote!(extern crate ipld as _ipld)
+        // };
 
         tokens.append_all(quote! {{
             // TODO: refactor: produce a static slice of enum SelectorArgs,
@@ -21,9 +21,9 @@ impl ToTokens for RootSelectorDefinition {
             // ? which calls <T as Select>::new_selector
             // ?    e.g. let sel: T = select!()
 
-            #use_ipld;
-            #[allow(unused_imports)]
-            use _ipld::dev::*;
+            // #use_ipld;
+            // #[allow(unused_imports)]
+            // use _ipld::dev::*;
 
             let selector = #def;
             <#root_type as Select>::validate(&selector).unwrap();

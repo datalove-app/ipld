@@ -5,8 +5,8 @@ use std::fmt;
 use syn::{
     braced,
     parse::{Error as ParseError, Parse, ParseStream, Peek, Result as ParseResult},
-    parse_quote, parse_str, token, Generics, Ident, ItemFn, Lit, LitStr, Meta, MetaNameValue, Path,
-    Token, Type, Visibility,
+    parse_quote, parse_str, token, Generics, Ident, Lit, LitStr, Meta, MetaNameValue, Path, Token,
+    Type, Visibility,
 };
 
 impl Parse for SchemaMeta {
@@ -31,8 +31,8 @@ impl Parse for SchemaMeta {
         let generics = input.parse::<Generics>().map_or(None, Some);
 
         Ok(Self {
-            // TODO: fix this
             lib: Self::lib(internal),
+            // TODO: fix this
             typedef_str: String::default(),
             internal,
             try_from,

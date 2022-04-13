@@ -1,134 +1,317 @@
-use super::{BytesReprDefinition, LinkReprDefinition, NullReprDefinition};
+use super::{
+    BoolReprDefinition, BytesReprDefinition, CopyReprDefinition, FloatReprDefinition,
+    IntReprDefinition, NullReprDefinition, StringReprDefinition,
+};
 use crate::{
     define_newtype,
-    dev::{schema::expand, SchemaMeta},
+    dev::{
+        schema::{expand, DataModelKind},
+        SchemaMeta,
+    },
 };
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Ident, Type};
+use syn::Type;
 
 impl expand::ExpandBasicRepresentation for NullReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
-        let lib = &meta.lib;
         let attrs = &meta.attrs;
         let vis = &meta.vis;
-        let ident = &meta.name;
+        let name = &meta.name;
 
         quote! {
             #(#attrs)*
-            #[derive(#lib::dev::Deserialize, #lib::dev::Serialize)]
-            #vis struct #ident;
+            #[derive(Deserialize, Serialize)]
+            #vis struct #name;
         }
     }
 
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+        let lib = &meta.lib;
         expand::impl_repr(
             meta,
             quote! {
-                const KIND: _ipld::dev::Kind = _ipld::dev::Kind::Null;
+                const KIND: Kind = Kind::Null;
+                // const SCHEMA: &'static str = format!("pub type {} null;", Self::NAME);
             },
         )
     }
-}
 
-impl expand::ExpandBasicRepresentation for BytesReprDefinition {
-    fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
-        let attrs = &meta.attrs;
-        let vis = &meta.vis;
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
+        let lib = &meta.lib;
+        expand::impl_select(
+            meta,
+            quote! {
+                Ok(Null::r#match(selector, state, ctx)?.map(|_| Self))
+            },
+            quote! {
+                if #lib::dev::type_eq::<Self, S>() {
+                    type_cast_selection::<Self, S, _, _>(|| {
+                        Ok(Null::select::<Null>(selector, state, ctx)?.map(|_| Self))
+                    })
+                } else {
+                    Null::select::<S>(selector, state, ctx)
+                }
+            },
+        )
+    }
+
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
         let ident = &meta.name;
-
         quote! {
-            #(#attrs)*
-            #vis struct #ident(bytes::Bytes);
+            impl Into<Node> for #ident {
+                fn into(self) -> Node {
+                    Node::Null
+                }
+            }
 
-            #[automatically_derived]
-            impl bytes::buf::Buf for #ident {
-                fn remaining(&self) -> usize {
-                    self.0.remaining()
-                }
-                fn bytes(&self) -> &[u8] {
-                    self.0.bytes()
-                }
-                fn advance(&mut self, cnt: usize) {
-                    self.0.advance(cnt)
+            impl Into<Value> for #ident {
+                fn into(self) -> Value {
+                    Value::Null
                 }
             }
         }
     }
-    fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
-        let name = &meta.name;
+}
 
-        // TODO correctness?
-        let impl_ser = expand::impl_serialize(
-            meta,
-            quote! {
-                use bytes::buf::Buf;
-                <S as Encoder>::serialize_bytes(serializer, self.bytes())
-            },
-        );
-        let (visitor, impl_visitor) = expand::impl_visitor(
-            meta,
-            "expected an IPLD bytes value",
-            quote! {
-                fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E>{
-                    Ok(#name(bytes::Bytes::copy_from_slice(v)))
-                }
-                fn visit_byte_buf<E: de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
-                    Ok(#name(bytes::Bytes::from(v)))
-                }
-            },
-        );
-        let impl_visitor_ext = expand::impl_visitor_ext(meta, None);
-        let impl_de = expand::impl_deserialize(
-            meta,
-            quote! {
-                <D as Decoder>::deserialize_bytes(deserializer, #visitor)
-            },
-        );
+/// Defines a newtype wrapper around an inner type already implementing
+/// `Serialize`, `Deserialize`, and `Representation`.
+/// TODO: manually/macro implement serialize/deserialize for these types
+#[doc(hidden)]
+#[macro_export(local_inner_macros)]
+macro_rules! define_newtype {
+    ($def:ident, $meta:ident => $inner_ty:ident) => {{
+        let attrs = &$meta.attrs;
+        let vis = &$meta.vis;
+        let name = &$meta.name;
 
-        quote! {
-            #impl_ser
-            #impl_visitor
-            #impl_visitor_ext
-            #impl_de
+        // let (try_from_typedef, try_from_serde_attr) = if let Some(try_from_name) = &$meta.try_from {
+        //     let ident = &$meta.try_from_name();
+        //     (
+        //         // creates an inner type that transparently (de)serializes itself
+        //         quote::quote! {
+        //             #[derive(_ipld::dev::Deserialize, _ipld::dev::Serialize)]
+        //             #[serde(transparent)]
+        //             struct #ident(#$inner_ty);
+        //         },
+        //         // tells serde to delegate to a user-defined TryFrom impl
+        //         quote::quote!(#[serde(try_from = #try_from_name)]),
+        //     )
+        // } else {
+        //     (TokenStream::default(), TokenStream::default())
+        // };
+
+
+        quote::quote! {
+            #(#attrs)*
+            #[repr(transparent)]
+            #[derive(Deserialize, Serialize)]
+            #[serde(transparent)]
+            // #try_from_serde_attr
+            #vis struct #name(#$inner_ty);
+
+            // impl ::std::ops::Deref for #ident {
+            //     type Target = #$inner_ty;
+            //     fn deref(&self) -> &Self::Target {
+            //         &self.0
+            //     }
+            // }
         }
-    }
-    fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+    }};
+}
+
+///
+macro_rules! derive_newtype_repr {
+    ($def:ident, $meta:ident => $inner_ty:ident) => {{
         expand::impl_repr(
-            meta,
+            $meta,
             quote! {
-                const KIND: _ipld::dev::Kind = _ipld::dev::Kind::Bytes;
+                const KIND: Kind = <#$inner_ty as Representation>::KIND;
             },
         )
-    }
-    // TODO: add support for explore range
-    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
-        // let name = &meta.name;
-        // quote!(impl_root_select!(#name => Matcher);)
-        TokenStream::default()
+    }};
+}
+
+///
+macro_rules! derive_newtype_select {
+    ($def:ident, $meta:ident => $inner_ty:ident) => {{
+        expand::impl_select(
+            $meta,
+            quote! {
+                Ok(#$inner_ty::r#match(selector, state, ctx)?.map(Self))
+            },
+            quote! {
+                if type_eq::<Self, S>() {
+                    type_cast_selection::<Self, S, _, _>(|| {
+                        Ok(#$inner_ty::select::<#$inner_ty>(selector, state, ctx)?.map(Self))
+                    })
+                } else {
+                    #$inner_ty::select::<S>(selector, state, ctx)
+                }
+            },
+        )
+    }};
+}
+
+///
+macro_rules! derive_newtype_conv {
+    ($def:ident, $meta:ident => $dm_ty:ident) => {{
+        let ident = &$meta.name;
+
+        quote! {
+            impl Into<Node> for #ident {
+                fn into(self) -> Node {
+                    Node::#$dm_ty
+                }
+            }
+
+            impl Into<Value> for #ident {
+                fn into(self) -> Value {
+                    Value::#$dm_ty
+                }
+            }
+        }
+    }};
+    (@has_constructor $def:ident, $meta:ident => $dm_ty:ident) => {{
+        let ident = &$meta.name;
+
+        quote! {
+            impl Into<Node> for #ident {
+                fn into(self) -> Node {
+                    Node::#$dm_ty(self.0)
+                }
+            }
+
+            impl Into<Value> for #ident {
+                fn into(self) -> Value {
+                    Value::#$dm_ty(self.0)
+                }
+            }
+        }
+    }};
+}
+
+// macro_rules! expand_def {
+//     ($def:ident, $inner_ty:ident) => {
+//         impl expand::ExpandBasicRepresentation for $def {
+//             fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
+//                 define_newtype!(self, meta => $inner_ty)
+//             }
+//             fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+//                 derive_newtype_repr!(self, meta => $inner_ty)
+//             }
+//             fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
+//                 unimplemented!()
+//             }
+//         }
+//     };
+// }
+
+impl BoolReprDefinition {
+    fn inner_ty() -> Type {
+        Type::Verbatim(quote!(bool))
     }
 }
 
-impl expand::ExpandBasicRepresentation for LinkReprDefinition {
+impl expand::ExpandBasicRepresentation for BoolReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
-        let inner = &self.0;
-        let inner_type = Type::Verbatim(quote!(Link<#inner>));
-        define_newtype!(self, meta => inner_type)
+        let inner_ty = Self::inner_ty();
+        define_newtype!(self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        let inner = &self.0;
-        let inner_type = Type::Verbatim(quote!(Link<#inner>));
-
-        // TODO:
-        let repr_def = quote! {};
-        let wrapper_repr_def = quote! {};
-
-        quote! {
-            #repr_def
-            #wrapper_repr_def
-        }
+        let inner_ty = Self::inner_ty();
+        derive_newtype_repr!(self, meta => inner_ty)
     }
-    fn derive_selects(&self, meta: &SchemaMeta) -> TokenStream {
-        TokenStream::default()
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
+        let inner_ty = Self::inner_ty();
+        derive_newtype_select!(self, meta => inner_ty)
+    }
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        let dm_ty = DataModelKind::Bool.to_ident();
+        derive_newtype_conv!(@has_constructor self, meta => dm_ty)
+    }
+}
+
+impl expand::ExpandBasicRepresentation for IntReprDefinition {
+    fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
+        let inner_ty = &self.0;
+        define_newtype!(self, meta => inner_ty)
+    }
+    fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+        let inner_ty = &self.0;
+        derive_newtype_repr!(self, meta => inner_ty)
+    }
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
+        let inner_ty = &self.0;
+        derive_newtype_select!(self, meta => inner_ty)
+    }
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        let dm_ty = DataModelKind::Int.to_ident();
+        derive_newtype_conv!(@has_constructor self, meta => dm_ty)
+    }
+}
+
+impl expand::ExpandBasicRepresentation for FloatReprDefinition {
+    fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
+        let inner_ty = &self.0;
+        define_newtype!(self, meta => inner_ty)
+    }
+    fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+        let inner_ty = &self.0;
+        derive_newtype_repr!(self, meta => inner_ty)
+    }
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
+        let inner_ty = &self.0;
+        derive_newtype_select!(self, meta => inner_ty)
+    }
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        let dm_ty = DataModelKind::Float.to_ident();
+        derive_newtype_conv!(@has_constructor self, meta => dm_ty)
+    }
+}
+
+impl StringReprDefinition {
+    fn inner_ty() -> Type {
+        Type::Verbatim(quote!(String))
+    }
+}
+
+impl expand::ExpandBasicRepresentation for StringReprDefinition {
+    fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
+        let inner_ty = Self::inner_ty();
+        define_newtype!(self, meta => inner_ty)
+    }
+    fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+        let inner_ty = Self::inner_ty();
+        derive_newtype_repr!(self, meta => inner_ty)
+    }
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
+        let inner_ty = Self::inner_ty();
+        derive_newtype_select!(self, meta => inner_ty)
+    }
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        let dm_ty = DataModelKind::String.to_ident();
+        derive_newtype_conv!(@has_constructor self, meta => dm_ty)
+    }
+}
+
+impl expand::ExpandBasicRepresentation for CopyReprDefinition {
+    fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
+        unimplemented!()
+    }
+    fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
+        unimplemented!()
+    }
+    fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+        let inner_ty = &self.0;
+        derive_newtype_repr!(self, meta => inner_ty)
+    }
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
+        let inner_ty = &self.0;
+        derive_newtype_select!(self, meta => inner_ty)
+    }
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        let dm_ty = DataModelKind::String.to_ident();
+        derive_newtype_conv!(@has_constructor self, meta => dm_ty)
     }
 }

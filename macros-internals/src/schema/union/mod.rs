@@ -6,7 +6,7 @@ mod expand_inline; // struct/map flattens, enum tag=dk
 mod expand_kinded; // enum untagged, but by schema kind
 mod parse;
 
-use crate::dev::{Fields, OuterAttributes};
+use crate::dev::{schema::DataModelKind, Fields, OuterAttributes};
 use std::ops::Deref;
 use syn::{parse::Parse, Generics, Ident, LitInt, LitStr, Type};
 
@@ -76,17 +76,4 @@ pub struct UnionField<T: Parse> {
     pub generics: Option<Generics>,
     pub key: T,
     pub linked: bool,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub enum DataModelKind {
-    Null,
-    Boolean,
-    Integer,
-    Float,
-    Bytes,
-    String,
-    List,
-    Map,
-    Link,
 }

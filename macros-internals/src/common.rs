@@ -6,6 +6,8 @@ use syn::{
 };
 
 pub(crate) mod attr {
+    use proc_macro2::TokenStream;
+    use quote::{quote, ToTokens};
     use std::ops::Deref;
     use syn::{
         parse::{Parse, ParseStream, Result as ParseResult},
@@ -151,7 +153,7 @@ pub fn is_end(input: ParseStream) -> bool {
     input.peek(Token![;])
 }
 
-/// Parses the ending semicolon, asserting that the
+/// Parses the ending semicolon, asserting that the token stream is empty.
 pub fn parse_end(input: ParseStream) -> ParseResult<()> {
     input.parse::<Token![;]>()?;
     if !input.is_empty() {

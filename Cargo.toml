@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["sunny-g <sunny.gonna@gmail.com>"]
 description = "Types, traits and macros for the IPLD Data Model, Schema, Representation, and Selector specifications."
 license = "MIT or Apache-2.0"
-edition = "2018"
+edition = "2021"
 
 [lib]
 name = "ipld"
@@ -14,32 +14,30 @@ path = "src/lib.rs"
 # core
 bytes = "0.5"
 cid = { version = "0.7", features = ["serde-codec"] }
+erased-serde = { version = "0.3", features = ["std"] }
 # ipfs = { git = "https://github.com/ipfs-rust/rust-ipfs", branch = "master", optional = true }
 ipld-macros = { path = "./macros" }
 ipld-macros-internals = { path = "./macros-internals" }
 multibase = "0.9"
-multihash = "0.15"
+multihash = "0.14"
 serde = { version = "1.0", features = ["derive", "rc"] }
-# serde_repr = "0.1"
+serde_repr = "0.1"
 
 # formats
 serde_cbor = { version = "0.11", optional = true }
 serde_json = { version = "1.0", optional = true }
-simd-json = { version = "^0.3", optional = true }
+simd-json = { version = "0.4", optional = true }
 
 # misc
 anyhow = "1.0"
-# async-stream = "^0.2"
-async-trait = "0.1"
 delegate = { version = "0.5", optional = true }
-# downcast-rs = "1.1"
-# futures = "^0.3"
-# pin-utils = "0.1.0-alpha.4"
+downcast-rs = "1.2"
+impls = "1.0"
 thiserror = "1.0"
 
 [dev-dependencies]
 criterion = "0.3"
-proptest = "0.9"
+proptest = "1.0"
 
 [features]
 default = ["multicodec"]
@@ -47,13 +45,20 @@ dag-cbor = ["serde_cbor/tags"]
 dag-json = ["delegate", "serde_json"]
 dag-pb = []
 # enables all available multicodecs
-multicodec = ["dag-cbor", "dag-json"]
+multicodec = ["dag-cbor", "dag-json", "dag-pb"]
 # enables simd-related implementations, including an alternate dag-json
 simd = ["dag-json", "simd-json"]
+value-ext = []
 
 [workspace]
 members = [
+  # "advanced-schemas",
+  # "codegen",
   "macros",
   "macros-hack",
   "macros-internals"
 ]
+
+[patch.crates-io]
+# cid = { path = "../rust-cid" }
+# multihash = { path = "../rust-multihash" }

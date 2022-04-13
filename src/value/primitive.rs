@@ -1,79 +1,403 @@
 use crate::dev::*;
+use macros::derive_more::{AsRef, From};
 
-impl Representation for () {
+/// A nothing type.
+pub type Null = ();
+
+impl Representation for Null {
     const NAME: &'static str = "Null";
-    const SCHEMA: &'static str = "Null";
+    const SCHEMA: &'static str = "type Null null";
     const KIND: Kind = Kind::Null;
-}
-// impl_root_select!(() => Matcher);
 
-#[doc(hidden)]
-#[macro_export(local_inner_macros)]
-macro_rules! def_primitive {
-    ($type:ident: $kind:ident, $name:expr) => {
-        impl Representation for $type {
-            const NAME: &'static str = $name;
-            const SCHEMA: &'static str = $name;
-            const KIND: Kind = Kind::$kind;
+    // fn r#match<'de, 'a, C, D>(
+    //     seed: ContextSeed<'a, C, Self, Self>,
+    //     deserializer: D,
+    // ) -> Result<Self, D::Error>
+    // where
+    //     C: Context,
+    //     D: Deserializer<'de>,
+    // {
+    //     let self_ = seed.deserialize(deserializer)?;
+    // }
+}
+
+impl_ipld! { @visitor {} {} Null => Null {
+    #[inline]
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "Nothing")
+    }
+
+    #[inline]
+    fn visit_unit<E>(self) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        match self.selector {
+            Selector::Matcher(Matcher { label, .. }) => {
+                match self.state.mode() {
+                    SelectorState::DAG_MATCH_MODE => Ok(Some(())),
+                    SelectorState::NODE_MODE => {
+                        self.send_matched(().into(), label.clone()).map_err(E::custom)?;
+                        Ok(None)
+                    },
+                    SelectorState::DAG_MODE => {
+                        self.send_dag((), label.clone()).map_err(E::custom)?;
+                        Ok(None)
+                    },
+                }
+            },
+            selector => Err(Error::unsupported_selector::<Null, Null>(selector)).map_err(E::custom)
+        }
+    }
+}}
+
+impl_ipld! { @deseed {} {} Null => Null {
+    #[inline]
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_unit(self)
+    }
+}}
+
+impl_ipld! { @select_self {} {} Null }
+
+schema! {
+    /// A `bytes` type.
+    #[ipld_attr(internal)]
+    #[derive(AsRef, Clone, Debug, Eq, From, Hash, PartialEq)]
+    #[as_ref(forward)]
+    #[from(forward)]
+    pub type Bytes bytes;
+}
+
+macro_rules! impl_ipld_native {
+    (   $doc_str:expr ;
+        $native_ty:ty : $name:ident $ipld_type:ident {
+            $deserialize_fn:ident
+            $visit_fn:ident
+            $visit_arg:ident : $visit_ty:ty
+        }
+    ) => {
+        #[doc = $doc_str]
+        pub type $name = $native_ty;
+
+        impl Representation for $native_ty {
+            const NAME: &'static str = stringify!($name);
+            const SCHEMA: &'static str =
+                concat!("type ", stringify!($name), " ", stringify!($ipld_type));
+            const KIND: Kind = Kind::$name;
         }
 
-        // $crate::impl_root_select!($type => Matcher);
+        // impl<C> Select<C, Self> for $native_ty
+        // where
+        //     C: Context,
+        // {
+        //     #[inline]
+        //     fn select(seed: SelectorSeed, ctx: &mut C) -> Result<(), Error>
+        //     {
+        //         // primitive_select::<C, Self>(seed, ctx)
+        //     }
+        //
+        //     #[inline]
+        //     fn select_dag(seed: SelectorSeed, ctx: &mut C) -> Result<Self, Error> {
+        //         primitive_select_dag::<C, Self>(seed, ctx)
+        //     }
+        // }
+
+        impl_ipld! { @visitor {} {} $native_ty => $native_ty {
+            #[inline]
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(formatter, $doc_str)
+            }
+
+            #[inline]
+            fn $visit_fn<E>(self, $visit_arg : $visit_ty) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match self.selector {
+                    Selector::Matcher(Matcher { label, .. }) => {
+                        match self.state.mode() {
+                            SelectorState::DAG_MATCH_MODE => Ok(Some($visit_arg)),
+                            SelectorState::NODE_MODE => {
+                                self.send_matched($visit_arg.into(), label.clone()).map_err(E::custom)?;
+                                Ok(None)
+                            },
+                            SelectorState::DAG_MODE => {
+                                self.send_dag($visit_arg, label.clone()).map_err(E::custom)?;
+                                Ok(None)
+                            },
+                        }
+                    },
+                    selector => Err(Error::unsupported_selector::<$name, $name>(selector)).map_err(E::custom)
+                }
+            }
+        }}
+
+        impl_ipld! { @deseed {} {} $native_ty => $native_ty {
+            #[inline]
+            fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                deserializer.$deserialize_fn(self)
+            }
+        }}
+
+        impl_ipld! { @select_self {} {} $native_ty }
     };
 }
 
-def_primitive!(bool: Boolean, "Boolean");
-def_primitive!(i8: Integer, "Int8");
-def_primitive!(i16: Integer, "Int16");
-def_primitive!(i32: Integer, "Int32");
-def_primitive!(i64: Integer, "Int64");
-def_primitive!(i128: Integer, "Int128");
-def_primitive!(u8: Integer, "Uint8");
-def_primitive!(u16: Integer, "Uint16");
-def_primitive!(u32: Integer, "Uint32");
-def_primitive!(u64: Integer, "Uint64");
-def_primitive!(u128: Integer, "Uint128");
-def_primitive!(f32: Float, "Float32");
-def_primitive!(f64: Float, "Float64");
-// def_primitive!(String: String, "String");
+impl_ipld_native! (
+    "A boolean type" ;
+    bool : Bool bool {
+        deserialize_bool
+        visit_bool
+        v: bool
+    }
+);
+impl_ipld_native! (
+    "A fixed-length number type representing an int8";
+    i8 : Int8 int8 {
+        deserialize_i8
+        visit_i8
+        v: i8
+    }
+);
+impl_ipld_native! (
+    "A fixed-length number type representing an int16" ;
+    i16 : Int16 int16 {
+        deserialize_i16
+        visit_i16
+        v: i16
+    }
+);
+impl_ipld_native! (
+    "A fixed-length number type representing an int32" ;
+    i32 : Int int32 {
+        deserialize_i32
+        visit_i32
+        v: i32
+    }
+);
+impl_ipld_native! (
+    "A fixed-length number type representing an int64" ;
+    i64 : Int64 int64 {
+        deserialize_i64
+        visit_i64
+        v: i64
+    }
+);
+impl_ipld_native! (
+    "A fixed-length number type representing an int128" ;
+    i128 : Int128 int128 {
+        deserialize_i128
+        visit_i128
+        v: i128
+    }
+);
+impl_ipld_native! (
+    "A fixed-length number type representing an uint8" ;
+    u8 : Uint8 uint8 {
+        deserialize_u8
+        visit_u8
+        v: u8
+    }
+);
+impl_ipld_native! (
+    "A fixed-length number type representing an uint16" ;
+    u16 : Uint16 uint16 {
+        deserialize_u16
+        visit_u16
+        v: u16
+    }
+);
+impl_ipld_native! (
+    "A fixed-length number type representing an uint32" ;
+    u32 : Uint32 uint32 {
+        deserialize_u32
+        visit_u32
+        v: u32
+    }
+);
+impl_ipld_native! (
+    "A fixed-length number type representing an uint64" ;
+    u64 : Uint64 uint64 {
+        deserialize_u64
+        visit_u64
+        v: u64
+    }
+);
+impl_ipld_native! (
+    "A fixed-length number type representing an uint128" ;
+    u128 : Uint128 uint128 {
+        deserialize_u128
+        visit_u128
+        v: u128
+    }
+);
+impl_ipld_native! (
+    "A fixed-length number type representing a float32" ;
+    f32 : Float32 float32 {
+        deserialize_f32
+        visit_f32
+        v: f32
+    }
+);
+impl_ipld_native! (
+    "A fixed-length number type representing a float64" ;
+    f64 : Float float64 {
+        deserialize_f64
+        visit_f64
+        v: f64
+    }
+);
 
-impl Representation for String {
-    const NAME: &'static str = "String";
-    const SCHEMA: &'static str = "String";
-    const KIND: Kind = Kind::String;
+mod string {
+    use crate::dev::*;
+
+    impl Representation for String {
+        const NAME: &'static str = "String";
+        const SCHEMA: &'static str = "type String string";
+        const KIND: Kind = Kind::String;
+    }
+
+    impl_ipld! { @visitor {} {} String => String {
+        #[inline]
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(formatter, "A UTF-8 string")
+        }
+
+        #[inline]
+        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            self.visit_string(s.into())
+        }
+
+        #[inline]
+        fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            match self.selector {
+                Selector::Matcher(Matcher { label, .. }) => {
+                    match self.state.mode() {
+                        SelectorState::DAG_MATCH_MODE => Ok(Some(s)),
+                        SelectorState::NODE_MODE => {
+                            self.send_matched(s.into(), label.clone()).map_err(E::custom)?;
+                            Ok(None)
+                        },
+                        SelectorState::DAG_MODE => {
+                            self.send_dag(s, label.clone()).map_err(E::custom)?;
+                            Ok(None)
+                        },
+                    }
+                },
+                selector => Err(Error::unsupported_selector::<String, String>(selector)).map_err(E::custom)
+            }
+        }
+    }}
+
+    impl_ipld! { @deseed {} {} String => String {
+        #[inline]
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            deserializer.deserialize_string(self)
+        }
+    }}
+
+    impl_ipld! { @select_self {} {} String }
+
+    // impl<'a> Representation for &'a str {
+    //     const NAME: &'static str = "String";
+    //     const SCHEMA: &'static str = "type String string";
+    //     const KIND: Kind = Kind::String;
+    // }
 }
 
-// impl Representation for &str {
-//     const NAME: &'static str = "str";
+// /// Implements selection (matching) for primitive types.
+// #[inline]
+// pub fn primitive_select<'a, 'de, C, T, S>(
+//     selector: &Selector,
+//     state: SelectorState,
+//     ctx: &mut C
+// ) -> Result<Option<S>, Error>
+// where
+//     C: Context,
+//     T: Representation,
+//     S: Representation,
+//     ContextSeed<'a, C, S, S>: DeserializeSeed<'de, Value = Option<S>>,
+//     // Node: From<T>,
+// {
+//     // if type_eq::<T, S>() {
+//     //     T::r#match(selector, state, ctx)
+//     // } else {
+//     //     Err(Error::invalid_type_selection::<T, S>())
+//     // }
+
+//     // const are_eq: bool = type_eq::<T, S>();
+//     // static_assertions::const_assert!(type_eq::<T, S>());
+
+//     // unimplemented!()
 // }
-// impl_root_select!(Matcher {
-//     impl<Ctx> Select<Selector, Ctx> for &str
-//     where
-//         Ctx: Context,
-//         Self:
-// });
 
-impl<T> Representation for Option<T>
-where
-    T: Representation,
-{
-    const NAME: &'static str = "Option";
-    const KIND: Kind = Kind::Union;
-    const SCHEMA: &'static str = "Option<T>";
+// /// Implements patch selection for primitive types.
+// #[inline]
+// pub fn primitive_patch<C, T>(
+//     self_: &mut T,
+//     selector: &Selector,
+//     _state: SelectorState,
+//     dag: T,
+//     _ctx: &mut C,
+// ) -> Result<(), Error>
+// where
+//     T: Select<C>,
+//     C: Context,
+//     Node: From<T>,
+// {
+//     match selector {
+//         Selector::Matcher(Matcher { .. }) => {
+//             *self_ = dag;
+//             Ok(())
+//         }
+//         _ => Err(Error::unsupported_selector::<T>(selector)),
+//     }
+// }
 
-    fn name(&self) -> &'static str {
-        match self {
-            Self::None => Null::NAME,
-            Self::Some(t) => t.name(),
-        }
-    }
+// fn primitive_select_base<T, C, F, R>(
+//     seed: SelectorState,
+//     ctx: &mut C,
+//     on_matched: F,
+// ) -> Result<R, Error>
+// where
+//     T: Select<C, T>,
+//     C: Context,
+//     F: Fn(&SelectorState, T, &Option<String>) -> Result<R, Error>,
+//     Node: From<T>,
+// {
+//     let deserializer = ctx.path_decoder(seed.path())?;
+//     let selector = seed.as_selector();
 
-    fn kind(&self) -> Kind {
-        match self {
-            Self::None => Null::KIND,
-            Self::Some(t) => t.kind(),
-        }
-    }
-}
+//     match selector {
+//         Selector::Matcher(Matcher { ref label, .. }) => {
+//             let inner = <T>::deserialize(deserializer)
+//                 .map_err(|err| Error::Decoder(anyhow::anyhow!(err.to_string())))?;
+
+//             on_matched(&seed, inner, label)
+//         }
+//         _ => Err(Error::UnsupportedSelector {
+//             type_name: T::NAME,
+//             selector_name: selector.name(),
+//         }),
+//     }
+// }
+
 // impl_root_select!(Matcher {
 //     impl<Ctx, T> Select<Selector, Ctx> for Option<T>
 //     where

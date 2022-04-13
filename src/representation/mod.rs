@@ -2,25 +2,35 @@
 //!
 //! Therefore, we create these traits to abstract over how to `Read`, `Write` a type from/to bytes, as well query and mutate a type, while specifically defining for the type it's `Context` requirements for these operations.
 
-mod context;
+// mod context;
 // mod executor;
 mod impls;
 
-pub use context::*;
+// pub use context::*;
 // pub use executor::*;
 
 use crate::dev::*;
-// use downcast_rs::{impl_downcast, Downcast};
+use downcast_rs::{impl_downcast, DowncastSync};
 // use crate::selectors::args as Args;
 use std::{rc::Rc, sync::Arc};
 
 ///
 /// TODO: represents Schema or Representation kind?
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Kind {
     Null,
-    Boolean,
-    Integer,
+    Bool,
+    Int8,
+    Int16,
+    Int,
+    Int64,
+    Int128,
+    Uint8,
+    Uint16,
+    Uint32,
+    Uint64,
+    Uint128,
+    Float32,
     Float,
     String,
     Bytes,
@@ -44,7 +54,7 @@ pub enum Kind {
 //     /// The serialized field name of this type.
 //     pub alias: A,
 // }
-
+//
 // impl<A> Field<A> {
 //     // pub const fn new<T: Representation>(alias: A) -> Self {
 //     //     Field {
@@ -54,7 +64,7 @@ pub enum Kind {
 //     //     }
 //     // }
 // }
-
+//
 // ///
 // #[derive(Debug, Eq, Hash, PartialEq)]
 // pub enum Fields {
@@ -117,24 +127,30 @@ pub enum Kind {
 ///         - TODO: ? stateful visitor derived from selector + type?
 ///         - TODO: ? impl DeserializeSeed for selector?
 ///         - TODO: ? Representation::visitor(selector: &Selector)
-#[async_trait::async_trait]
-pub trait Representation<C: Context = MemoryContext>
+pub trait Representation
 where
-    Self: Serialize + for<'de> Deserialize<'de> + DeserializeOwned,
+    Self: Serialize + DeserializeOwned,
 {
     /// The stringified name of the IPLD type.
     const NAME: &'static str;
 
-    /// The stringified IPLD typedef.
+    /// The stringified IPLD type definition (or equivalent, if a native type
+    /// not defined by IPLD).
     const SCHEMA: &'static str = unimplemented!();
 
-    /// The IPLD Schema kind of the type.
+    /// The [IPLD Schema
+    /// Kind](https://ipld.io/docs/schemas/features/typekinds/#schema-kinds) of
+    /// the type.
     const KIND: Kind;
+
+    ///
+    const IS_LINK: bool = false;
+
+    ///
+    const HAS_LINKS: bool = false;
 
     // /// The type's `Select`able field names and their IPLD Schema kinds, if a recursive type.
     // const FIELDS: Fields = Fields::None;
-    // ///
-    // const HAS_LINKS: bool = false;
 
     ///
     /// for unions, this delegates to the variant's type name
@@ -147,25 +163,60 @@ where
         Self::KIND
     }
 
+    ///
+    fn has_links(&self) -> bool {
+        Self::HAS_LINKS
+    }
+
+    // fn r#match<'de, 'a, C, D>(
+    //     seed: ContextSeed<'a, C, Self, Self>,
+    //     deserializer: D,
+    // ) -> Result<Self, D::Error>
+    // where
+    //     C: Context,
+    //     D: Deserializer<'de>;
+    //
+    // // TODO: do we even need this
+    // fn try_deserialize_path<'de, T, D>(
+    //     selector: PathSeed<T>,
+    //     deserializer: D,
+    // ) -> Result<(Option<PathSeed<T>>, Option<T>), Error>
+    // where
+    //     D: Deserializer<'de>,
+    // {
+    //     unimplemented!()
+    // }
+    //
+    // /// Defines how the type can be selectively deserialized, based on its kind
+    // /// and serialized representation.
+    // /// TODO: do we even need this
+    // fn deserialize_selector<'de, D>(
+    //     seed: SelectorSeed,
+    //     deserializer: D,
+    // ) -> Result<SelectorSeed, Error>
+    // where
+    //     D: Deserializer<'de>,
+    // {
+    //     unimplemented!()
+    // }
+    //
     // ///
     // fn to_owned(&self) -> Self;
-
+    //
     // /// Returns true if any nested links have been resolved to blocks and subsequently mutated, and thus
     // /// need to be serialized first.
     // fn is_dirty(&self) -> bool {
     //     false
     // }
-
+    //
     // async fn resolve<C: Context>(&self, path: &Path, ctx: &mut C) -> Result<, Error> {
     //     unimplemented!()
     // }
-
-    // async fn merge<C: Context>(&self, path: &Path, dag:  ctx: &mut C) -> Result<(), Error> {}
-
+    //
     // async fn write<Si: MultihashSize>(&self, ctx: C, block_meta: B) -> Result<Link<Self, Si>, Error> {
     //     unimplemented!()
     // }
-
+    //
     // async fn read<Si: MultihashSize>(link: Link<Self, Si>) -> Result<Self, Error> {
     //     unimplemented!()
     // }
@@ -173,25 +224,60 @@ where
     // fn links<R: Read + Seek>(c: Codec, reader: &mut R, )
 }
 
+impl<T> Representation for Option<T>
+where
+    T: Representation,
+{
+    const NAME: &'static str = "Option";
+    // TODO:
+    const KIND: Kind = Kind::Union;
+    const SCHEMA: &'static str = concat!("nullable ", stringify!(T::NAME));
+    const HAS_LINKS: bool = T::HAS_LINKS;
+
+    fn name(&self) -> &'static str {
+        match self {
+            Self::None => Null::NAME,
+            Self::Some(t) => t.name(),
+        }
+    }
+
+    fn kind(&self) -> Kind {
+        match self {
+            Self::None => Null::KIND,
+            Self::Some(t) => t.kind(),
+        }
+    }
+
+    fn has_links(&self) -> bool {
+        match self {
+            Self::None => false,
+            Self::Some(t) => t.has_links(),
+        }
+    }
+}
+
 impl<T> Representation for Box<T>
 where
     T: Representation,
 {
+    // type Visitor
     const NAME: &'static str = T::NAME;
     const KIND: Kind = T::KIND;
     const SCHEMA: &'static str = T::SCHEMA;
 
-    ///
-    /// for unions, this delegates to the variant's type name
     #[inline]
     fn name(&self) -> &'static str {
         self.as_ref().name()
     }
 
-    ///
     #[inline]
     fn kind(&self) -> Kind {
         self.as_ref().kind()
+    }
+
+    #[inline]
+    fn has_links(&self) -> bool {
+        self.as_ref().has_links()
     }
 }
 
@@ -203,17 +289,19 @@ where
     const KIND: Kind = T::KIND;
     const SCHEMA: &'static str = T::SCHEMA;
 
-    ///
-    /// for unions, this delegates to the variant's type name
     #[inline]
     fn name(&self) -> &'static str {
         self.as_ref().name()
     }
 
-    ///
     #[inline]
     fn kind(&self) -> Kind {
         self.as_ref().kind()
+    }
+
+    #[inline]
+    fn has_links(&self) -> bool {
+        self.as_ref().has_links()
     }
 }
 
@@ -225,17 +313,19 @@ where
     const KIND: Kind = T::KIND;
     const SCHEMA: &'static str = T::SCHEMA;
 
-    ///
-    /// for unions, this delegates to the variant's type name
     #[inline]
     fn name(&self) -> &'static str {
         self.as_ref().name()
     }
 
-    ///
     #[inline]
     fn kind(&self) -> Kind {
         self.as_ref().kind()
+    }
+
+    #[inline]
+    fn has_links(&self) -> bool {
+        self.as_ref().has_links()
     }
 }
 
@@ -253,14 +343,60 @@ where
 //     const NAME: &'static str = T::NAME;
 // }
 
-// // #[async_trait]
-// pub trait RepresentationExt<T: Representation>: Representation {
-//     // fn resolve(self)
-// }
+///
+/// TODO: possibly look at erased-serde to complete this "hack"
+pub trait ErasedRepresentation: DowncastSync {}
+impl<T: Representation + Send + Sync + 'static> ErasedRepresentation for T {}
+impl_downcast!(sync ErasedRepresentation);
 
-// ///
-// /// TODO: possibly look at erased-serde to complete this "hack"
-// #[doc(hidden)]
-// pub trait ObjectSafeRepresentation: Downcast {}
-// impl<T: Representation + 'static> ObjectSafeRepresentation for T {}
-// impl_downcast!(ObjectSafeRepresentation);
+// #[async_trait::async_trait]
+// pub trait AdvancedRepresentation: Representation {}
+
+/// Helper trait. `VALUE` is false, except for the specialization of the
+/// case where `T == U`.
+pub(crate) trait TypeEq<U: ?Sized> {
+    const EQ: bool;
+}
+
+// Default implementation.
+impl<T: ?Sized, U: ?Sized> TypeEq<U> for T {
+    default const EQ: bool = false;
+}
+
+// Specialization for `T == U`.
+impl<T: ?Sized> TypeEq<T> for T {
+    const EQ: bool = true;
+}
+
+#[doc(hidden)]
+pub const fn type_eq<T: ?Sized, U: ?Sized>() -> bool {
+    <T as TypeEq<U>>::EQ
+}
+
+/// Helper fn for constraining and safely transmuting a generic selection output
+pub(crate) fn type_cast_selection<T: Sized + 'static, U: Sized + 'static, E, F>(
+    inner: F,
+) -> Result<Option<U>, E>
+where
+    F: FnOnce() -> Result<Option<T>, E>,
+{
+    if type_eq::<T, U>() {
+        let mut inner = inner()?;
+        let outer = (&mut inner as &mut dyn std::any::Any)
+            .downcast_mut::<Option<U>>()
+            .unwrap()
+            .take();
+        Ok(outer)
+    } else {
+        unreachable!("should only do this for types known to be identical")
+    }
+}
+
+pub(crate) trait TypeEq2<const EQ: bool, U: ?Sized> {}
+// Default implementation.
+default impl<T: ?Sized, U: ?Sized> TypeEq2<false, U> for T {}
+impl<T: ?Sized> TypeEq2<true, T> for T {}
+
+// pub const fn type_eq2<T: ?Sized, U: ?Sized>() -> bool {
+//     <T as TypeEq<U>>::EQ
+// }

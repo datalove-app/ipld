@@ -21,6 +21,11 @@ pub const CBOR_LINK_TAG: u64 = 42;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DagCbor;
 
+impl DagCbor {
+    /// The multicodec code that identifies this IPLD Codec.
+    pub const CODE: u64 = 0x71;
+}
+
 impl Into<u64> for DagCbor {
     fn into(self) -> u64 {
         Self::CODE
@@ -38,31 +43,35 @@ impl TryFrom<u64> for DagCbor {
 }
 
 impl Codec for DagCbor {
-    const CODE: u64 = 0x71;
-
-    fn write<T, W>(dag: &T, writer: W) -> Result<(), Error>
+    fn write<T, W>(&mut self, dag: &T, writer: W) -> Result<(), Error>
     where
         T: Representation,
         W: Write,
     {
-        to_writer(writer, dag).map_err(|e| Error::Encoder(anyhow::Error::new(e)))
+        to_writer(writer, dag).map_err(Error::encoder)
     }
 
-    fn decode<'de, T>(bytes: &'de [u8]) -> Result<T, Error>
+    fn decode<'de, T>(&mut self, bytes: &'de [u8]) -> Result<T, Error>
     where
         T: Representation,
     {
-        from_slice(bytes).map_err(|e| Error::Decoder(anyhow::Error::new(e)))
+        from_slice(bytes).map_err(Error::decoder)
     }
 
-    fn read<T, R>(reader: R) -> Result<T, Error>
+    fn read<T, R>(&mut self, reader: R) -> Result<T, Error>
     where
         T: Representation,
         R: Read,
     {
-        from_reader(reader).map_err(|e| Error::Decoder(anyhow::Error::new(e)))
+        from_reader(reader).map_err(Error::decoder)
     }
 }
+
+// impl<'a> CodecExt for DagCbor {
+//     // type Encoder = &'a mut CborSerializer<W>
+
+//     fn encoder<W: Write>(writer: W) -> Result<Self::Encoder, Error> {}
+// }
 
 impl<'a, W: CborWrite> Encoder for &'a mut CborSerializer<W> {
     #[inline]
@@ -84,12 +93,8 @@ impl<'de, 'a, R: CborRead<'de>> Decoder<'de> for &'a mut CborDeserializer<R> {
         match current_cbor_tag() {
             Some(CBOR_LINK_TAG) => {
                 // TODO:
-                // let bytes = <Box[u8]>::deserialize(self)?;
-                // let cid: Cid = bytes
-                //     .try_from()
-                //     .map_err(|e| de::Error::custom("expected a CID"))?;
-                // visitor.visit_link(cid)
-                unimplemented!()
+                let bytes = <&[u8]>::deserialize(self)?;
+                visitor.visit_link_bytes(bytes)
             }
             Some(tag) => Err(de::Error::custom(format!(
                 "unexpected CBOR tag for CID: {}",

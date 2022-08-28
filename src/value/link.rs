@@ -4,7 +4,7 @@ use std::{convert::TryFrom, marker::PhantomData, rc::Rc};
 
 ///
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Link<T: Representation = Value, Si: MultihashSize = DefaultMultihashSize> {
+pub enum Link<const Si: usize = DEFAULT_MULTIHASH_SIZE, T: Representation = Value> {
     Cid(CidGeneric<Si>),
     Inner {
         cid: CidGeneric<Si>,
@@ -13,20 +13,18 @@ pub enum Link<T: Representation = Value, Si: MultihashSize = DefaultMultihashSiz
     },
 }
 
-impl<T: Representation, Si: MultihashSize> Link<T, Si> {
+impl<const Si: usize, T: Representation> Link<Si, T> {
     ///
     #[cfg(feature = "multicodec")]
     #[inline]
     pub fn multicodec(&self) -> Result<Multicodec, Error> {
-        let cid = self.cid();
-        Multicodec::try_from(cid.codec())
+        Multicodec::try_from(self.cid().codec())
     }
 
     ///
     #[inline]
     pub fn multihash(&self) -> Result<Multihash, Error> {
-        let cid = self.cid();
-        Ok(Multihash::try_from(cid.hash().code())?)
+        Ok(Multihash::try_from(self.cid().hash().code())?)
     }
 
     ///
@@ -41,8 +39,7 @@ impl<T: Representation, Si: MultihashSize> Link<T, Si> {
     ///
     #[inline]
     pub fn to_meta(&self) -> BlockMeta<'_, Si> {
-        let cid = self.cid();
-        cid.into()
+        self.cid().into()
     }
 
     ///
@@ -53,7 +50,7 @@ impl<T: Representation, Si: MultihashSize> Link<T, Si> {
     }
 }
 
-impl<T: Representation, Si: MultihashSize> Representation for Link<T, Si> {
+impl<const Si: usize, T: Representation> Representation for Link<Si, T> {
     const NAME: &'static str = concat!("Link<", stringify!(T::NAME), ">");
     const SCHEMA: &'static str = concat!("type", stringify!(Self::NAME), " ", stringify!(T::NAME));
     const KIND: Kind = Kind::Link;
@@ -93,13 +90,13 @@ impl<T: Representation, Si: MultihashSize> Representation for Link<T, Si> {
 //     // ContextSeed<'a, C, T, U>: DeserializeSeed<'de, Value = Option<U>>,
 // {
 //     type Value = Option<U>;
-
+//
 //     #[inline]
 //     fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 //         write!(formatter, "{}", Link::<T, Si>::NAME)
 //     }
 // }
-
+//
 // impl<'de, 'a, C: Context, T: Representation, U: Representation, Si: MultihashSize>
 //     IpldVisitorExt<'de> for ContextSeed<'a, C, Link<T, Si>, U>
 // where
@@ -110,7 +107,7 @@ impl<T: Representation, Si: MultihashSize> Representation for Link<T, Si> {
 //     // ContextSeed<'a, C, T, U>: DeserializeSeed<'de, Value = Option<U>>,
 // {
 // }
-
+//
 // impl<'de, 'a, C: Context, T: Representation, U: Representation, Si: MultihashSize>
 //     DeserializeSeed<'de> for ContextSeed<'a, C, Link<T, Si>, U>
 // where
@@ -118,7 +115,7 @@ impl<T: Representation, Si: MultihashSize> Representation for Link<T, Si> {
 // // ContextSeed<'a, C, Link<T, Si>, U>: IpldVisitorExt<'de, Value = Option<U>>,
 // {
 //     type Value = Option<U>;
-
+//
 //     #[inline]
 //     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
 //     where
@@ -131,7 +128,7 @@ impl<T: Representation, Si: MultihashSize> Representation for Link<T, Si> {
 // mod impl_self {
 //     use crate::dev::*;
 //     use serde::de;
-
+//
 //     impl_ipld! { @visitor
 //         {T: Representation, Si: MultihashSize} {}
 //         Link<T, Si> => Link<T, Si>
@@ -140,7 +137,7 @@ impl<T: Representation, Si: MultihashSize> Representation for Link<T, Si> {
 //         fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 //             write!(formatter, "A link to a {}", T::NAME)
 //         }
-
+//
 //         // #[inline]
 //         // fn $visit_fn<E>(self, $visit_arg : $visit_ty) -> Result<Self::Value, E>
 //         // where
@@ -157,7 +154,7 @@ impl<T: Representation, Si: MultihashSize> Representation for Link<T, Si> {
 //         //     }
 //         // }
 //     }}
-
+//
 //     impl_ipld! { @visitor_ext
 //         {T: Representation, Si: MultihashSize} {}
 //         Link<T, Si> => Link<T, Si>
@@ -170,7 +167,7 @@ impl<T: Representation, Si: MultihashSize> Representation for Link<T, Si> {
 //             let cid = CidGeneric::<Si>::try_from(cid_str).map_err(E::custom)?;
 //             Ok(Some(Link::<T, Si>::from(cid)))
 //         }
-
+//
 //         #[inline]
 //         fn visit_link_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
 //         where
@@ -180,7 +177,7 @@ impl<T: Representation, Si: MultihashSize> Representation for Link<T, Si> {
 //             Ok(Some(Link::<T, Si>::from(cid)))
 //         }
 //     }}
-
+//
 //     impl_ipld! { @deseed
 //         {T: Representation, Si: MultihashSize} {}
 //         Link<T, Si> => Link<T, Si>
@@ -193,7 +190,7 @@ impl<T: Representation, Si: MultihashSize> Representation for Link<T, Si> {
 //             deserializer.deserialize_link(self)
 //         }
 //     }}
-
+//
 //     impl_ipld! { @select_self
 //         {T: Representation, Si: MultihashSize} {}
 //         Link<T, Si>
@@ -267,7 +264,7 @@ mod impl_generic {
 // where
 //     T: Representation,
 //     Si: MultihashSize;
-
+//
 // #[derive(Clone, Debug, Eq, PartialEq)]
 // enum InnerLink<T, Si = DefaultMultihashSize>
 // where
@@ -276,7 +273,7 @@ mod impl_generic {
 // {
 //     /// Represents a raw `cid::CidGeneric` contained within a dag.
 //     Cid(CidGeneric<Si>),
-
+//
 //     /// Represents a parsed subset of a dag and its original `cid::CidGeneric`.
 //     Selection {
 //         cid: CidGeneric<Si>,
@@ -287,7 +284,7 @@ mod impl_generic {
 
 // TODO: impl_root_selector for each IS => T: Select<IS> (Ctx: Block for recursive)
 // TODO: ? impl Select<IS> for each IS (Ctx: Block for recursive)
-
+//
 // // TODO: write the Select impls, then the latter 3 for Vec<Link<T>>
 // impl_root_select!(
 //     Matcher, ExploreAll, ExploreFields, ExploreIndex,
@@ -297,7 +294,7 @@ mod impl_generic {
 //         Ctx: Context,
 //         T: Representation + 'static
 // });
-
+//
 // impl<Ctx, S, T> Select<Ctx, S> for Link<T>
 // where
 //     Ctx: Context,
@@ -305,7 +302,7 @@ mod impl_generic {
 //     T: Select<Ctx, S>,
 // {
 //     type Output = <T as Select<Ctx, S>>::Output;
-
+//
 //     fn select<'a>(self, selector: &S, executor: &Executor<'a, Ctx>) -> Result<Self::Output, ()> {
 //         match self {
 //             Self::Cid(_) => Err(()),
@@ -315,7 +312,7 @@ mod impl_generic {
 //         }
 //     }
 // }
-
+//
 // #[async_trait]
 // impl<R, W, T> Representation<R, W> for Link<T>
 // where
@@ -338,7 +335,7 @@ mod impl_generic {
 //             Ok(Link::Cid(cid))
 //         }
 //     }
-
+//
 //     #[inline]
 //     default async fn write<C>(&self, ctx: &mut C) -> Result<(), Error>
 //     where
@@ -364,10 +361,10 @@ mod impl_generic {
 //         }
 //     }
 // }
-
+//
 // impl<T: Representation> RepresentationExt<T> for Link<T> {
 //     // fn codec(&self) ->
-
+//
 //     // /// resolves a link into it's full underlying dag T
 //     // ///
 //     // /// when a Link::Cid is focused, its cloned, fully/partially resolved, replaces itself with T, then delegates to T::focus
@@ -382,13 +379,13 @@ mod impl_generic {
 //     // async fn resolve<'a>(self, executor: &'a Executor<'a, Ctx>) -> Result<T, ()> {
 //     //     unimplemented!()
 //     // }
-
+//
 //     //
 //     //
 //     //
 //     //
 //     //
-
+//
 //     // /// resolves a link against a selector into a selection of dag T
 //     // /// TODO? FromContext
 //     // async fn resolve_selector<'a>(
@@ -408,22 +405,20 @@ mod impl_generic {
 // additional implementations
 ////////////////////////////////////////////////////////////////////////////////
 
-impl<T, Si> From<CidGeneric<Si>> for Link<T, Si>
+impl<const Si: usize, T> From<CidGeneric<Si>> for Link<Si, T>
 where
     T: Representation,
-    Si: MultihashSize,
 {
     fn from(cid: CidGeneric<Si>) -> Self {
         Self::Cid(cid)
     }
 }
 
-impl<T, Si> From<Link<T, Si>> for CidGeneric<Si>
+impl<const Si: usize, T> From<Link<Si, T>> for CidGeneric<Si>
 where
     T: Representation,
-    Si: MultihashSize,
 {
-    fn from(link: Link<T, Si>) -> Self {
+    fn from(link: Link<Si, T>) -> Self {
         match link {
             Link::Cid(inner) => inner,
             Link::Inner { cid, .. } => cid,
@@ -431,10 +426,9 @@ where
     }
 }
 
-impl<T, Si> Serialize for Link<T, Si>
+impl<const Si: usize, T> Serialize for Link<Si, T>
 where
     T: Representation,
-    Si: MultihashSize,
 {
     fn serialize<Se>(&self, serializer: Se) -> Result<Se::Ok, Se::Error>
     where
@@ -444,59 +438,16 @@ where
     }
 }
 
-impl<'de, T, Si> Deserialize<'de> for Link<T, Si>
+impl<'de, const Si: usize, T> Deserialize<'de> for Link<Si, T>
 where
     T: Representation,
-    Si: MultihashSize,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct LinkVisitor<T, Si: MultihashSize = DefaultMultihashSize>(
-            CidVisitor<Si>,
-            PhantomData<T>,
-        );
-
-        impl<'de, T, Si> Visitor<'de> for LinkVisitor<T, Si>
-        where
-            T: Representation,
-            Si: MultihashSize,
-        {
-            type Value = Link<T, Si>;
-
-            #[inline]
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("an IPLD link")
-            }
-        }
-
-        impl<'de, T, Si> IpldVisitorExt<'de> for LinkVisitor<T, Si>
-        where
-            T: Representation,
-            Si: MultihashSize,
-        {
-            #[inline]
-            fn visit_link_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(self.0.visit_link_str(cid_str)?.into())
-            }
-
-            #[inline]
-            fn visit_link_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(self.0.visit_link_bytes(cid_bytes)?.into())
-            }
-        }
-
-        <D as Decoder<'de>>::deserialize_link(
-            deserializer,
-            LinkVisitor(Default::default(), PhantomData),
-        )
+        let cid = <D as Decoder<'de>>::deserialize_link(deserializer, CidVisitor::<Si>::default())?;
+        Ok(Self::Cid(cid))
     }
 }
 

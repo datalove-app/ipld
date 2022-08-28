@@ -96,10 +96,7 @@ impl<'a, W: Write> Encoder for &'a mut JsonSerializer<W> {
 
     /// Serializes links as a newtype variant, e.g.  `{ "/": "Qm..." }`.
     #[inline]
-    fn serialize_link<S>(self, cid: &CidGeneric<S>) -> Result<Self::Ok, JsonError>
-    where
-        S: MultihashSize,
-    {
+    fn serialize_link<const Si: usize>(self, cid: &CidGeneric<Si>) -> Result<Self::Ok, JsonError> {
         self.serialize_newtype_variant("", 0, "/", &cid.to_string())
     }
 }
@@ -379,15 +376,13 @@ mod tests {
 
     #[test]
     fn test_link() {
-        type Cid = CidGeneric<DefaultMultihashSize>;
+        type Cid = CidGeneric<32>;
+        type TestLink = Link<32, ()>;
 
         let s = String::from("QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n");
         let json = format!("{{\"/\":\"{}\"}}", s);
 
-        let tests = &[(
-            Link::<Value>::from(Cid::from_str(&s).unwrap()),
-            json.as_str(),
-        )];
+        let tests = &[(TestLink::from(Cid::from_str(&s).unwrap()), json.as_str())];
         roundtrip_str_codec::<_>(DagJson::CODE, tests);
     }
 

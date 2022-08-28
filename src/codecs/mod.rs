@@ -50,9 +50,9 @@ pub trait Codec: Into<u64> + TryFrom<u64, Error = Error> {
 // pub trait CodecExt<'de>: Codec {
 //     type Encoder: Encoder;
 //     type Decoder: Decoder<'de>;
-
+//
 //     fn encoder<W: Write>(writer: W) -> Result<Self::Encoder, Error>;
-
+//
 //     fn decoder<R: Read>(reader: R) -> Result<Self::Decoder, Error>;
 // }
 
@@ -77,9 +77,8 @@ pub trait Encoder: Serializer {
 
     /// Serialize an IPLD link.
     /// TODO: cid_bytes?
-    fn serialize_link<S>(self, cid: &CidGeneric<S>) -> Result<Self::Ok, Self::Error>
-    where
-        S: MultihashSize;
+    fn serialize_link<const Si: usize>(self, cid: &CidGeneric<Si>)
+        -> Result<Self::Ok, Self::Error>;
     // fn serialize_link(self, cid_bytes: Box<[u8]>) -> Result<Self::Ok, Self::Error>;
 }
 
@@ -169,9 +168,9 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
 /// [`Visitor`]: serde::de::Visitor
 /// [`CidGeneric`]: cid::CidGeneric
 #[derive(Debug, Default)]
-pub struct CidVisitor<Si: MultihashSize>(PhantomData<Si>);
+pub struct CidVisitor<const Si: usize>;
 
-impl<'de, Si: MultihashSize> Visitor<'de> for CidVisitor<Si> {
+impl<'de, const Si: usize> Visitor<'de> for CidVisitor<Si> {
     type Value = CidGeneric<Si>;
 
     #[inline]
@@ -180,7 +179,7 @@ impl<'de, Si: MultihashSize> Visitor<'de> for CidVisitor<Si> {
     }
 }
 
-impl<'de, Si: MultihashSize> IpldVisitorExt<'de> for CidVisitor<Si> {
+impl<'de, const Si: usize> IpldVisitorExt<'de> for CidVisitor<Si> {
     /// The input contains the bytes of a `Cid`.
     #[inline]
     fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
@@ -239,9 +238,7 @@ mod specialization {
 
                 /// Default behaviour is to serialize the link directly as bytes.
                 #[inline]
-                default fn serialize_link<Si>(self, cid: &CidGeneric<Si>) -> Result<Self::Ok, Self::Error>
-                where
-                    Si: MultihashSize,
+                default fn serialize_link<const Si: usize>(self, cid: &CidGeneric<Si>) -> Result<Self::Ok, Self::Error>
                 {
                     Serializer::serialize_bytes(self, cid.to_bytes().as_ref())
                 }

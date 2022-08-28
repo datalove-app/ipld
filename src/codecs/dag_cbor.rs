@@ -65,6 +65,20 @@ impl Codec for DagCbor {
     {
         from_reader(reader).map_err(Error::decoder)
     }
+
+    /// Given a `Read`, deserialize a dag.
+    fn read_with_seed<'de, S, R>(
+        &mut self,
+        seed: S,
+        reader: R,
+    ) -> Result<<S as DeserializeSeed<'de>>::Value, Error>
+    where
+        S: DeserializeSeed<'de>,
+        R: Read,
+    {
+        let mut de = CborDeserializer::from_reader(reader);
+        seed.deserialize(&mut de).map_err(Error::decoder)
+    }
 }
 
 // impl<'a> CodecExt for DagCbor {
@@ -75,10 +89,7 @@ impl Codec for DagCbor {
 
 impl<'a, W: CborWrite> Encoder for &'a mut CborSerializer<W> {
     #[inline]
-    fn serialize_link<S>(self, cid: &CidGeneric<S>) -> Result<Self::Ok, CborError>
-    where
-        S: MultihashSize,
-    {
+    fn serialize_link<const Si: usize>(self, cid: &CidGeneric<Si>) -> Result<Self::Ok, CborError> {
         let bytes = cid.to_bytes();
         Tagged::new(Some(CBOR_LINK_TAG), bytes.as_slice()).serialize(self)
     }

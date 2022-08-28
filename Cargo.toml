@@ -13,24 +13,25 @@ path = "src/lib.rs"
 [dependencies]
 # core
 bytes = "0.5"
-cid = { version = "0.7", features = ["serde-codec"] }
+cid = { version = "0.8", features = ["std"] }
 erased-serde = { version = "0.3", features = ["std"] }
 # ipfs = { git = "https://github.com/ipfs-rust/rust-ipfs", branch = "master", optional = true }
 ipld-macros = { path = "./macros" }
 ipld-macros-internals = { path = "./macros-internals" }
 multibase = "0.9"
-multihash = "0.14"
+multihash = "0.16"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_repr = "0.1"
 
 # formats
 serde_cbor = { version = "0.11", optional = true }
 serde_json = { version = "1.0", optional = true }
-simd-json = { version = "0.4", optional = true }
+simd-json = { version = "0.6", optional = true }
 
 # misc
 anyhow = "1.0"
-delegate = { version = "0.5", optional = true }
+const-str = "0.3"
+delegate = { version = "0.7", optional = true }
 downcast-rs = "1.2"
 impls = "1.0"
 thiserror = "1.0"
@@ -56,7 +57,8 @@ members = [
   # "codegen",
   "macros",
   "macros-hack",
-  "macros-internals"
+  "macros-internals",
+  # "sqlite",
 ]
 
 [patch.crates-io]

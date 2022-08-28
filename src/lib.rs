@@ -35,6 +35,9 @@
 // #![recursion_limit = "256"]
 #![warn(rust_2018_idioms, missing_debug_implementations, missing_docs)]
 
+#[forbid(unsafe_code)]
+
+///
 #[path = "codecs/mod.rs"]
 mod _codecs;
 mod block;
@@ -88,14 +91,16 @@ pub mod prelude {
     pub use cid::{self, Cid, CidGeneric};
     pub use multibase::{self, Base as Multibase};
     pub use multihash::{
-        self, typenum, Code as Multihash, Digest, Multihash as DefaultMultihash, MultihashDigest,
-        Size as MultihashSize, U64 as DefaultMultihashSize,
+        self, Code as Multihash, Multihash as DefaultMultihash, MultihashDigest,
     };
     pub use serde::{Deserialize, Serialize};
     pub use std::{
         fmt::Debug,
         io::{Read, Write},
     };
+
+    ///
+    pub const DEFAULT_MULTIHASH_SIZE: usize = 64;
 }
 
 /// All exports from `ipld::prelude`, plus re-exports of first- and third-party

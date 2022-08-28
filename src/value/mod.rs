@@ -43,7 +43,7 @@ schema! {
         | Bytes bytes
         | List<Value> list
         | Map<String, Value> map
-        | Link<BoxedValue, DefaultMultihashSize> link
+        | Link<DEFAULT_MULTIHASH_SIZE, BoxedValue> link
     } representation kinded;
 }
 
@@ -170,7 +170,7 @@ impl Value {
     pub fn as_bytes(&self) -> Result<&Bytes, Error> {
         unimplemented!()
     }
-    pub fn as_link(&self) -> Result<Link<Self>, Error> {
+    pub fn as_link(&self) -> Result<Link<DEFAULT_MULTIHASH_SIZE, Self>, Error> {
         unimplemented!()
     }
 

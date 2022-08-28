@@ -70,4 +70,19 @@ impl Codec for Multicodec {
             Self::DagJson(inner) => inner.read(reader),
         }
     }
+
+    fn read_with_seed<'de, S, R>(
+        &mut self,
+        seed: S,
+        reader: R,
+    ) -> Result<<S as DeserializeSeed<'de>>::Value, Error>
+    where
+        S: DeserializeSeed<'de>,
+        R: Read,
+    {
+        match self {
+            Self::DagCbor(inner) => inner.read_with_seed(seed, reader),
+            Self::DagJson(inner) => inner.read_with_seed(seed, reader),
+        }
+    }
 }

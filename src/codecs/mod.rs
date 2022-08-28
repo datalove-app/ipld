@@ -35,6 +35,16 @@ pub trait Codec: Into<u64> + TryFrom<u64, Error = Error> {
     where
         T: Representation,
         R: Read;
+
+    /// Given a `Read`, deserialize a dag.
+    fn read_with_seed<'de, S, R>(
+        &mut self,
+        seed: S,
+        reader: R,
+    ) -> Result<<S as DeserializeSeed<'de>>::Value, Error>
+    where
+        S: DeserializeSeed<'de>,
+        R: Read;
 }
 
 // pub trait CodecExt<'de>: Codec {
@@ -117,7 +127,16 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
     /// The input contains the bytes of a `Cid`.
     ///
     /// The default implementation fails with a type error.
-    fn visit_link_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
+    fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Err(de::Error::invalid_type(de::Unexpected::Other("CID"), &self))
+    }
+
+    /// The input contains the bytes of a `Cid`.
+    #[inline]
+    fn visit_link_borrowed_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
@@ -127,7 +146,17 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
     /// The input contains a string representation of a `Cid`.
     ///
     /// The default implementation fails with a type error.
-    fn visit_link_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
+    fn visit_link_bytes<E>(self, cid_bytes: &[u8]) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Err(de::Error::invalid_type(de::Unexpected::Other("CID"), &self))
+    }
+
+    /// The input contains a string representation of a `Cid`.
+    ///
+    /// The default implementation fails with a type error.
+    fn visit_link_borrowed_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
@@ -154,7 +183,16 @@ impl<'de, Si: MultihashSize> Visitor<'de> for CidVisitor<Si> {
 impl<'de, Si: MultihashSize> IpldVisitorExt<'de> for CidVisitor<Si> {
     /// The input contains the bytes of a `Cid`.
     #[inline]
-    fn visit_link_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
+    fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Self::Value::try_from(cid_str).map_err(E::custom)
+    }
+
+    /// The input contains the bytes of a `Cid`.
+    #[inline]
+    fn visit_link_borrowed_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
@@ -163,7 +201,16 @@ impl<'de, Si: MultihashSize> IpldVisitorExt<'de> for CidVisitor<Si> {
 
     /// The input contains a string representation of a `Cid`.
     #[inline]
-    fn visit_link_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
+    fn visit_link_bytes<E>(self, cid_bytes: &[u8]) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Self::Value::try_from(cid_bytes).map_err(E::custom)
+    }
+
+    /// The input contains a string representation of a `Cid`.
+    #[inline]
+    fn visit_link_borrowed_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
@@ -175,7 +222,6 @@ impl<'de, Si: MultihashSize> IpldVisitorExt<'de> for CidVisitor<Si> {
 /// TODO: potentially get rid of this, in order to support raw JSON and CBOR codecs
 mod specialization {
     use crate::dev::*;
-    use std::rc::Rc;
 
     macro_rules! default_impl_codec {
         (@ser {$($generics:tt)*} $ty:ty) => {
@@ -269,10 +315,14 @@ mod specialization {
     default_impl_codec!(@de {'a} &'a mut (dyn ErasedDeserializer<'de> + Sync));
     default_impl_codec!(@de {'a} &'a mut (dyn ErasedDeserializer<'de> + Send + Sync));
 
-    default_impl_codec!(@de {} Box<dyn ErasedDeserializer<'de>>);
-    default_impl_codec!(@de {} Box<dyn ErasedDeserializer<'de> + Send>);
-    default_impl_codec!(@de {} Box<dyn ErasedDeserializer<'de> + Sync>);
-    default_impl_codec!(@de {} Box<dyn ErasedDeserializer<'de> + Send + Sync>);
+    // default_impl_codec!(@ser {'a} Box<dyn ErasedSerializer + 'a>);
+    // default_impl_codec!(@ser {'a} Box<dyn ErasedSerializer + Send + 'a>);
+    // default_impl_codec!(@ser {'a} Box<dyn ErasedSerializer + Sync + 'a>);
+    // default_impl_codec!(@ser {'a} Box<dyn ErasedSerializer + Send + Sync + 'a>);
+    // default_impl_codec!(@de {'a} Box<dyn ErasedDeserializer<'de> + 'a>);
+    // default_impl_codec!(@de {'a} Box<dyn ErasedDeserializer<'de> + Send + 'a>);
+    // default_impl_codec!(@de {'a} Box<dyn ErasedDeserializer<'de> + Sync + 'a>);
+    // default_impl_codec!(@de {'a} Box<dyn ErasedDeserializer<'de> + Send + Sync + 'a>);
     // default_impl_codec!(@de {} Rc<dyn ErasedDeserializer<'de>>);
     // default_impl_codec!(@de {} Rc<dyn ErasedDeserializer<'de> + Send>);
     // default_impl_codec!(@de {} Rc<dyn ErasedDeserializer<'de> + Sync>);

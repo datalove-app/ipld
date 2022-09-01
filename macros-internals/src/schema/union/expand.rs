@@ -101,17 +101,17 @@ impl UnionField<LitStr> {
 
     fn name_branch(&self) -> TokenStream {
         let field_name = self.field_name();
-        quote!(Self::#field_name(inner) => inner.name())
+        quote!(Self::#field_name(inner) => Representation::name(inner))
     }
 
     fn kind_branch(&self) -> TokenStream {
         let field_name = self.field_name();
-        quote!(Self::#field_name(inner) => inner.kind())
+        quote!(Self::#field_name(inner) => Representation::kind(inner))
     }
 
     fn link_branch(&self) -> TokenStream {
         let field_name = self.field_name();
-        quote!(Self::#field_name(inner) => inner.has_links())
+        quote!(Self::#field_name(inner) => Representation::has_links(inner))
     }
 }
 

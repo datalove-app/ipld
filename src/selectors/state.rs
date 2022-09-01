@@ -10,112 +10,6 @@ use std::{
     },
 };
 
-///
-#[derive(Clone, Debug, From, Deserialize, Serialize)]
-// #[from(forward)]
-pub enum Node {
-    #[serde(rename = "null")]
-    Null,
-    #[serde(rename = "bool")]
-    Bool(bool),
-    #[serde(rename = "int8")]
-    Int8(i8),
-    #[serde(rename = "int16")]
-    Int16(i16),
-    #[serde(rename = "int")]
-    Int(Int),
-    #[serde(rename = "int64")]
-    Int64(i64),
-    #[serde(rename = "int128")]
-    Int128(i128),
-    #[serde(rename = "uint8")]
-    Uint8(u8),
-    #[serde(rename = "uint16")]
-    Uint16(u16),
-    #[serde(rename = "uint32")]
-    Uint32(u32),
-    #[serde(rename = "uint64")]
-    Uint64(u64),
-    #[serde(rename = "uint128")]
-    Uint128(u128),
-    #[serde(rename = "float32")]
-    Float32(f32),
-    #[serde(rename = "float")]
-    Float(Float),
-    #[serde(rename = "string")]
-    String(String),
-    #[serde(rename = "bytes")]
-    Bytes(crate::dev::Bytes),
-    #[serde(rename = "list")]
-    #[from(ignore)]
-    List,
-    #[serde(rename = "map")]
-    #[from(ignore)]
-    Map,
-    #[serde(rename = "link")]
-    Link(Cid),
-}
-
-impl<'a> From<&'a str> for Node {
-    fn from(s: &'a str) -> Self {
-        Self::String(s.into())
-    }
-}
-
-impl<T: Representation> From<List<T>> for Node {
-    fn from(_: List<T>) -> Self {
-        Self::List
-    }
-}
-
-impl<K: Representation, V: Representation> From<Map<K, V>> for Node {
-    fn from(_: Map<K, V>) -> Self {
-        Self::Map
-    }
-}
-
-// TODO:
-impl<T: Representation, Si: MultihashSize> From<Link<T, Si>> for Node {
-    fn from(link: Link<T, Si>) -> Self {
-        let cid: CidGeneric<Si> = link.into();
-        let mh = cid.hash();
-        let mh = DefaultMultihash::wrap(mh.code(), mh.digest())
-            .expect("should not fail to convert a `MultihashGeneric` into a `DefaultMultihash`");
-        Self::Link(
-            Cid::new(cid.version(), cid.codec(), mh)
-                .expect("should not fail to convert a `CidGeneric` into `Cid`"),
-        )
-    }
-}
-
-impl<T: Representation> From<Option<T>> for Node
-where
-    Node: From<T>,
-{
-    fn from(opt: Option<T>) -> Self {
-        match opt {
-            None => Self::Null,
-            Some(t) => <Self as From<T>>::from(t),
-        }
-    }
-}
-
-impl From<Value> for Node {
-    fn from(val: Value) -> Self {
-        match val {
-            Value::Null => Self::Null,
-            Value::Bool(inner) => Self::Bool(inner),
-            Value::Int(inner) => Self::Int(inner),
-            Value::Float(inner) => Self::Float(inner),
-            Value::String(inner) => Self::String(inner),
-            Value::Bytes(inner) => Self::Bytes(inner),
-            Value::List(_) => Self::List,
-            Value::Map(_) => Self::Map,
-            Value::Link(link) => Self::Link(link.into()),
-        }
-    }
-}
-
 // ///
 // #[must_use = "Streams do nothing unless polled"]
 // // #[derive(Debug)]
@@ -198,339 +92,457 @@ impl From<Value> for Node {
 //     params: SelectorState,
 // }
 
+// pub trait Params {}
+//
+// pub struct SelectParams<T, U = T> {
+//     /// if none, return first match
+//     /// otherwise, send dag or node
+//     sender: Option<SelectionSender>,
+//     _t: PhantomData<(T, U)>,
+// }
+//
+// pub struct PatchParams<'a, C, T, U = T> {
+//     /// current dag we're selecting against
+//     /// if none, then load and store while patching
+//     current: &'a mut T,
+//     /// op to perform on matching dags, allowing update-inplace
+//     op: Box<dyn Fn(&mut U, &mut C) -> Result<(), Error> + 'a>,
+//     // op: fn(&mut U, &mut C) -> Result<(), Error>,
+//     flush: bool,
+// }
+//
+// impl<T, U> Params for SelectParams<T, U> {}
+// impl<'a, C, T, U> Params for PatchParams<'a, C, T, U> {}
+
+pub(crate) use callbacks::*;
+mod callbacks {
+    use super::*;
+
+    pub trait SelectNodeOp<C>: FnMut(SelectedNode, &mut C) -> Result<(), Error> {
+        ///
+        fn clone_box<'a>(&self) -> Box<dyn SelectNodeOp<C> + 'a>
+        where
+            Self: 'a;
+    }
+
+    impl<C, F> SelectNodeOp<C> for F
+    where
+        F: FnMut(SelectedNode, &mut C) -> Result<(), Error> + Clone,
+    {
+        fn clone_box<'a>(&self) -> Box<dyn SelectNodeOp<C> + 'a>
+        where
+            Self: 'a,
+        {
+            Box::new(self.clone())
+        }
+    }
+
+    impl<'a, C> Clone for Box<dyn SelectNodeOp<C> + 'a>
+    where
+        C: 'a,
+    {
+        fn clone(&self) -> Self {
+            (**self).clone_box()
+        }
+    }
+
+    ///
+    pub trait SelectDagOp<C>: FnMut(SelectedDag, &mut C) -> Result<(), Error> {
+        ///
+        fn clone_box<'a>(&self) -> Box<dyn SelectDagOp<C> + 'a>
+        where
+            Self: 'a;
+    }
+
+    impl<C, F> SelectDagOp<C> for F
+    where
+        F: FnMut(SelectedDag, &mut C) -> Result<(), Error> + Clone,
+    {
+        fn clone_box<'a>(&self) -> Box<dyn SelectDagOp<C> + 'a>
+        where
+            Self: 'a,
+        {
+            Box::new(self.clone())
+        }
+    }
+
+    impl<'a, C> Clone for Box<dyn SelectDagOp<C> + 'a>
+    where
+        C: 'a,
+    {
+        fn clone(&self) -> Self {
+            (**self).clone_box()
+        }
+    }
+
+    ///
+    pub trait MatchDagOp<T, C>: FnMut(T, &mut C) -> Result<(), Error> {
+        ///
+        fn clone_box<'a>(&self) -> Box<dyn MatchDagOp<T, C> + 'a>
+        where
+            Self: 'a;
+    }
+
+    impl<T, C, F> MatchDagOp<T, C> for F
+    where
+        F: FnMut(T, &mut C) -> Result<(), Error> + Clone,
+    {
+        fn clone_box<'a>(&self) -> Box<dyn MatchDagOp<T, C> + 'a>
+        where
+            Self: 'a,
+        {
+            Box::new(self.clone())
+        }
+    }
+
+    impl<'a, T, C> Clone for Box<dyn MatchDagOp<T, C> + 'a>
+    where
+        T: 'a,
+        C: 'a,
+    {
+        fn clone(&self) -> Self {
+            (**self).clone_box()
+        }
+    }
+}
+
+/*
+///
+/// https://stackoverflow.com/questions/65203307/how-do-i-create-a-trait-object-that-implements-fn-and-can-be-cloned-to-distinct
+pub trait PatchOp<C, U>: Fn(&mut U, &mut C) -> Result<(), Error> {
+    ///
+    fn clone_box<'a>(&self) -> Box<dyn PatchOp<C, U> + 'a>
+    where
+        Self: 'a;
+}
+
+impl<C, U, F> PatchOp<C, U> for F
+where
+    F: Fn(&mut U, &mut C) -> Result<(), Error> + Clone,
+{
+    fn clone_box<'a>(&self) -> Box<dyn PatchOp<C, U> + 'a>
+    where
+        Self: 'a,
+    {
+        Box::new(self.clone())
+    }
+}
+
+impl<'a, C, U> Clone for Box<dyn PatchOp<C, U> + 'a>
+where
+    C: 'a,
+    U: 'a,
+{
+    fn clone(&self) -> Self {
+        (**self).clone_box()
+    }
+}
+ */
+
+// type SelectFn<U, C> = fn(U, &mut C) -> Result<(), Error>;
+// type PatchFn<U, C> = fn(U, &mut C) -> Result<(), Error>;
+
 /// The selection mode of the selector, which determines what gets visited,
 /// matched, sent and returned.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum SelectionMode {
-    /// Selection will send [`SelectionNode`]s across a [`channel`].
-    Node,
+pub(crate) enum SelectionMode {
+    /// Selection will invoke the provided callback on all traversed [`Node`]s.
+    SelectNode,
 
-    /// Selection will send [`SelectionDag`]s across a [`channel`].
-    Dag,
-
-    /// Selection will end with and return the first matching dag.
-    MatchedDag,
+    /// Selection will invoke the provided callback on all matched [`Dag`]s.
+    SelectDag,
+    // ///
+    // MatchDag,
     // /// Selection updates matching dags with the output of a callback.
+    // /// Optionally flushes changes after each callback.
     // Patch,
-
-    // /// Selection patches and flushes changes to matching dags.
-    // PatchAndFlush,
 }
 
 ///
-pub enum SelectionMode2<'a, C, T, U = T> {
-    Select {
-        /// if none, return first match
-        /// otherwise, send dag or node
-        sender: Option<SelectionSender>,
-        _t: PhantomData<(T, U)>,
+pub(crate) enum SelectionCallback<'a, C, T> {
+    SelectNode {
+        cb: Box<dyn SelectNodeOp<C> + 'a>,
+        only_matched: bool,
     },
-    Patch {
-        /// current dag we're selecting against
-        /// if none, then load and store while patching
-        corrent: &'a mut T,
-        /// op to perform on matching dags, allowing update-inplace
-        op: Box<dyn FnMut(&mut U, &mut C) -> Result<(), Error>>,
-        flush: bool,
+    SelectDag {
+        // TODO: does this need to be cloneable? it is either called on U, or wrapped
+        cb: Box<dyn SelectDagOp<C> + 'a>,
     },
+    MatchDag {
+        cb: Box<dyn MatchDagOp<T, C> + 'a>,
+    }, // Patch {
+       //     /// current dag we're selecting against
+       //     /// if none, then load and store while patching
+       //     current: &'a mut T,
+       //     flush: bool,
+       //     // op to perform on matching dags, allowing update-inplace
+       //     // op: Box<dyn PatchOp<C, U> + 'a>,
+       //     // op: PatchFn<C, U>,
+       // }
+}
+
+impl<'a, C, T> Debug for SelectionCallback<'a, C, T>
+where
+    T: Representation,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SelectNode { only_matched, .. } => f
+                .debug_struct("SelectionParams::SelectNode")
+                .field("source", &T::NAME)
+                .field("only_matched", only_matched)
+                .finish(),
+            Self::SelectDag { .. } => f
+                .debug_struct("SelectionParams::SelectDag")
+                .field("source", &T::NAME)
+                .finish(),
+            Self::MatchDag { .. } => f
+                .debug_struct("SelectionParams::MatchDag")
+                .field("source", &T::NAME)
+                .finish(),
+            // Self::Patch { current, flush, .. } => f
+            //     .debug_struct("SelectionParams::Patch")
+            //     .field("current", &current)
+            //     .field("flush", &flush)
+            //     .finish(),
+        }
+    }
+}
+
+impl<'a, C, T> Default for SelectionCallback<'a, C, T> {
+    fn default() -> Self {
+        Self::SelectDag {
+            cb: Box::new(|_, _| Ok(())),
+            // cb: |_, _| Ok(()),
+        }
+    }
+}
+
+impl<'a, C, T> SelectionCallback<'a, C, T> {
+    // #[inline]
+    // pub(crate) fn select_node(&self, node: SelectedNode) -> Result<(), Error> {
+    //     self.sender()?.send_node(node)
+    // }
+    //
+    // #[inline]
+    // pub(crate) fn select_dag(&self, dag: SelectedDag) -> Result<(), Error> {
+    //     self.sender()?.send_dag(dag)
+    // }
+    //
+    // #[inline]
+    // fn sender(&self) -> Result<&SelectionSender, Error> {
+    //     let sender = match self {
+    //         Self::Select { sender, .. } => sender.as_ref(),
+    //         _ => None,
+    //     };
+    //
+    //     sender.ok_or_else(|| Error::InvalidSelectionMode("`SelectionParams` missing a channel"))
+    // }
+
+    // /// transmutes the select params current source and target
+    // pub(crate) fn to_select<'b, V, W>(&mut self) -> SelectionParams<'b, C, V, W>
+    // where
+    //     'a: 'b,
+    //     C: 'b,
+    // {
+    //     match self {
+    //         Self::Select { cb, mode, .. } => SelectionParams::Select {
+    //             cb: cb.clone(),
+    //             mode: *mode,
+    //             _t: PhantomData,
+    //         },
+    //         _ => unreachable!(),
+    //     }
+    // }
+
+    ///
+    pub const fn mode(&self) -> SelectionMode {
+        match self {
+            Self::SelectNode { .. } => SelectionMode::SelectNode,
+            Self::SelectDag { .. } | Self::MatchDag { .. } => SelectionMode::SelectDag,
+            // Self::Patch { .. } => SelectionMode::Patch,
+        }
+    }
+
+    pub const fn is_node(&self) -> bool {
+        match self {
+            Self::SelectNode { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub const fn is_dag(&self) -> bool {
+        match self {
+            Self::SelectDag { .. } | Self::MatchDag { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub(super) fn select_node(
+        &mut self,
+        selected_node: SelectedNode,
+        ctx: &mut C,
+        matched: bool,
+    ) -> Result<(), Error> {
+        match self {
+            Self::SelectNode { cb, only_matched } if matched && *only_matched => {
+                cb(selected_node, ctx)
+            }
+            Self::SelectNode { cb, only_matched } if !matched && !*only_matched => {
+                cb(selected_node, ctx)
+            }
+            Self::SelectNode { .. } => Ok(()),
+            _ => unreachable!(),
+        }
+    }
+
+    pub(super) fn select_dag(&mut self, dag: SelectedDag, ctx: &mut C) -> Result<(), Error> {
+        match self {
+            Self::SelectDag { cb } => cb(dag, ctx),
+            _ => unreachable!(),
+        }
+    }
+
+    // /// replaces the inner dag to patch with the next dag
+    // pub(crate) fn to_patch<'b, V>(self, dag_ref: &'b mut V) -> SelectionParams<'b, C, V, U>
+    // where
+    //     'a: 'b,
+    // {
+    //     match self {
+    //         Self::Patch { op, flush, .. } => SelectionParams::Patch {
+    //             current: dag_ref,
+    //             op,
+    //             flush,
+    //         },
+    //         _ => unreachable!(),
+    //     }
+    // }
+    //
+    // pub(crate) fn to_patch_self<'b>(self) -> SelectionParams<'b, C, T>
+    // where
+    //     'a: 'b,
+    // {
+    //     match self {
+    //         Self::Patch { current, op, flush } if type_eq::<T, U>() => SelectionParams::Patch {
+    //             current,
+    //             flush,
+    //             // TODO? provide T to op, safe transmute it to U, call op with U
+    //             // op: Box::new(|dag: &mut T, ctx: &mut C| {
+    //             //     //
+    //             //     unimplemented!()
+    //             // }),
+    //             op,
+    //         },
+    //         _ => unreachable!(),
+    //     }
+    // }
 }
 
 // fn noop<C, U>(dag: &mut U, ctx: &mut C) -> Result<Option<U>, Error> {
 //     Ok(None)
 // }
 
-#[derive(AsRef, AsMut, Debug)]
-// pub struct SelectorState<'a> {
-pub struct SelectorState {
+///
+#[derive(AsRef, AsMut, Debug, Default)]
+pub struct SelectionState {
     // selector: Selector,
     // mode: SelectionMode,
     #[as_ref]
     #[as_mut]
-    path: PathBuf,
+    pub(crate) path: PathBuf,
     // path: &'a mut PathBuf,
-    path_depth: usize,
-    link_depth: usize,
-    max_path_depth: usize,
-    max_link_depth: usize,
-    sender: Option<SelectionSender>,
+    pub(crate) path_depth: usize,
+    pub(crate) link_depth: usize,
+    pub(crate) max_path_depth: Option<usize>,
+    pub(crate) max_link_depth: Option<usize>,
+    // sender: Option<SelectionSender>,
+    // params: SelectionParams<'a, C, T, U>,
 }
 
 // impl<'a> SelectorState<'a> {
-impl SelectorState {
-    pub const NODE_MODE: SelectionMode = SelectionMode::Node;
-    pub const DAG_MODE: SelectionMode = SelectionMode::Dag;
-    pub const DAG_MATCH_MODE: SelectionMode = SelectionMode::MatchedDag;
-
-    // pub fn new(root: PathBuf, sender: Option<SelectionSender>) -> Self {
-    //     Self {
-    //         path: root,
-    //         path_depth: 0,
-    //         link_depth: 0,
-    //         max_path_depth: usize::MAX,
-    //         max_link_depth: usize::MAX,
-    //         sender,
-    //     }
-    // }
-
-    ///
-    pub fn node_selector(only_matching: bool) -> (Receiver<SelectedNode>, Self) {
-        let (sender, receiver) = channel();
-        (
-            receiver,
-            Self {
-                sender: Some(SelectionSender::Node {
-                    sender,
-                    only_matching,
-                }),
-                ..Default::default()
-            },
-        )
-    }
-
-    ///
-    pub fn dag_selector(// root: &'a mut PathBuf
-    ) -> (Receiver<SelectedDag>, Self) {
-        let (sender, receiver) = channel();
-        (
-            receiver,
-            Self {
-                sender: Some(SelectionSender::Dag(sender)),
-                ..Default::default()
-            },
-        )
-    }
-
-    ///
-    #[inline]
-    pub fn with_max_path_depth(mut self, max_path_depth: usize) -> Self {
-        if self.max_path_depth == usize::MAX {
-            self.max_path_depth = max_path_depth;
-        }
-        self
-    }
-
-    ///
-    #[inline]
-    pub fn with_max_link_depth(mut self, max_link_depth: usize) -> Self {
-        if self.max_link_depth == usize::MAX {
-            self.max_link_depth = max_link_depth;
-        }
-        self
-    }
-
-    ///
-    #[inline]
-    pub fn mode(&self) -> SelectionMode {
-        match self.sender() {
-            Ok(SelectionSender::Dag(..)) => SelectionMode::Dag,
-            Ok(SelectionSender::Node { .. }) => SelectionMode::Node,
-            Err(_) => SelectionMode::MatchedDag,
-        }
-    }
-
+impl SelectionState {
     #[inline]
     pub fn path(&self) -> &Path {
         &self.path
     }
 
     #[inline]
-    pub fn max_path_depth(&self) -> usize {
-        self.max_path_depth
+    pub(crate) const fn max_path_depth(&self) -> usize {
+        match self.max_path_depth {
+            Some(max) => max,
+            None => usize::MAX,
+        }
     }
 
     #[inline]
-    pub fn max_link_depth(&self) -> usize {
-        self.max_link_depth
+    pub(crate) const fn max_link_depth(&self) -> usize {
+        match self.max_link_depth {
+            Some(max) => max,
+            None => usize::MAX,
+        }
+    }
+
+    ///
+    #[inline]
+    pub(crate) const fn with_max_path_depth(mut self, max_path_depth: usize) -> Self {
+        self.max_path_depth = Some(max_path_depth);
+        self
+    }
+
+    ///
+    #[inline]
+    pub(crate) const fn with_max_link_depth(mut self, max_link_depth: usize) -> Self {
+        self.max_link_depth = Some(max_link_depth);
+        self
     }
 
     #[inline]
-    pub(crate) fn sender(&self) -> Result<&SelectionSender, Error> {
-        self.sender
-            .as_ref()
-            .ok_or_else(|| Error::Context(anyhow::Error::msg("`SelectorSeed` missing a channel")))
-    }
-
-    // TODO: add method for diving/rising
-    // diving:
-    //  clones seed with
-    //      - next subpath added path
-    //      - incremented path depth [= incremented link depth]
-    //      -
-
-    #[inline]
-    pub(crate) fn descend_index(&mut self, index: usize, is_link: bool) -> Result<(), Error> {
-        Ok(())
-    }
-
-    #[inline]
-    pub(crate) fn descend_field<P: AsRef<Path>>(
-        &mut self,
-        field: P,
-        is_link: bool,
-    ) -> Result<(), Error> {
-        // self.descend()
-        Ok(())
-    }
-
-    #[inline]
-    pub(crate) fn descend<P: AsRef<Path>>(
+    pub(crate) fn descend<T: Representation>(
         &mut self,
         // next_selector: Selector,
-        next_path: P,
-        is_link: bool,
+        next_path: Field<'_>,
     ) -> Result<(), Error> {
-        if self.path_depth >= self.max_path_depth {
+        if self.path_depth >= self.max_path_depth() {
             return Err(Error::SelectorDepth(
                 "descending would exceed max path depth",
-                self.max_path_depth,
+                self.max_path_depth(),
             ));
-        } else if self.link_depth >= self.max_link_depth {
+        }
+        if self.link_depth >= self.max_link_depth() {
             return Err(Error::SelectorDepth(
                 "descending would exceed max link depth",
-                self.max_link_depth,
+                self.max_link_depth(),
             ));
         }
 
-        self.path.push(next_path);
+        next_path.append_to_path(&mut self.path);
         self.path_depth += 1;
-        if is_link {
+        if T::IS_LINK {
             self.link_depth += 1;
         }
 
         Ok(())
     }
 
-    // #[inline]
-    // pub(crate) fn ascend(
-    //     &mut self,
-    //     // previous_selector: Selector,
-    //     is_link: bool,
-    // ) -> Result<(), Error> {
-    //     self.path.pop();
-    //     self.path_depth = self
-    //         .path_depth
-    //         .checked_sub(1)
-    //         .ok_or_else(|| Error::SelectorDepth("exceeds root path depth", self.path_depth))?;
-    //
-    //     if is_link {
-    //         self.link_depth = self
-    //             .link_depth
-    //             .checked_sub(1)
-    //             .ok_or_else(|| Error::SelectorDepth("exceeds root link depth", self.link_depth))?;
-    //     }
-    //
-    //     // self.selector = previous_selector;
-    //     Ok(())
-    // }
-
     #[inline]
-    pub(crate) fn send_selection(&self, node: Node) -> Result<(), Error> {
-        Ok(self.sender()?.send_node(SelectedNode {
-            path: self.path.clone(),
-            node,
-            matched: false,
-            label: None,
-        })?)
-    }
-
-    #[inline]
-    pub(crate) fn send_matched(&self, node: Node, label: Option<String>) -> Result<(), Error> {
-        Ok(self.sender()?.send_node(SelectedNode {
-            path: self.path.clone(),
-            node,
-            matched: true,
-            label,
-        })?)
-    }
-
-    #[inline]
-    pub(crate) fn send_dag<T: Representation + Send + Sync + 'static>(
-        &self,
-        dag: T,
-        label: Option<String>,
+    pub(crate) fn ascend<T: Representation>(
+        &mut self,
+        // previous_selector: Selector,
     ) -> Result<(), Error> {
-        Ok(self.sender()?.send_dag(SelectedDag {
-            path: self.path.clone(),
-            dag: Box::new(dag),
-            label,
-        })?)
-    }
-}
+        self.path.pop();
+        self.path_depth = self
+            .path_depth
+            .checked_sub(1)
+            .ok_or_else(|| Error::SelectorDepth("exceeds root path depth", self.path_depth))?;
 
-impl Default for SelectorState {
-    #[inline]
-    fn default() -> Self {
-        Self {
-            path: Default::default(),
-            path_depth: 0,
-            link_depth: 0,
-            max_path_depth: usize::MAX,
-            max_link_depth: usize::MAX,
-            sender: None,
+        if T::IS_LINK {
+            self.link_depth = self
+                .link_depth
+                .checked_sub(1)
+                .ok_or_else(|| Error::SelectorDepth("exceeds root link depth", self.link_depth))?;
         }
+
+        // self.selector = previous_selector;
+        Ok(())
     }
 }
-
-///
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SelectedNode {
-    path: PathBuf,
-    node: Node,
-    matched: bool,
-    label: Option<String>,
-}
-
-pub type SelectedDag = InnerSelectedDag<Box<dyn ErasedRepresentation>>;
-
-#[doc(hidden)]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct InnerSelectedDag<T> {
-    path: PathBuf,
-    dag: T,
-    label: Option<String>,
-}
-
-///
-#[derive(Clone, Debug, From)]
-pub enum SelectionSender {
-    Dag(Sender<SelectedDag>),
-    Node {
-        sender: Sender<SelectedNode>,
-        only_matching: bool,
-    },
-}
-
-impl SelectionSender {
-    ///
-    #[inline]
-    fn send_node(&self, node: SelectedNode) -> Result<(), Error> {
-        match self {
-            Self::Node {
-                sender,
-                only_matching,
-            } if (*only_matching && node.matched) || !only_matching => Ok(sender.send(node)?),
-            Self::Node { .. } => Ok(()),
-            _ => Err(Error::Custom(anyhow::Error::msg(
-                "channel is only for `Node`s",
-            ))),
-        }
-    }
-
-    ///
-    #[inline]
-    fn send_dag(&self, dag: SelectedDag) -> Result<(), Error> {
-        match self {
-            Self::Dag(inner) => Ok(inner.send(dag)?),
-            _ => Err(Error::Custom(anyhow::Error::msg(
-                "channel is only for `Representation`s",
-            ))),
-        }
-    }
-}
-
-#[doc(hidden)]
-pub type DagSelectionSenderError = SendError<SelectedDag>;
-#[doc(hidden)]
-pub type NodeSelectionSenderError = SendError<SelectedNode>;
-
-impl SelectionSender {}

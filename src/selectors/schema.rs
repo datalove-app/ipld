@@ -1,6 +1,6 @@
 use crate::dev::*;
-use macros::derive_more::{AsRef, From, TryInto};
-use std::rc::Rc;
+use macros::derive_more::{From, TryInto};
+use std::{fmt, rc::Rc, str::FromStr};
 
 schema! {
     /// SelectorEnvelope is the recommended top-level value for serialized
@@ -36,19 +36,19 @@ schema! {
         #[ipld_attr(wrapper = "Rc")]
         | ExploreRange "r"
 
-        // #[ipld_attr(wrapper = "Rc")]
-        // | ExploreRecursive "R"
+        #[ipld_attr(wrapper = "Rc")]
+        | ExploreRecursive "R"
 
-        // | ExploreUnion "|"
+        #[ipld_attr(wrapper = "Rc")]
+        | ExploreUnion "|"
 
         // #[ipld_attr(wrapper = "Rc")]
         // | ExploreConditional "&"
 
-        // /// sentinel value; only valid in some positions.
-        // | ExploreRecursiveEdge "@"
+        | ExploreRecursiveEdge "@"
 
-        // #[ipld_attr(wrapper = "Rc")]
-        // | ExploreInterpretAs "~"
+        #[ipld_attr(wrapper = "Rc")]
+        | ExploreInterpretAs "~"
     } representation keyed;
 }
 
@@ -57,7 +57,7 @@ schema! {
     /// or all entries in a map, and applies a next selector to the reached
     /// nodes.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug, From)]
+    #[derive(Clone, Debug, Default, From)]
     pub type ExploreAll struct {
         pub next Selector (rename ">"),
     };
@@ -74,7 +74,7 @@ schema! {
     #[ipld_attr(internal)]
     #[derive(Clone, Debug, From)]
     pub type ExploreFields struct {
-        // fields {String:Selector} (rename "f>"),
+        // pub fields {String:Selector} (rename "f>"),
     };
 }
 
@@ -143,11 +143,11 @@ schema! {
     /// be used to let the selector know where to stop recursing preventing from
     /// having to traverse the full structure.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug, From)]
+    #[derive(Clone, Debug)]
     pub type ExploreRecursive struct {
         pub sequence Selector (rename ":>"),
         pub limit RecursionLimit (rename "l"),
-        // /// if a node matches, we won't match it nor explore it's children
+        /// if a node matches, we won't match it nor explore it's children
         pub stopAt optional Condition (rename "!"),
     };
 }
@@ -182,7 +182,7 @@ schema! {
     /// selector, and proceeds again (with a decremented maxDepth value).
     ///
     /// An ExploreRecursive selector that doesn't contain an
-    /// ExploreRecursiveEdge is nonsensical.  Containing more than one
+    /// ExploreRecursiveEdge is nonsensical. Containing more than one
     /// ExploreRecursiveEdge is valid. An ExploreRecursiveEdge without an
     /// enclosing ExploreRecursive is an error.
     #[ipld_attr(internal)]
@@ -199,7 +199,7 @@ schema! {
     /// simultaneously continuing to explore deeper parts of the tree with
     /// another selector, for example.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, From)]
     pub type ExploreUnion null;
     // TODO: pub type ExploreUnion [Selector];
 }
@@ -226,8 +226,21 @@ schema! {
     #[ipld_attr(internal)]
     #[derive(Clone, Debug, From)]
     pub type ExploreInterpretAs struct {
-        pub r#as String (rename "c"),
+        pub r#as String,
         pub next Selector (rename ">"),
+    };
+}
+
+schema! {
+    /// Slice is a predicate that selects only a subset of node.
+    /// This is applicable primarily in the context of reified nodes based on the
+    /// InterpetAs clause above, where the primitive (bytes or string) node is actually
+    /// composed from multiple underlying substrate nodes.
+    #[ipld_attr(internal)]
+    #[derive(Clone, Debug, Default)]
+    pub type Slice struct {
+        pub from Int (rename "["),
+        pub to Int (rename "]"),
     };
 }
 
@@ -243,10 +256,15 @@ schema! {
     /// selectors is valid; it will just generate a "covered" set of nodes and
     /// no "result" set.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug, From)]
+    #[derive(Clone, Debug, Default, From)]
     pub type Matcher struct {
+        /// match is true based on position alone if this is not set.
         pub onlyIf optional Condition,
+        /// labels can be used to match multiple different structures in one selection.
         pub label optional String,
+        /// if set, only the subset of the node specified by the slice is matched.
+        pub subset optional Slice,
+
     };
 }
 
@@ -265,8 +283,14 @@ schema! {
     #[derive(Clone, Debug, From)]
     pub type Condition union {
         | Condition_HasField "hasField"
+        /// # will need to contain a kinded union, lol.  these conditions are gonna get deep.)
         | Condition_HasValue "="
+        /// will ideally want to refer to the DataModel ReprKind enum...!  will
+        /// we replicate that here?  don't want to block on cross-schema
+        /// references, but it's interesting that we've finally found a good
+        /// example wanting it.
         | Condition_HasKind "%"
+        /// will need this so we can use it in recursions to say "stop at CID QmFoo".
         | Condition_IsLink "/"
         | Condition_GreaterThan "greaterThan"
         | Condition_LessThan "lessThan"
@@ -360,4 +384,160 @@ mod private {
     impl Sealed for ExploreUnion {}
     impl Sealed for ExploreConditional {}
     impl Sealed for ExploreRecursiveEdge {}
+}
+
+macro_rules! impl_variant {
+    ($variant:ident $selector_ty:ty | { $is:ident, $as:ident }) => {
+        impl_variant!(@is $is -> $variant $selector_ty);
+        impl_variant!(@as $as -> $variant $selector_ty);
+    };
+
+    (@is $fn:ident -> $variant:ident $selector_ty:ty) => {
+        #[inline]
+        pub const fn $fn(&self) -> bool {
+            match self {
+                Self::$variant(..) => true,
+                _ => false,
+            }
+        }
+    };
+    (@as $fn:ident -> $variant:ident $selector_ty:ty) => {
+        #[inline]
+        pub fn $fn(&self) -> Option<&$selector_ty> {
+            match self {
+                Self::$variant(inner) => Some(inner),
+                _ => None,
+            }
+        }
+    };
+}
+
+impl Selector {
+    // TODO: handle ExploreFields and ExploreUnion iteratively, directly delegate the rest
+    // fn new<Ctx, T, S>(args: T::SelectorArgs) -> Self
+    // where
+    //     Ctx: Context, // TODO FromContext?
+    //     // S: ISelector,
+    //     T: Select<Ctx, S>,
+    //     Self: From<S>,
+    // {
+    //     Self::from(T::new_selector(args))
+    // }
+    //
+    // fn select<Ctx, T, S>(&self, T) -> Result<S::Output, ()>
+    // where
+    //     Ctx: Context,
+    //     S: ISelector,
+    //     T: Select<Ctx, S>,
+    // {
+    //     match self {
+    //         // Self::Matcher
+    //         // Self::ExploreAll
+    //         // Self::ExploreFields
+    //         // Self::ExploreIndex
+    //         // Self::ExploreRange
+    //         // Self::ExploreRecursive
+    //         // Self::ExploreUnion
+    //         // Self::ExploreConditional
+    //         // Self::ExploreRecursiveEdge
+    //     }
+    // }
+
+    /// Attempts to produce the next selector to apply, given an optional field
+    /// (key or index).
+    pub fn next<'a, F>(&self, field: Option<F>) -> Option<&Selector>
+    where
+        F: AsRef<str> + AsRef<usize>,
+    {
+        match (self, field) {
+            (Self::Matcher(_), _) => Some(self),
+            (Self::ExploreAll(inner), _) => Some(&inner.next),
+            (Self::ExploreFields { .. }, _) => todo!(),
+            // TODO assert that provided field/index matches what the selector defines, otherwise return None
+            (Self::ExploreIndex(inner), Some(f))
+                if inner.index as usize == *(f.as_ref() as &usize) =>
+            {
+                Some(&inner.next)
+            }
+            (Self::ExploreRange(inner), Some(f))
+                if (inner.start as usize..inner.end as usize).contains(f.as_ref()) =>
+            {
+                Some(&inner.next)
+            }
+            (Self::ExploreRecursive(inner), _) => Some(&inner.sequence),
+            (Self::ExploreRecursiveEdge(_), _) => None,
+            (Self::ExploreUnion { .. }, _) => todo!(),
+            (Self::ExploreInterpretAs(inner), _) => Some(&inner.next),
+            _ => None,
+        }
+    }
+
+    impl_variant!(Matcher Matcher |
+        {is_matcher, as_matcher});
+    impl_variant!(ExploreAll ExploreAll |
+        {is_explore_all, as_explore_all});
+    impl_variant!(ExploreFields ExploreFields |
+        {is_explore_fields, as_explore_fields});
+    impl_variant!(ExploreIndex ExploreIndex |
+        {is_explore_index, as_explore_index});
+    impl_variant!(ExploreRange ExploreRange |
+        {is_explore_range, as_explore_range});
+    impl_variant!(ExploreRecursive ExploreRecursive |
+        {is_explore_recursive, as_explore_recursive});
+    impl_variant!(ExploreUnion ExploreUnion |
+        {is_explore_union, as_explore_union});
+    // impl_variant!(ExploreConditional ExploreConditional |
+    //     {is_explore_conditional, as_explore_conditional);
+    impl_variant!(ExploreInterpretAs ExploreInterpretAs |
+        {is_explore_interpret_as, as_explore_interpret_as});
+    impl_variant!(ExploreRecursiveEdge ExploreRecursiveEdge |
+        {is_explore_recursive_edge, as_explore_recursive_edge});
+}
+
+/* Selector */
+
+impl Default for Selector {
+    fn default() -> Self {
+        Self::Matcher(Matcher::default())
+    }
+}
+
+impl fmt::Display for Selector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        Ok(())
+    }
+}
+
+impl FromStr for Selector {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        unimplemented!()
+    }
+}
+
+/* Matcher */
+
+impl From<std::ops::Range<i32>> for Slice {
+    fn from(range: std::ops::Range<i32>) -> Self {
+        Self {
+            from: range.start,
+            to: range.end,
+        }
+    }
+}
+
+impl From<Slice> for std::ops::Range<i32> {
+    fn from(slice: Slice) -> std::ops::Range<i32> {
+        std::ops::Range::<i32> {
+            start: slice.from,
+            end: slice.to,
+        }
+    }
+}
+
+/* ExploreFields */
+impl ExploreFields {
+    pub fn contains_key(&self, key: &str) -> bool {
+        unimplemented!()
+    }
 }

@@ -175,7 +175,7 @@ impl UnionField<DataModelKind> {
         if field_name == Self::NULL {
             quote!(Self::#field_name => Null::NAME)
         } else {
-            quote!(Self::#field_name(ty) => ty.name())
+            quote!(Self::#field_name(ty) => Representation::name(ty))
         }
     }
 
@@ -185,7 +185,7 @@ impl UnionField<DataModelKind> {
         if field_name == Self::NULL {
             quote!(Self::#field_name => Null::KIND)
         } else {
-            quote!(Self::#field_name(ty) => ty.kind())
+            quote!(Self::#field_name(ty) => Representation::kind(ty))
         }
     }
 }

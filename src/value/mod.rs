@@ -10,8 +10,7 @@ mod primitive;
 
 use std::{boxed::Box, path::Path};
 
-pub use _serde::IgnoredAny;
-pub use link::Link;
+pub use link::{Cid, Link};
 pub use list::List;
 pub use map::Map;
 pub use primitive::*;
@@ -43,7 +42,7 @@ schema! {
         | Bytes bytes
         | List<Value> list
         | Map<String, Value> map
-        | Link<DEFAULT_MULTIHASH_SIZE, BoxedValue> link
+        | Link<BoxedValue> link
     } representation kinded;
 }
 
@@ -170,7 +169,7 @@ impl Value {
     pub fn as_bytes(&self) -> Result<&Bytes, Error> {
         unimplemented!()
     }
-    pub fn as_link(&self) -> Result<Link<DEFAULT_MULTIHASH_SIZE, Self>, Error> {
+    pub fn as_link(&self) -> Result<Link<Self>, Error> {
         unimplemented!()
     }
 
@@ -186,191 +185,4 @@ impl Value {
     //
     // Calling this method should not cause an allocation.
     // Prototype() NodePrototype
-}
-
-mod _serde {
-    use crate::dev::*;
-    use std::marker::PhantomData;
-
-    ///
-    #[derive(Copy, Clone, Debug, Default)]
-    pub struct Ignored<T>(PhantomData<T>);
-
-    impl<'de, T: Deserialize<'de>> Deserialize<'de> for Ignored<T> {
-        #[inline]
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            // deserializer.deserialize_ignored_any(Self)
-            // T::deserialize
-            unimplemented!()
-        }
-    }
-
-    ///
-    #[derive(Copy, Clone, Debug, Default)]
-    pub struct IgnoredAny;
-
-    impl<'de> Visitor<'de> for IgnoredAny {
-        type Value = IgnoredAny;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            formatter.write_str("anything at all")
-        }
-
-        #[inline]
-        fn visit_bool<E>(self, x: bool) -> Result<Self::Value, E> {
-            let _ = x;
-            Ok(IgnoredAny)
-        }
-
-        #[inline]
-        fn visit_i64<E>(self, x: i64) -> Result<Self::Value, E> {
-            let _ = x;
-            Ok(IgnoredAny)
-        }
-
-        #[inline]
-        fn visit_u64<E>(self, x: u64) -> Result<Self::Value, E> {
-            let _ = x;
-            Ok(IgnoredAny)
-        }
-
-        #[inline]
-        fn visit_f64<E>(self, x: f64) -> Result<Self::Value, E> {
-            let _ = x;
-            Ok(IgnoredAny)
-        }
-
-        #[inline]
-        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            let _ = s;
-            Ok(IgnoredAny)
-        }
-
-        #[inline]
-        fn visit_none<E>(self) -> Result<Self::Value, E> {
-            Ok(IgnoredAny)
-        }
-
-        #[inline]
-        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            IgnoredAny::deserialize(deserializer)
-        }
-
-        #[inline]
-        fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            IgnoredAny::deserialize(deserializer)
-        }
-
-        #[inline]
-        fn visit_unit<E>(self) -> Result<Self::Value, E> {
-            Ok(IgnoredAny)
-        }
-
-        #[inline]
-        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-        where
-            A: SeqAccess<'de>,
-        {
-            while let Some(IgnoredAny) = seq.next_element()? {
-                // Gobble
-            }
-            Ok(IgnoredAny)
-        }
-
-        #[inline]
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: MapAccess<'de>,
-        {
-            while let Some((IgnoredAny, IgnoredAny)) = map.next_entry()? {
-                // Gobble
-            }
-            Ok(IgnoredAny)
-        }
-
-        #[inline]
-        fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            let _ = bytes;
-            Ok(IgnoredAny)
-        }
-
-        fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
-        where
-            A: EnumAccess<'de>,
-        {
-            data.variant::<IgnoredAny>()?.1.newtype_variant()
-        }
-    }
-
-    impl Serialize for IgnoredAny {
-        #[inline]
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            unreachable!()
-        }
-    }
-
-    impl<'de> Deserialize<'de> for IgnoredAny {
-        #[inline]
-        fn deserialize<D>(deserializer: D) -> Result<IgnoredAny, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            deserializer.deserialize_ignored_any(Self)
-        }
-    }
-
-    impl Representation for IgnoredAny {
-        const NAME: &'static str = "IgnoredAny";
-        const SCHEMA: &'static str = "type IgnoredAny null";
-        const KIND: Kind = Kind::Null;
-    }
-
-    // TODO:
-    // impl<C: Context> Select<C, IgnoredAny> for IgnoredAny {
-    //     // create seed for root block
-    //     // select_in block, producing a list of selections
-    //     // if selector is not a matcher, selection must continue
-    //     //
-    //     #[inline]
-    //     fn select(seed: SelectorSeed, ctx: &mut C) -> Result<(), Error> {
-    //         unimplemented!()
-    //     }
-
-    //     fn select_dag(seed: SelectorSeed, ctx: &mut C) -> Result<Self, Error> {
-    //         unimplemented!()
-    //     }
-
-    //     fn patch(&mut self, seed: SelectorSeed, dag: Self, ctx: &mut C) -> Result<(), Error> {
-    //         unimplemented!()
-    //     }
-    // }
-
-    // impl<T: Select<>, C: Context> Select<IgnoredAny, C> for IgnoredAny {
-    //     // create seed for root block
-    //     // select_in block, producing a list of selections
-    //     // if selector is not a matcher, selection must continue
-    //     //
-    //     #[inline]
-    //     fn select(seed: SelectorSeed, ctx: &mut C) -> Result<(), Error> {
-    //         Null::select(seed, ctx)
-    //     }
-    // }
 }

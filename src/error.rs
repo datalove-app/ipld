@@ -23,20 +23,20 @@ pub enum Error {
     BlockMeta(&'static str),
 
     #[error("IPLD format encoding error: {0}")]
-    Encoder(Box<dyn StdError>),
+    Encoder(Box<dyn StdError + Send + Sync + 'static>),
 
     #[error("IPLD format decoding error: {0}")]
-    Decoder(Box<dyn StdError>),
+    Decoder(Box<dyn StdError + Send + Sync + 'static>),
 
     #[error("Selector Context error: {0}")]
     Context(#[from] anyhow::Error),
 
     #[error(
-        "Invalid selector: selector `{selector_name}` cannot be used to select type `{selected_type_name}` from against type `{type_name}`"
+        "Invalid selector: selector `{selector_name}` cannot be used to select against type `{type_name}`"
     )]
     UnsupportedSelector {
         type_name: &'static str,
-        selected_type_name: &'static str,
+        // selected_type_name: &'static str,
         selector_name: &'static str,
     },
 
@@ -51,14 +51,11 @@ pub enum Error {
         desired_type_name: &'static str,
     },
 
-    #[error("Invalid selection mode: {0}")]
-    InvalidSelectionMode(&'static str),
+    #[error("ExploreIndex failure: no node at index {0}")]
+    ExploreIndexFailure(usize),
 
-    #[error("Dag selection send error: {0}")]
-    DagSelectionStream(#[from] DagSelectionSenderError),
-
-    #[error("Node selection send error: {0}")]
-    NodeSelectionStream(#[from] NodeSelectionSenderError),
+    #[error("ExploreRange failure: missing node at index {0}; range {1}..{2}")]
+    ExploreRangeFailure(usize, Int, Int),
 
     #[error("Selector depth error: {0}: {1}")]
     SelectorDepth(&'static str, usize),
@@ -66,57 +63,67 @@ pub enum Error {
     #[error("Selector range error: {0}")]
     SelectorRange(&'static str),
 
-    #[error("Unknown codec: {0}")]
-    UnknownCodec(u64),
+    #[error("Unknown multicodec: {0}")]
+    UnknownMulticodec(u64),
 
     #[error("{0}")]
     Custom(anyhow::Error),
 }
 
 impl Error {
-    pub fn unsupported_selector<T, U>(selector: &Selector) -> Self
+    pub(crate) fn unsupported_selector<T>(selector: &Selector) -> Self
     where
         T: Representation,
-        U: Representation,
     {
         Self::UnsupportedSelector {
             type_name: <T as Representation>::NAME,
-            selected_type_name: <U as Representation>::NAME,
+            // selected_type_name: <U as Representation>::NAME,
             selector_name: selector.name(),
         }
     }
 
-    pub fn missing_next_selector(selector: &Selector) -> Self {
+    pub(crate) fn missing_next_selector(selector: &Selector) -> Self {
         Self::MissingNextSelector(selector.name())
     }
 
-    pub fn invalid_type_selection<T, U>() -> Self
-    where
-        T: Representation,
-        U: Representation,
-    {
-        Self::InvalidTypeSelection {
-            actual_type_name: <T as Representation>::NAME,
-            desired_type_name: <U as Representation>::NAME,
+    pub(crate) fn explore_list_failure(selector: &Selector, current_index: usize) -> Self {
+        match selector {
+            Selector::ExploreIndex(s) => Self::ExploreIndexFailure(current_index),
+            Selector::ExploreRange(s) => Self::ExploreRangeFailure(current_index, s.start, s.end),
+            _ => unreachable!(),
         }
     }
 
+    // pub(crate) fn invalid_type_selection<T, U>() -> Self
+    // where
+    //     T: Representation,
+    //     U: Representation,
+    // {
+    //     Self::InvalidTypeSelection {
+    //         actual_type_name: <T as Representation>::NAME,
+    //         desired_type_name: <U as Representation>::NAME,
+    //     }
+    // }
+
+    ///
     #[inline]
     pub fn decoder<E>(err: E) -> Self
     where
-        E: de::Error + 'static,
+        E: de::Error + Send + Sync + 'static,
     {
         Error::Decoder(Box::new(err))
     }
 
+    ///
     #[inline]
     pub fn encoder<E>(err: E) -> Self
     where
-        E: ser::Error + 'static,
+        E: ser::Error + Send + Sync + 'static,
     {
         Error::Encoder(Box::new(err))
     }
 
+    /*
     #[inline]
     pub fn de_error<E>(self) -> E
     where
@@ -124,8 +131,7 @@ impl Error {
     {
         match self {
             Self::Decoder(inner) if inner.is::<E>() => *inner.downcast::<E>().unwrap(),
-            Self::Decoder(inner) => E::custom(inner),
-            _ => unreachable!(),
+            err => E::custom(err),
         }
     }
 
@@ -140,6 +146,7 @@ impl Error {
             _ => unreachable!(),
         }
     }
+     */
 }
 
 // impl<E: de::Error> Into<E> for Error {

@@ -43,14 +43,14 @@ use std::{
 
 ///
 #[derive(Debug, Clone)]
-pub enum BlockMeta<'a, Si: MultihashSize = DefaultMultihashSize, So: MultihashSize = Si> {
+pub enum BlockMeta<'a, const SI: usize = DEFAULT_MULTIHASH_SIZE, const SO: usize = SI> {
     /// Signals to the [`Context`] that the new block should be created with
     /// the same codec and multihash, and (if applicable) should also replace an
     /// existing block with the provided `Cid`.
     ///
     /// [`Context`]
     Cid {
-        cid: &'a CidGeneric<Si>,
+        cid: &'a CidGeneric<SI>,
         // path_alias: Option<PathBuf>,
     },
 
@@ -62,7 +62,6 @@ pub enum BlockMeta<'a, Si: MultihashSize = DefaultMultihashSize, So: MultihashSi
         version: cid::Version,
         multicodec: u64,
         multihash: u64,
-        size: PhantomData<So>,
         // path_alias: Option<PathBuf>,
     },
     // /// Signals to the [`Context`] that
@@ -71,7 +70,7 @@ pub enum BlockMeta<'a, Si: MultihashSize = DefaultMultihashSize, So: MultihashSi
     // PathAlias(&'a Path),
 }
 
-impl<'a, Si: MultihashSize, So: MultihashSize> BlockMeta<'a, Si, So> {
+impl<'a, const SI: usize, const SO: usize> BlockMeta<'a, SI, SO> {
     ///
     #[inline]
     pub fn multicodec(&self) -> Result<Multicodec, Error> {
@@ -113,7 +112,6 @@ impl<'a, Si: MultihashSize, So: MultihashSize> BlockMeta<'a, Si, So> {
                 version,
                 multicodec,
                 multihash,
-                size: PhantomData,
                 ..
             } => (*version, *multicodec, *multihash),
             // Self::PathAlias(_) => None,
@@ -131,14 +129,13 @@ impl<'a, Si: MultihashSize, So: MultihashSize> BlockMeta<'a, Si, So> {
             },
             multicodec,
             multihash,
-            size: PhantomData,
             // path_alias,
         }
     }
 
     ///
     #[inline]
-    pub fn from_link(cid: &'a CidGeneric<Si>) -> Self {
+    pub fn from_link(cid: &'a CidGeneric<SI>) -> Self {
         Self::Cid { cid }
     }
 
@@ -148,16 +145,16 @@ impl<'a, Si: MultihashSize, So: MultihashSize> BlockMeta<'a, Si, So> {
     // }
 }
 
-impl<'a, Si: MultihashSize, So: MultihashSize> Default for BlockMeta<'a, Si, So> {
+impl<'a, const SI: usize, const SO: usize> Default for BlockMeta<'a, SI, SO> {
     #[inline]
     fn default() -> Self {
         BlockMeta::from_prefix(DagCbor::CODE, multihash::Code::Sha2_256.into(), None)
     }
 }
 
-impl<'a, Si: MultihashSize, So: MultihashSize> From<&'a CidGeneric<Si>> for BlockMeta<'a, Si, So> {
+impl<'a, const SI: usize, const SO: usize> From<&'a CidGeneric<SI>> for BlockMeta<'a, SI, SO> {
     #[inline]
-    fn from(cid: &'a CidGeneric<Si>) -> Self {
+    fn from(cid: &'a CidGeneric<SI>) -> Self {
         BlockMeta::Cid {
             cid,
             // path_alias: None,
@@ -172,21 +169,21 @@ impl<'a, Si: MultihashSize, So: MultihashSize> From<&'a CidGeneric<Si>> for Bloc
 //     }
 // }
 
-// impl<'a, Si: MultihashSize> From<u64> for BlockMeta<'a, Si> {
+// impl<'a, SI: MultihashSize> From<u64> for BlockMeta<'a, SI> {
 //     #[inline]
 //     fn from(multicodec: u64) -> Self {
 //         BlockMeta::from_prefix(multicodec, multihash::Code::Sha2_256.into())
 //     }
 // }
 
-impl<'a, Si: MultihashSize, So: MultihashSize> From<multihash::Code> for BlockMeta<'a, Si, So> {
+impl<'a, const SI: usize, const SO: usize> From<multihash::Code> for BlockMeta<'a, SI, SO> {
     #[inline]
     fn from(multihash: multihash::Code) -> Self {
         BlockMeta::from_prefix(DagCbor::CODE, multihash.into(), None)
     }
 }
 
-impl<'a, Si: MultihashSize, So: MultihashSize> From<(u64, u64)> for BlockMeta<'a, Si, So> {
+impl<'a, const SI: usize, const SO: usize> From<(u64, u64)> for BlockMeta<'a, SI, SO> {
     #[inline]
     fn from(prefix: (u64, u64)) -> Self {
         BlockMeta::from_prefix(prefix.0, prefix.1, None)
@@ -206,7 +203,7 @@ impl<'a, Si: MultihashSize, So: MultihashSize> From<(u64, u64)> for BlockMeta<'a
 //     }
 // }
 
-// impl<'a, Si: MultihashSize, So: MultihashSize> From<&'a Path> for BlockMeta<'a, Si, So> {
+// impl<'a, const SI: usize, const SO: usize> From<&'a Path> for BlockMeta<'a, SI, SO> {
 //     #[inline]
 //     fn from(path: &'a Path) -> Self {
 //         BlockMeta::PathAlias(path.into())
@@ -214,7 +211,7 @@ impl<'a, Si: MultihashSize, So: MultihashSize> From<(u64, u64)> for BlockMeta<'a
 // }
 
 #[derive(Debug)]
-pub struct Block<'a, Si: MultihashSize = DefaultMultihashSize> {
-    meta: BlockMeta<'a, Si>,
+pub struct Block<'a, const SI: usize, const SO: usize = SI> {
+    meta: BlockMeta<'a, SI, SO>,
     bytes: bytes::Bytes,
 }

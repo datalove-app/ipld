@@ -1,17 +1,18 @@
-//! While all types and their IPLD representations ultimately dictate how the type is resolved from/writen to blocks of bytes, *how* those bytes may be provided (as well any additional requirements unique to the representation, such as additional blocks, encryption keys, etc) can vary on how and where the type is being used (e.g, in WASM, making partial/range queries, querying/mutating by IPLD selector), etc.
+//! While all types and their IPLD representations ultimately dictate how the
+//! type is resolved from/writen to blocks of bytes, *how* those bytes may be
+//! provided (as well any additional requirements unique to the representation,
+//! such as additional blocks, encryption keys, etc) can vary on how and where
+//! the type is being used (e.g, in WASM, making partial/range queries,
+//! querying/mutating by IPLD selector), etc.
 //!
-//! Therefore, we create these traits to abstract over how to `Read`, `Write` a type from/to bytes, as well query and mutate a type, while specifically defining for the type it's `Context` requirements for these operations.
+//! Therefore, we create these traits to abstract over how to `Read`, `Write` a
+//! type from/to bytes, as well query and mutate a type, while specifically
+//! defining for the type it's `Context` requirements for these operations.
 
-// mod context;
-// mod executor;
 mod impls;
-
-// pub use context::*;
-// pub use executor::*;
 
 use crate::dev::*;
 use downcast_rs::{impl_downcast, DowncastSync};
-// use crate::selectors::args as Args;
 use std::{rc::Rc, sync::Arc};
 
 ///
@@ -147,7 +148,7 @@ where
     const IS_LINK: bool = false;
 
     ///
-    const HAS_LINKS: bool = false;
+    const HAS_LINKS: bool = Self::IS_LINK;
 
     // /// The type's `Select`able field names and their IPLD Schema kinds, if a recursive type.
     // const FIELDS: Fields = Fields::None;
@@ -207,18 +208,6 @@ where
     // /// need to be serialized first.
     // fn is_dirty(&self) -> bool {
     //     false
-    // }
-    //
-    // async fn resolve<C: Context>(&self, path: &Path, ctx: &mut C) -> Result<, Error> {
-    //     unimplemented!()
-    // }
-    //
-    // async fn write<Si: MultihashSize>(&self, ctx: C, block_meta: B) -> Result<Link<Self, Si>, Error> {
-    //     unimplemented!()
-    // }
-    //
-    // async fn read<Si: MultihashSize>(link: Link<Self, Si>) -> Result<Self, Error> {
-    //     unimplemented!()
     // }
 
     // fn links<R: Read + Seek>(c: Codec, reader: &mut R, )
@@ -345,12 +334,41 @@ where
 
 ///
 /// TODO: possibly look at erased-serde to complete this "hack"
-pub trait ErasedRepresentation: DowncastSync {}
-impl<T: Representation + Send + Sync + 'static> ErasedRepresentation for T {}
+pub trait ErasedRepresentation: DowncastSync {
+    // /// The underlying [`Representation`] type this type will downcast to.
+    // type Representation: Representation;
+
+    ///
+    fn name(&self) -> &'static str;
+
+    ///
+    fn kind(&self) -> Kind;
+}
+impl Debug for dyn ErasedRepresentation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ErasedRepresentation")
+            .field("name", &self.name())
+            .field("kind", &self.kind())
+            .finish()
+    }
+}
+impl<T: Representation + Send + Sync + 'static> ErasedRepresentation for T {
+    // type Representation = T;
+
+    ///
+    fn name(&self) -> &'static str {
+        T::NAME
+    }
+
+    ///
+    fn kind(&self) -> Kind {
+        T::KIND
+    }
+}
+// impl_downcast!(sync ErasedRepresentation assoc Representation where Representation: crate::Representation);
 impl_downcast!(sync ErasedRepresentation);
 
-// #[async_trait::async_trait]
-// pub trait AdvancedRepresentation: Representation {}
+/*
 
 /// Helper trait. `VALUE` is false, except for the specialization of the
 /// case where `T == U`.
@@ -380,16 +398,28 @@ pub(crate) fn type_cast_selection<T: Sized + 'static, U: Sized + 'static, E, F>(
 where
     F: FnOnce() -> Result<Option<T>, E>,
 {
-    if type_eq::<T, U>() {
-        let mut inner = inner()?;
-        let outer = (&mut inner as &mut dyn std::any::Any)
-            .downcast_mut::<Option<U>>()
-            .unwrap()
-            .take();
-        Ok(outer)
-    } else {
+    if !type_eq::<T, U>() {
         unreachable!("should only do this for types known to be identical")
     }
+
+    let mut inner = inner()?;
+    let outer = (&mut inner as &mut dyn std::any::Any)
+        .downcast_mut::<Option<U>>()
+        .unwrap()
+        .take();
+    Ok(outer)
+}
+
+pub(crate) fn type_cast_mut<T: Sized + 'static, U: Sized + 'static, E, F>(inner: &mut T) -> &mut U {
+    if !type_eq::<T, U>() {
+        unreachable!("should only do this for types known to be identical")
+    }
+
+    (inner as &mut dyn std::any::Any)
+        .downcast_mut::<Option<&mut U>>()
+        .unwrap()
+        .take()
+        .unwrap()
 }
 
 pub(crate) trait TypeEq2<const EQ: bool, U: ?Sized> {}
@@ -397,6 +427,7 @@ pub(crate) trait TypeEq2<const EQ: bool, U: ?Sized> {}
 default impl<T: ?Sized, U: ?Sized> TypeEq2<false, U> for T {}
 impl<T: ?Sized> TypeEq2<true, T> for T {}
 
-// pub const fn type_eq2<T: ?Sized, U: ?Sized>() -> bool {
-//     <T as TypeEq<U>>::EQ
-// }
+pub const fn type_eq2<const EQ: bool, T: ?Sized, U: ?Sized>() -> bool {
+    EQ
+}
+ */

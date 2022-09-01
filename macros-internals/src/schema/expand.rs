@@ -19,12 +19,12 @@ impl SchemaDefinition {
     //             $def.define_type(&meta)
     //         }};
     //     }
-
+    //
     //     let meta = &self.meta;
     //     if meta.try_from.is_none() {
     //         return TokenStream::default();
     //     }
-
+    //
     //     match &self.repr {
     //         ReprDefinition::Int(def) => expand!(meta, def),
     //         ReprDefinition::Float(def) => expand!(meta, def),
@@ -335,15 +335,17 @@ pub(crate) fn impl_context_seed_visitor(
 
     quote! {
         #[automatically_derived]
-        impl<'a, 'de, T, #generics> Visitor<'de> for ContextSeed<'a, C, #name, T>
+        impl<'a, 'de, #generics> Visitor<'de> for ContextSeed<'a, C, #name>
         where
             C: Context
-            T: Representation,
+            U: Representation,
         {
-            type Value = Option<T>;
+            type Value = ();
+
             fn expecting(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
                 fmt.write_str(#expecting)
             }
+
             #body
         }
     }
@@ -355,13 +357,13 @@ pub(crate) fn impl_context_seed_deseed(meta: &SchemaMeta, mut body: TokenStream)
 
     quote! {
         #[automatically_derived]
-        impl<'a, 'de, T, #generics> DeserializeSeed<'de> for ContextSeed<'a, C, #name, T>
+        impl<'a, 'de, #generics> DeserializeSeed<'de> for ContextSeed<'a, C, #name>
         where
             C: Context
-            T: Representation,
-            ContextSeed<'a, C, #name, T>: Visitor<'de, Value = Option<T>>,
+            U: Representation,
+            ContextSeed<'a, C, #name>: Visitor<'de, Value = ()>,
         {
-            type Value = Option<T>;
+            type Value = ();
 
             #[inline]
             fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -376,7 +378,7 @@ pub(crate) fn impl_context_seed_deseed(meta: &SchemaMeta, mut body: TokenStream)
 
 pub(crate) fn impl_select(
     meta: &SchemaMeta,
-    match_impl: TokenStream,
+    // match_impl: TokenStream,
     select_impl: TokenStream,
 ) -> TokenStream {
     let name = &meta.name;
@@ -384,20 +386,18 @@ pub(crate) fn impl_select(
     quote! {
         #[automatically_derived]
         impl<Ctx: Context> Select<Ctx> for #name {
-            fn r#match(
-                selector: &Selector,
-                state: &mut SelectorState,
-                ctx: &mut Ctx,
-            ) -> Result<Option<Self>, Error> {
-                #match_impl
-            }
+            // fn r#match(
+            //     // selector: &Selector,
+            //     // state: &mut SelectorState,
+            //     // params: SelectionParams<'_, Ctx, Self>,
+            //     // ctx: &mut Ctx,
+            //     seed: ContextSeed<'_, Ctx, Self>,
+            // ) -> Result<Option<Self>, Error> {
+            //     #match_impl
+            // }
 
             /// Produces a stream of [`Selection`]s.
-            fn select<S: Select<Ctx>>(
-                selector: &Selector,
-                state: &mut SelectorState,
-                ctx: &mut Ctx,
-            ) -> Result<Option<S>, Error> {
+            fn select(params: SelectionParams<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<(), Error> {
                 #select_impl
             }
         }

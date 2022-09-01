@@ -1,58 +1,348 @@
 use crate::dev::*;
-use macros::derive_more::Into;
-use std::{convert::TryFrom, marker::PhantomData, rc::Rc};
+use macros::derive_more::From;
+use std::{convert::TryFrom, io::BufRead};
 
-///
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Link<const Si: usize = DEFAULT_MULTIHASH_SIZE, T: Representation = Value> {
-    Cid(CidGeneric<Si>),
-    Inner {
-        cid: CidGeneric<Si>,
-        t: T,
-        dirty: bool,
-    },
+pub use anycid::*;
+mod anycid {
+    use super::*;
+
+    macro_rules! impl_multihasher {
+        (@multihash $(
+            $(#[$meta:meta])*
+            $variant:ident ($code:expr) -> $ty:ty [$size:expr],
+        )*) => {
+            #[derive(Debug)]
+            pub enum Multihasher {
+                $(
+                    $(#[$meta])*
+                    $variant($ty),
+                )*
+            }
+
+            impl Multihasher {
+                ///
+                pub fn new(multihash_code: u64) -> Result<Self, Error> {
+                    let mh_type = Multihashes::try_from(multihash_code)?;
+                    match mh_type {
+                        $(Multihashes::$variant => {
+                            Ok(Self::$variant(<$ty>::default()))
+                        },)*
+                        _ => Err(multihash::Error::UnsupportedCode(multihash_code).into()),
+                    }
+                }
+
+                ///
+                pub const fn code(&self) -> u64 {
+                    match self {
+                        $(Self::$variant(_) => $code,)*
+                    }
+                }
+
+                ///
+                pub const fn size(&self) -> u8 {
+                    match self {
+                        $(Self::$variant(_) => $size,)*
+                    }
+                }
+            }
+
+            impl Hasher for Multihasher {
+                fn update(&mut self, input: &[u8]) {
+                    match self {
+                        $(Self::$variant(hasher) => hasher.update(input),)*
+                    }
+                }
+                fn finalize(&mut self) -> &[u8] {
+                    match self {
+                        $(Self::$variant(hasher) => hasher.finalize(),)*
+                    }
+                }
+                fn reset(&mut self) {
+                    match self {
+                        $(Self::$variant(hasher) => hasher.reset(),)*
+                    }
+                }
+            }
+
+            impl TryInto<DefaultMultihash> for Multihasher {
+                type Error = Error;
+                fn try_into(mut self) -> Result<DefaultMultihash, Self::Error> {
+                    Ok(DefaultMultihash::wrap(self.code(), self.finalize())?)
+                }
+            }
+        };
+    }
+
+    impl_multihasher! {@multihash
+        ///
+        Sha2_256 (0x12) -> multihash::Sha2_256 [32],
+        ///
+        Sha2_512 (0x13) -> multihash::Sha2_512 [64],
+        ///
+        Sha3_224 (0x17) -> multihash::Sha3_224 [28],
+        ///
+        Sha3_256 (0x16) -> multihash::Sha3_256 [32],
+        ///
+        Sha3_384 (0x15) -> multihash::Sha3_384 [48],
+        ///
+        Sha3_512 (0x14) -> multihash::Sha3_512 [64],
+        ///
+        Keccak224 (0x1a) -> multihash::Keccak224 [28],
+        ///
+        Keccak256 (0x1b) -> multihash::Keccak256 [32],
+        ///
+        Keccak384 (0x1c) -> multihash::Keccak384 [48],
+        ///
+        Keccak512 (0x1d) -> multihash::Keccak512 [64],
+        ///
+        Blake2b256 (0xb220) -> multihash::Blake2bHasher::<32> [32],
+        ///
+        Blake2b512 (0xb240) -> multihash::Blake2bHasher::<64> [64],
+        ///
+        Blake2s128 (0xb250) -> multihash::Blake2sHasher::<16> [16],
+        ///
+        Blake2s256 (0xb260) -> multihash::Blake2sHasher::<32> [32],
+        ///
+        Blake3_256 (0x1e) -> multihash::Blake3Hasher::<32> [32],
+    }
+
+    ///
+    #[derive(Copy, Clone, Debug, Default, Eq, From, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Cid(DefaultCid);
+
+    impl Cid {
+        ///
+        #[inline]
+        pub const fn version(&self) -> Version {
+            self.0.version()
+        }
+
+        ///
+        #[inline]
+        pub const fn multicodec_code(&self) -> u64 {
+            self.0.codec()
+        }
+
+        ///
+        #[inline]
+        pub const fn multihash_code(&self) -> u64 {
+            self.multihash().code()
+        }
+
+        // ///
+        // #[inline]
+        // pub const fn len(&self) -> Option<u8> {
+        //     use Version::*;
+        //     match (self, self.version()) {
+        //         (_, V0) => Some(34),
+        //         (Self(cid), V1) => Some(4 + cid.hash().size()),
+        //         _ => None,
+        //     }
+        // }
+
+        ///
+        #[cfg(feature = "multicodec")]
+        #[inline]
+        pub fn multicodec(&self) -> Result<Multicodec, Error> {
+            Multicodec::try_from(self.multicodec_code())
+        }
+
+        ///
+        #[inline]
+        pub const fn multihash(&self) -> &DefaultMultihash {
+            self.0.hash()
+        }
+
+        ///
+        #[inline]
+        pub fn digest(&self) -> &[u8] {
+            self.multihash().digest()
+        }
+
+        ///
+        #[inline]
+        pub fn to_bytes(&self) -> Vec<u8> {
+            self.0.to_bytes()
+        }
+
+        ///
+        #[inline]
+        pub fn to_string(&self) -> String {
+            self.0.to_string()
+        }
+
+        /// Generates an [`Cid`] from a [`BufRead`] of a block's bytes.
+        pub fn generate<R: BufRead>(
+            cid_version: Version,
+            multicodec_code: u64,
+            multihash_code: u64,
+            mut block: R,
+        ) -> Result<Self, Error> {
+            let mut hasher = Multihasher::new(multihash_code)?;
+
+            loop {
+                let bytes = block.fill_buf().map_err(multihash::Error::Io)?;
+                match bytes.len() {
+                    0 => break,
+                    len => {
+                        hasher.update(bytes);
+                        block.consume(len);
+                    }
+                }
+            }
+
+            let mh = hasher.try_into()?;
+            let cid = DefaultCid::new(cid_version, multicodec_code, mh)?;
+            Ok(Self(cid))
+        }
+    }
+
+    impl<const S: usize> PartialEq<CidGeneric<S>> for Cid {
+        fn eq(&self, other: &CidGeneric<S>) -> bool {
+            self.version() == other.version()
+                && self.multicodec_code() == other.codec()
+                && self.digest() == other.hash().digest()
+        }
+    }
+
+    impl<'a> TryFrom<&'a [u8]> for Cid {
+        type Error = Error;
+        fn try_from(bytes: &'a [u8]) -> Result<Self, Self::Error> {
+            Ok(Self(DefaultCid::try_from(bytes)?))
+        }
+    }
+
+    impl<'a> TryFrom<&'a str> for Cid {
+        type Error = Error;
+        fn try_from(str: &'a str) -> Result<Self, Self::Error> {
+            Ok(Self(DefaultCid::try_from(str)?))
+        }
+    }
+
+    /// Helper [`Visitor`] for visiting [`CidGeneric`]s.
+    ///
+    /// [`Visitor`]: serde::de::Visitor
+    /// [`CidGeneric`]: cid::CidGeneric
+    #[derive(Debug, Default)]
+    pub struct CidVisitor;
+
+    impl<'de> Visitor<'de> for CidVisitor {
+        type Value = Cid;
+
+        #[inline]
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a CID")
+        }
+    }
+
+    impl<'de> IpldVisitorExt<'de> for CidVisitor {
+        /// The input contains the bytes of a `Cid`.
+        #[inline]
+        fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Self::Value::try_from(cid_str).map_err(E::custom)
+        }
+
+        /// The input contains the bytes of a `Cid`.
+        #[inline]
+        fn visit_link_borrowed_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Self::Value::try_from(cid_str).map_err(E::custom)
+        }
+
+        /// The input contains a string representation of a `Cid`.
+        #[inline]
+        fn visit_link_bytes<E>(self, cid_bytes: &[u8]) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Self::Value::try_from(cid_bytes).map_err(E::custom)
+        }
+
+        /// The input contains a string representation of a `Cid`.
+        #[inline]
+        fn visit_link_borrowed_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Self::Value::try_from(cid_bytes).map_err(E::custom)
+        }
+    }
+
+    impl Serialize for Cid {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            <S as Encoder>::serialize_link(serializer, self)
+        }
+    }
+
+    impl<'de> Deserialize<'de> for Cid {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let visitor = CidVisitor::default();
+            let cid = <D as Decoder<'de>>::deserialize_link(deserializer, visitor)?;
+            Ok(cid)
+        }
+    }
 }
 
-impl<const Si: usize, T: Representation> Link<Si, T> {
+///
+#[derive(Clone, Debug, Eq, From, PartialEq)]
+pub enum Link<T: Representation = Value> {
     ///
-    #[cfg(feature = "multicodec")]
-    #[inline]
-    pub fn multicodec(&self) -> Result<Multicodec, Error> {
-        Multicodec::try_from(self.cid().codec())
-    }
+    Cid(Cid),
 
     ///
-    #[inline]
-    pub fn multihash(&self) -> Result<Multihash, Error> {
-        Ok(Multihash::try_from(self.cid().hash().code())?)
-    }
+    #[from(ignore)]
+    Inner { cid: Cid, t: T, dirty: bool },
+}
 
+impl<T: Representation> Link<T> {
     ///
     #[inline]
-    pub const fn cid(&self) -> &CidGeneric<Si> {
+    pub const fn cid(&self) -> &Cid {
         match self {
             Self::Cid(inner) => inner,
             Self::Inner { cid, .. } => cid,
         }
     }
 
+    /*
     ///
     #[inline]
-    pub fn to_meta(&self) -> BlockMeta<'_, Si> {
+    pub fn to_meta(&self) -> BlockMeta<'_, S> {
         self.cid().into()
     }
 
     ///
     #[inline]
-    pub fn to_meta_prefix(&self) -> BlockMeta<'_, Si> {
+    pub fn to_meta_prefix(&self) -> BlockMeta<'_, S> {
         let cid = self.cid();
         BlockMeta::from_prefix(cid.codec(), cid.hash().code(), None)
     }
+     */
 }
 
-impl<const Si: usize, T: Representation> Representation for Link<Si, T> {
+impl<T: Representation> Into<Cid> for Link<T> {
+    fn into(self) -> Cid {
+        match self {
+            Self::Cid(cid) => cid,
+            Self::Inner { cid, .. } => cid,
+        }
+    }
+}
+
+impl<T: Representation> Representation for Link<T> {
     const NAME: &'static str = concat!("Link<", stringify!(T::NAME), ">");
-    const SCHEMA: &'static str = concat!("type", stringify!(Self::NAME), " ", stringify!(T::NAME));
+    const SCHEMA: &'static str = "type Link link";
     const KIND: Kind = Kind::Link;
     const IS_LINK: bool = true;
     const HAS_LINKS: bool = true;
@@ -71,7 +361,6 @@ impl<const Si: usize, T: Representation> Representation for Link<Si, T> {
         }
     }
 
-    ///
     fn has_links(&self) -> bool {
         match self {
             Self::Cid(_) => T::HAS_LINKS,
@@ -80,353 +369,90 @@ impl<const Si: usize, T: Representation> Representation for Link<Si, T> {
     }
 }
 
-// impl<'de, 'a, C: Context, T: Representation, U: Representation, Si: MultihashSize> Visitor<'de>
-//     for ContextSeed<'a, C, Link<T, Si>, U>
-// where
-//     T: Send + Sync + 'static,
-//     U: 'static,
-//     // ContextSeed<'a, &'a mut C, Link<T, Si>, T>: DeserializeSeed<'de, Value = Option<T>>,
-//     // ContextSeed<'a, C, T, T>: DeserializeSeed<'de, Value = Option<T>>,
-//     // ContextSeed<'a, C, T, U>: DeserializeSeed<'de, Value = Option<U>>,
-// {
-//     type Value = Option<U>;
-//
-//     #[inline]
-//     fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         write!(formatter, "{}", Link::<T, Si>::NAME)
-//     }
-// }
-//
-// impl<'de, 'a, C: Context, T: Representation, U: Representation, Si: MultihashSize>
-//     IpldVisitorExt<'de> for ContextSeed<'a, C, Link<T, Si>, U>
-// where
-//     T: Send + Sync + 'static,
-//     U: 'static,
-//     // ContextSeed<'a, &'a mut C, Link<T, Si>, T>: DeserializeSeed<'de, Value = Option<T>>,
-//     // ContextSeed<'a, C, T, T>: DeserializeSeed<'de, Value = Option<T>>,
-//     // ContextSeed<'a, C, T, U>: DeserializeSeed<'de, Value = Option<U>>,
-// {
-// }
-//
-// impl<'de, 'a, C: Context, T: Representation, U: Representation, Si: MultihashSize>
-//     DeserializeSeed<'de> for ContextSeed<'a, C, Link<T, Si>, U>
-// where
-// // ContextSeed<'a, C, Link<T, Si>, U>: Visitor<'de, Value = Option<U>>,
-// // ContextSeed<'a, C, Link<T, Si>, U>: IpldVisitorExt<'de, Value = Option<U>>,
-// {
-//     type Value = Option<U>;
-//
-//     #[inline]
-//     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         <D as Decoder<'de>>::deserialize_link(deserializer, self)
-//     }
-// }
+impl<'de, 'a, C, T> Visitor<'de> for ContextSeed<'a, C, Link<T>>
+where
+    C: Context,
+    T: Representation + 'static,
+    for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+{
+    type Value = ();
 
-// mod impl_self {
-//     use crate::dev::*;
-//     use serde::de;
-//
-//     impl_ipld! { @visitor
-//         {T: Representation, Si: MultihashSize} {}
-//         Link<T, Si> => Link<T, Si>
-//     {
-//         #[inline]
-//         fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//             write!(formatter, "A link to a {}", T::NAME)
-//         }
-//
-//         // #[inline]
-//         // fn $visit_fn<E>(self, $visit_arg : $visit_ty) -> Result<Self::Value, E>
-//         // where
-//         //     E: serde::de::Error,
-//         // {
-//         //     let Self { selector, state, .. } = self;
-//         //     match selector {
-//         //         Selector::Matcher(Matcher { label, .. }) => {
-//         //             state.add_matched($visit_arg.into(), label.clone())
-//         //                 .map_err(E::custom)?;
-//         //             Ok(Some($visit_arg))
-//         //         },
-//         //         selector => Err(Error::unsupported_selector::<String>(selector)).map_err(E::custom)
-//         //     }
-//         // }
-//     }}
-//
-//     impl_ipld! { @visitor_ext
-//         {T: Representation, Si: MultihashSize} {}
-//         Link<T, Si> => Link<T, Si>
-//     {
-//         #[inline]
-//         fn visit_link_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
-//         where
-//             E: de::Error,
-//         {
-//             let cid = CidGeneric::<Si>::try_from(cid_str).map_err(E::custom)?;
-//             Ok(Some(Link::<T, Si>::from(cid)))
-//         }
-//
-//         #[inline]
-//         fn visit_link_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
-//         where
-//             E: de::Error,
-//         {
-//             let cid = CidGeneric::<Si>::try_from(cid_bytes).map_err(E::custom)?;
-//             Ok(Some(Link::<T, Si>::from(cid)))
-//         }
-//     }}
-//
-//     impl_ipld! { @deseed
-//         {T: Representation, Si: MultihashSize} {}
-//         Link<T, Si> => Link<T, Si>
-//     {
-//         #[inline]
-//         fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-//         where
-//             D: Deserializer<'de>,
-//         {
-//             deserializer.deserialize_link(self)
-//         }
-//     }}
-//
-//     impl_ipld! { @select_self
-//         {T: Representation, Si: MultihashSize} {}
-//         Link<T, Si>
-//     {
-//         #[inline]
-//         fn select<U: Select<C>>(
-//             selector: &Selector,
-//             state: SelectorState,
-//             ctx: &mut C,
-//         ) -> Result<Option<U>, Error>
-//         {
-//             // primitive_select::<'_, '_, C, $native_ty>(selector, state, ctx)
-//             unimplemented!()
-//         }
-//     //
-//     //     fn patch(
-//     //         &mut self,
-//     //         selector: &Selector,
-//     //         state: SelectorState,
-//     //         dag: Self,
-//     //         ctx: &mut C,
-//     //     ) -> Result<(), Error>
-//     //     {
-//     //         // primitive_patch::<C, $native_ty>(self, selector, state, dag, ctx)
-//     //         unimplemented!()
-//     //     }
-//     }}
-// }
-
-#[cfg(feature = "skipped")]
-mod impl_generic {
-    use crate::dev::*;
-
-    impl<C, T, U, Si> Select<C, U> for Link<T, Si>
-    where
-        C: Context,
-        T: Representation,
-        // T: Representation + Select<C, U>,
-        U: Representation + Select<C, U>,
-        Si: MultihashSize,
-    {
-        default fn select(
-            selector: &Selector,
-            state: SelectorState,
-            ctx: &mut C,
-        ) -> Result<Option<U>, Error> {
-            // primitive_select::<'_, '_, C, Self>(selector, state, ctx)
-            unimplemented!()
-        }
-
-        default fn patch(
-            &mut self,
-            selector: &Selector,
-            state: SelectorState,
-            dag: U,
-            ctx: &mut C,
-        ) -> Result<(), Error> {
-            // primitive_patch::<C, List<T>>(self, selector, state, dag, ctx)
-            unimplemented!()
-        }
+    #[inline]
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}", Link::<T>::NAME)
     }
 }
 
-// /// Link type, used to switch between a `cid::CidGeneric` and it's underlying dag.
-// ///
-// /// Under the hood, `Link` uses a `std::cell::Cell` in order to load links while
-// /// reading into the dag.
-// /// TODO: impl Serialize for Link, checking if impls!(S: Encoder)
-// #[derive(Clone, Debug, Eq, PartialEq)]
-// pub struct Link<T = Box<Value>, Si = DefaultMultihashSize>(InnerLink<T, Si>)
+impl<'de, 'a, C, T> IpldVisitorExt<'de> for ContextSeed<'a, C, Link<T>>
+where
+    C: Context,
+    T: Representation + 'static,
+    for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+{
+    // TODO:
+}
+
+impl<'de, 'a, C, T> DeserializeSeed<'de> for ContextSeed<'a, C, Link<T>>
+where
+    C: Context,
+    T: Representation + 'static,
+    for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+{
+    type Value = ();
+
+    #[inline]
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_link(self)
+    }
+}
+
+// impl<'a, 'de, C, T> Select<C> for Link<T>
 // where
-//     T: Representation,
-//     Si: MultihashSize;
-//
-// #[derive(Clone, Debug, Eq, PartialEq)]
-// enum InnerLink<T, Si = DefaultMultihashSize>
-// where
-//     T: Representation,
-//     Si: MultihashSize,
+//     C: Context,
+//     T: Representation + Send + Sync + 'static,
+//     // ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
 // {
-//     /// Represents a raw `cid::CidGeneric` contained within a dag.
-//     Cid(CidGeneric<Si>),
-//
-//     /// Represents a parsed subset of a dag and its original `cid::CidGeneric`.
-//     Selection {
-//         cid: CidGeneric<Si>,
-//         // selector: Rc<Selector>,
-//         dag: T,
-//     },
+//     fn select(params: SelectionParams<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
+//         unimplemented!()
+//     }
 // }
 
-// TODO: impl_root_selector for each IS => T: Select<IS> (Ctx: Block for recursive)
-// TODO: ? impl Select<IS> for each IS (Ctx: Block for recursive)
-//
-// // TODO: write the Select impls, then the latter 3 for Vec<Link<T>>
-// impl_root_select!(
-//     Matcher, ExploreAll, ExploreFields, ExploreIndex,
-//     ExploreRange, ExploreRecursive, ExploreConditional, ExploreRecursiveEdge {
-//     default impl<Ctx, T> Select<Selector, Ctx> for Link<T>
-//     where
-//         Ctx: Context,
-//         T: Representation + 'static
-// });
-//
-// impl<Ctx, S, T> Select<Ctx, S> for Link<T>
-// where
-//     Ctx: Context,
-//     S: ISelector,
-//     T: Select<Ctx, S>,
-// {
-//     type Output = <T as Select<Ctx, S>>::Output;
-//
-//     fn select<'a>(self, selector: &S, executor: &Executor<'a, Ctx>) -> Result<Self::Output, ()> {
-//         match self {
-//             Self::Cid(_) => Err(()),
-//             Self::Full { dag, .. } | Self::Selection { dag, .. } => {
-//                 T::select(dag, s, executor)
-//             }
-//         }
-//     }
-// }
-//
-// #[async_trait]
-// impl<R, W, T> Representation<R, W> for Link<T>
-// where
-//     R: Read + Unpin + Send,
-//     W: Write + Unpin + Send,
-//     T: Representation<R, W> + Sync,
-// {
-//     #[inline]
-//     default async fn read<C>(ctx: &mut C) -> Result<Self, Error>
-//     where
-//         R: 'async_trait,
-//         W: 'async_trait,
-//         C: Context<R, W> + Send,
-//     {
-//         let cid = Cid::read(ctx).await?;
-//         if ctx.try_apply(ResolveBlock::new(&cid)).await {
-//             let dag = T::read(ctx).await?;
-//             Ok(Link::Dag(cid, dag))
-//         } else {
-//             Ok(Link::Cid(cid))
-//         }
-//     }
-//
-//     #[inline]
-//     default async fn write<C>(&self, ctx: &mut C) -> Result<(), Error>
-//     where
-//         R: 'async_trait,
-//         W: 'async_trait,
-//         C: Context<R, W> + Send,
-//     {
-//         match self {
-//             Link::Cid(cid) => {
-//                 Cid::write(cid, ctx).await?;
-//                 Ok(())
-//             }
-//             Link::Dag(old_cid, dag) => {
-//                 if ctx.try_apply(ResolveBlock::new(&old_cid)).await {
-//                     T::write(dag, ctx).await?;
-//                     let cid = ctx.try_apply(FlushBlock::new(&old_cid)).await?;
-//                     Cid::write(&cid, ctx).await?;
-//                 } else {
-//                     Cid::write(old_cid, ctx).await?;
-//                 }
-//                 Ok(())
-//             }
-//         }
-//     }
-// }
-//
-// impl<T: Representation> RepresentationExt<T> for Link<T> {
-//     // fn codec(&self) ->
-//
-//     // /// resolves a link into it's full underlying dag T
-//     // ///
-//     // /// when a Link::Cid is focused, its cloned, fully/partially resolved, replaces itself with T, then delegates to T::focus
-//     // /// when a Link::Dag is focused, it delegates to T::focus
-//     // /// when a Link::Selection is focused, panic/error?
-//     // ///
-//     // ///
-//     // /// when a Link::Cid is resolved, it deserializes T against the Executor
-//     // /// when a Link::Dag is resolved, it returns T
-//     // /// when a Link::Selection is resolved, panic/error?
-//     // /// TODO: FromContext
-//     // async fn resolve<'a>(self, executor: &'a Executor<'a, Ctx>) -> Result<T, ()> {
-//     //     unimplemented!()
-//     // }
-//
-//     //
-//     //
-//     //
-//     //
-//     //
-//
-//     // /// resolves a link against a selector into a selection of dag T
-//     // /// TODO? FromContext
-//     // async fn resolve_selector<'a>(
-//     //     self,
-//     //     selector: &Selector,
-//     //     executor: &'a Executor<'a, CtxT>,
-//     // ) -> Result<T, ()>
-//     // where
-//     //     Selector: Visitor<'a, Value = T>,
-//     //     T: Representation<CtxT>,
-//     // {
-//     //     unimplemented!()
-//     // }
-// }
+impl_ipld_serde! { @select_with_seed
+    { T: Representation + Send + Sync + 'static }
+    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
+    Link<T>
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // additional implementations
 ////////////////////////////////////////////////////////////////////////////////
 
-impl<const Si: usize, T> From<CidGeneric<Si>> for Link<Si, T>
-where
-    T: Representation,
-{
-    fn from(cid: CidGeneric<Si>) -> Self {
-        Self::Cid(cid)
-    }
-}
+// impl<const SI: usize, const SO: usize, T> From<CidGeneric<SI>> for Link<SO, T>
+// where
+//     T: Representation,
+// {
+//     fn from(cid: CidGeneric<SI>) -> Self {
+//         Self::Cid(Cid::Generic(cid))
+//     }
+// }
 
-impl<const Si: usize, T> From<Link<Si, T>> for CidGeneric<Si>
-where
-    T: Representation,
-{
-    fn from(link: Link<Si, T>) -> Self {
-        match link {
-            Link::Cid(inner) => inner,
-            Link::Inner { cid, .. } => cid,
-        }
-    }
-}
+// impl<const S: usize, T> From<Link<T>> for CidGeneric<S>
+// where
+//     T: Representation,
+// {
+//     fn from(link: Link<T>) -> Self {
+//         match link {
+//             Link::Cid(Cid::Generic(inner)) => inner,
+//             Link::Inner { cid, .. } => cid,
+//         }
+//     }
+// }
 
-impl<const Si: usize, T> Serialize for Link<Si, T>
+// TODO dirty links?
+impl<T> Serialize for Link<T>
 where
     T: Representation,
 {
@@ -438,7 +464,7 @@ where
     }
 }
 
-impl<'de, const Si: usize, T> Deserialize<'de> for Link<Si, T>
+impl<'de, T> Deserialize<'de> for Link<T>
 where
     T: Representation,
 {
@@ -446,8 +472,7 @@ where
     where
         D: Deserializer<'de>,
     {
-        let cid = <D as Decoder<'de>>::deserialize_link(deserializer, CidVisitor::<Si>::default())?;
-        Ok(Self::Cid(cid))
+        Ok(Self::Cid(Cid::deserialize(deserializer)?))
     }
 }
 

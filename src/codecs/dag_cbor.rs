@@ -89,7 +89,7 @@ impl Codec for DagCbor {
 
 impl<'a, W: CborWrite> Encoder for &'a mut CborSerializer<W> {
     #[inline]
-    fn serialize_link<const Si: usize>(self, cid: &CidGeneric<Si>) -> Result<Self::Ok, CborError> {
+    fn serialize_link<const SI: usize>(self, cid: &CidGeneric<SI>) -> Result<Self::Ok, CborError> {
         let bytes = cid.to_bytes();
         Tagged::new(Some(CBOR_LINK_TAG), bytes.as_slice()).serialize(self)
     }

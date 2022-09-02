@@ -11,94 +11,106 @@
 #[forbid(unsafe_code)]
 
 ///
+#[path = "cid.rs"]
+mod _cid;
 #[path = "codecs/mod.rs"]
 mod _codecs;
+#[path = "multihash.rs"]
+mod _multihash;
+mod advanced_layouts;
 mod block;
 mod error;
+#[cfg(feature = "multicodec")]
+mod multicodec;
+mod representation;
+mod selectors;
+mod value;
 
-pub mod advanced_layouts;
-pub mod representation;
-pub mod selectors;
-pub mod value;
-
-#[doc(inline)]
-pub use _codecs::{Codec, Decoder, Encoder, IpldVisitorExt};
 #[doc(inline)]
 pub use error::Error;
 // pub use ipld::borrowed::Ipld as BorrowedIpld;
 #[doc(inline)]
-pub use representation::Representation;
-#[doc(inline)]
-pub use selectors::{Context, Select, Selector};
+pub use specs::*;
 #[doc(inline)]
 pub use value::Value;
 
-#[doc(inline)]
-pub use ipld_macros::{ipld_attr, schema, selector};
+mod specs {
+    use super::*;
 
-///
-pub mod codecs {
-    // #[doc(inline)]
-    // pub use crate::_codecs::Error as FormatError;
+    // codecs
     #[cfg(feature = "dag-cbor")]
     pub use crate::_codecs::dag_cbor::DagCbor;
-
     #[cfg(feature = "dag-json")]
     pub use crate::_codecs::dag_json::DagJson;
-
     #[cfg(feature = "dag-pb")]
     pub use crate::_codecs::dag_pb::DagPb;
+    pub use crate::_codecs::{Codec, Decoder, Encoder};
 
+    // multiformats
     #[cfg(feature = "multicodec")]
-    pub use crate::_codecs::multicodec::Multicodec;
+    pub use crate::multicodec::Multicodec;
+    pub use _multihash::Multihash;
+    pub use multibase::Base as Multibase;
+    pub use multihash::{
+        self, Code as Multihashes, Hasher as _, Multihash as DefaultMultihash,
+        MultihashDigest as _, MultihashGeneric,
+    };
+
+    // cid
+    pub use crate::_cid::Cid;
+    pub use cid::{Cid as DefaultCid, CidGeneric, Version};
+
+    // representation
+    pub use crate::representation::Representation;
+
+    // schema
+    pub use ipld_macros::{ipld_attr, schema};
+
+    // selectors
+    pub use crate::selectors::{Context, Select, Selector};
+    pub use ipld_macros::selector;
 }
+
+// pub use
 
 /// All the exports and re-exports necessary for using `ipld`.
 pub mod prelude {
+    #[doc(inline)]
+    pub use crate::_codecs::IpldVisitorExt;
+    #[doc(inline)]
     pub use crate::advanced_layouts::*;
-    pub use crate::*;
-    pub use cid::{self, Cid as DefaultCid, CidGeneric, Version};
-    pub use codecs::*;
-    pub use multibase::{self, Base as Multibase};
-    pub use multihash::{
-        self, Code as Multihashes, Hasher, Multihash as DefaultMultihash, MultihashDigest,
-        MultihashGeneric,
-    };
-    pub use serde::{Deserialize, Serialize};
-    pub use std::{
-        fmt::Debug,
-        io::{Read, Write},
-    };
-    pub use value::*;
+    #[doc(inline)]
+    pub use crate::specs::*;
+    #[doc(inline)]
+    pub use crate::value::*;
+    #[doc(inline)]
+    pub use crate::{Cid, Context, Error, Representation, Select, Selector, Value};
 
     ///
     pub const DEFAULT_MULTIHASH_SIZE: usize = 64;
+
+    #[doc(hidden)]
+    pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
 }
 
 /// All exports from `ipld::prelude`, plus re-exports of first- and third-party
 /// dependencies to aid developers wanting to implement or extend `ipld` behaviour.
 pub mod dev {
-    pub use crate::_codecs::*;
-    #[doc(inline)]
+    pub use std::io::{Read, Write};
+
     // pub use crate::impl_root_select;
-    pub use crate::prelude::*;
-    pub use crate::representation::*;
-    // pub use crate::runtime::*;
-    pub use crate::selectors::*;
+    pub use crate::{impl_ipld_serde, prelude::*, representation::*, selectors::*};
 
     // dependency re-exports for macro convenience
-    // pub use async_stream::stream;
     pub use anyhow;
     pub use bytes;
-    pub use erased_serde::{Deserializer as ErasedDeserializer, Serializer as ErasedSerializer};
-    // pub use futures::{self, Stream, StreamExt};
-    pub use impls;
+    // pub use erased_serde::{Deserializer as ErasedDeserializer, Serializer as ErasedSerializer};
     pub use ipld_macros_internals as macros;
     pub use serde::{
         self,
         de::{
-            DeserializeOwned, DeserializeSeed, EnumAccess, Error as _, MapAccess, SeqAccess,
-            VariantAccess, Visitor,
+            DeserializeOwned, DeserializeSeed, EnumAccess, Error as _, IgnoredAny, MapAccess,
+            SeqAccess, VariantAccess, Visitor,
         },
         Deserialize, Deserializer, Serialize, Serializer,
     };

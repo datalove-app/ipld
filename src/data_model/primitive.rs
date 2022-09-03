@@ -1,5 +1,5 @@
 use crate::dev::*;
-use macros::derive_more::{AsRef, From};
+use macros::derive_more::{AsRef, Deref, From, IntoIterator};
 
 pub use self::null::*;
 
@@ -7,15 +7,16 @@ mod null {
     use super::*;
 
     /// A nothing type.
-    pub type Null = ();
+    #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+    pub struct Null;
 
     impl Representation for Null {
         const NAME: &'static str = "Null";
         const SCHEMA: &'static str = "type Null null";
-        const KIND: Kind = Kind::Null;
+        const DATA_MODEL_KIND: Kind = Kind::Null;
     }
 
-    impl_ipld_serde! { @visitor {} {} Null {
+    impl_ipld_serde! { @context_visitor {} {} Null {
         #[inline]
         fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(formatter, "Null")
@@ -26,7 +27,7 @@ mod null {
         where
             E: serde::de::Error,
         {
-            self.visit_primitive(())
+            self.visit_primitive(Null)
         }
     }}
 
@@ -40,7 +41,7 @@ mod null {
         }
     }}
 
-    impl_ipld_serde! { @select_with_seed {} {} Null }
+    impl_ipld_serde! { @context_select {} {} Null }
 }
 
 mod string {
@@ -49,10 +50,10 @@ mod string {
     impl Representation for String {
         const NAME: &'static str = "String";
         const SCHEMA: &'static str = "type String string";
-        const KIND: Kind = Kind::String;
+        const DATA_MODEL_KIND: Kind = Kind::String;
     }
 
-    impl_ipld_serde! { @visitor {} {} String {
+    impl_ipld_serde! { @context_visitor {} {} String {
         #[inline]
         fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(formatter, "A UTF-8 string")
@@ -85,7 +86,7 @@ mod string {
         }
     }}
 
-    impl_ipld_serde! { @select_with_seed {} {} String }
+    impl_ipld_serde! { @context_select {} {} String }
 
     // impl<'a> Representation for &'a str {
     //     const NAME: &'static str = "String";
@@ -97,19 +98,38 @@ mod string {
 schema! {
     /// A `bytes` type.
     #[ipld_attr(internal)]
-    #[derive(AsRef, Clone, Debug, Eq, From, Hash, PartialEq)]
+    #[derive(
+        AsRef,
+        Clone,
+        Debug,
+        Default,
+        Deref,
+        Eq,
+        From,
+        Hash,
+        IntoIterator,
+        Ord,
+        PartialEq,
+        PartialOrd
+    )]
     #[as_ref(forward)]
+    #[deref(forward)]
     #[from(forward)]
     pub type Bytes bytes;
 }
 
+///
+pub type Int = Int32;
+
+///
+pub type Float = Float64;
+
 /// Implements IPLD traits for native primitive types.
 macro_rules! impl_ipld_native {
     (   $doc_str:expr ;
-        $native_ty:ty : $name:ident $ipld_type:ident {
+        $native_ty:ty : $name:ident $kind:ident $ipld_type:ident {
             $deserialize_fn:ident
             $visit_fn:ident
-            $visit_arg:ident : $visit_ty:ty
         }
     ) => {
         #[doc = $doc_str]
@@ -119,21 +139,21 @@ macro_rules! impl_ipld_native {
             const NAME: &'static str = stringify!($name);
             const SCHEMA: &'static str =
                 concat!("type ", stringify!($name), " ", stringify!($ipld_type));
-            const KIND: Kind = Kind::$name;
+            const DATA_MODEL_KIND: Kind = Kind::$kind;
         }
 
-        impl_ipld_serde! { @visitor {} {} $native_ty {
+        impl_ipld_serde! { @context_visitor {} {} $native_ty {
             #[inline]
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(formatter, $doc_str)
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, $doc_str)
             }
 
             #[inline]
-            fn $visit_fn<E>(self, $visit_arg : $visit_ty) -> Result<Self::Value, E>
+            fn $visit_fn<E>(self, v : $native_ty) -> Result<Self::Value, E>
             where
                 E: serde::de::Error,
             {
-                self.visit_primitive($visit_arg)
+                self.visit_primitive(v)
             }
         }}
 
@@ -147,7 +167,7 @@ macro_rules! impl_ipld_native {
             }
         }}
 
-        impl_ipld_serde! { @select_with_seed {} {} $native_ty }
+        impl_ipld_serde! { @context_select {} {} $native_ty }
     };
 
     (@null
@@ -162,118 +182,105 @@ macro_rules! impl_ipld_native {
 
 impl_ipld_native! (
     "A boolean type" ;
-    bool : Bool bool {
+    bool : Bool Bool bool {
         deserialize_bool
         visit_bool
-        v: bool
     }
 );
 impl_ipld_native! (
     "A fixed-length number type represented as a int8";
-    i8 : Int8 int8 {
+    i8 : Int8 Int int {
         deserialize_i8
         visit_i8
-        v: i8
     }
 );
 impl_ipld_native! (
     "A fixed-length number type represented as a int16" ;
-    i16 : Int16 int16 {
+    i16 : Int16 Int int {
         deserialize_i16
         visit_i16
-        v: i16
     }
 );
 impl_ipld_native! (
     "A fixed-length number type represented as a int32" ;
-    i32 : Int int32 {
+    i32 : Int32 Int int {
         deserialize_i32
         visit_i32
-        v: i32
     }
 );
 impl_ipld_native! (
     "A fixed-length number type represented as a int64" ;
-    i64 : Int64 int64 {
+    i64 : Int64 Int int {
         deserialize_i64
         visit_i64
-        v: i64
     }
 );
 impl_ipld_native! (
     "A fixed-length number type represented as a int128" ;
-    i128 : Int128 int128 {
+    i128 : Int128 Int int {
         deserialize_i128
         visit_i128
-        v: i128
     }
 );
 impl_ipld_native! (
     "A fixed-length number type represented as a uint8" ;
-    u8 : Uint8 uint8 {
+    u8 : Uint8 Int int {
         deserialize_u8
         visit_u8
-        v: u8
     }
 );
 impl_ipld_native! (
     "A fixed-length number type represented as a uint16" ;
-    u16 : Uint16 uint16 {
+    u16 : Uint16 Int int {
         deserialize_u16
         visit_u16
-        v: u16
     }
 );
 impl_ipld_native! (
     "A fixed-length number type represented as a uint32" ;
-    u32 : Uint32 uint32 {
+    u32 : Uint32 Int int {
         deserialize_u32
         visit_u32
-        v: u32
     }
 );
 impl_ipld_native! (
     "A fixed-length number type represented as a uint64" ;
-    u64 : Uint64 uint64 {
+    u64 : Uint64 Int int {
         deserialize_u64
         visit_u64
-        v: u64
     }
 );
 impl_ipld_native! (
     "A fixed-length number type represented as a uint128" ;
-    u128 : Uint128 uint128 {
+    u128 : Uint128 Int int {
         deserialize_u128
         visit_u128
-        v: u128
     }
 );
 impl_ipld_native! (
     "A fixed-length number type represented as a float32" ;
-    f32 : Float32 float32 {
+    f32 : Float32 Float float {
         deserialize_f32
         visit_f32
-        v: f32
     }
 );
 impl_ipld_native! (
     "A fixed-length number type represented as a float64" ;
-    f64 : Float float64 {
+    f64 : Float64 Float float {
         deserialize_f64
         visit_f64
-        v: f64
     }
 );
 
 impl<'a, C, T> ContextSeed<'a, C, T>
 where
     C: Context,
-    T: Representation + Send + Sync + 'static,
+    T: Representation + 'static,
 {
     #[inline]
     fn visit_primitive<'de, E>(mut self, dag: T) -> Result<(), E>
     where
-        T: Into<Node>,
+        T: Into<SelectedNode>,
         E: serde::de::Error,
     {
         // must check selector
@@ -413,17 +420,18 @@ mod tests {
     use super::*;
     use crate::prelude::*;
 
-    // fn setup<T: Representation>(dag: &T) -> MemoryContext {
-    //     const DEFAULT_MC: u64 = DagJson::CODE;
-    //     const DEFAULT_MH: u64 =
+    fn setup<T: Representation>(dag: &T) -> MemoryContext {
+        const DEFAULT_MC: u64 = DagJson::CODE;
+        const DEFAULT_MH: u64 = Multihash::SHA2_256;
 
-    //     let mut ctx = MemoryContext::default();
-    //     ctx.add_block(Version::V1, 1, vec![]).unwrap();
-    //     ctx
-    // }
+        let mut ctx = MemoryContext::default();
+        ctx.add_block(Version::V1, DEFAULT_MC, DEFAULT_MH, vec![])
+            .unwrap();
+        ctx
+    }
 
-    // #[test]
-    // fn test_mull_match() {
-    //     let mut ctx = setup(&());
-    // }
+    #[test]
+    fn test_mull_match() {
+        let mut ctx = setup(&Null);
+    }
 }

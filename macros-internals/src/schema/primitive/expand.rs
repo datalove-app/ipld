@@ -5,7 +5,7 @@ use super::{
 use crate::{
     define_newtype,
     dev::{
-        schema::{expand, DataModelKind},
+        schema::{expand, SchemaKind},
         SchemaMeta,
     },
 };
@@ -31,8 +31,8 @@ impl expand::ExpandBasicRepresentation for NullReprDefinition {
         expand::impl_repr(
             meta,
             quote! {
-                const KIND: Kind = Kind::Null;
-                // const SCHEMA: &'static str = format!("pub type {} null;", Self::NAME);
+                const DATA_MODEL_KIND: Kind = Kind::Null;
+                const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " null");
             },
         )
     }
@@ -62,15 +62,15 @@ impl expand::ExpandBasicRepresentation for NullReprDefinition {
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
         let ident = &meta.name;
         quote! {
-            impl Into<Node> for #ident {
-                fn into(self) -> Node {
-                    Node::Null
+            impl Into<SelectedNode> for #ident {
+                fn into(self) -> SelectedNode {
+                    SelectedNode::Null
                 }
             }
 
-            impl Into<Value> for #ident {
-                fn into(self) -> Value {
-                    Value::Null
+            impl Into<Any> for #ident {
+                fn into(self) -> Any {
+                    Any::Null
                 }
             }
         }
@@ -129,7 +129,7 @@ macro_rules! derive_newtype_repr {
         expand::impl_repr(
             $meta,
             quote! {
-                const KIND: Kind = <#$inner_ty as Representation>::KIND;
+                const DATA_MODEL_KIND: Kind = <#$inner_ty as Representation>::DATA_MODEL_KIND;
             },
         )
     }};
@@ -140,7 +140,7 @@ macro_rules! derive_newtype_select {
     // (@visitor_null $def:ident, $meta:ident => fn $visit_fn:ident) => {{
     //     expand::impl_context_seed_visitor($meta, quote! {
     //         #[inline]
-    //         fn visit_unit<E>(self) -> Result<Self::Value, E>
+    //         fn visit_unit<E>(self) -> Result<Self::Any, E>
     //         where
     //             E: serde::de::Error,
     //         {
@@ -155,7 +155,7 @@ macro_rules! derive_newtype_select {
             $($expecting)*,
             quote! {
                 #[inline]
-                fn $visit_fn<E>(self, v: $ty) -> Result<Self::Value, E>
+                fn $visit_fn<E>(self, v: $ty) -> Result<Self::Any, E>
                 where
                     E: serde::de::Error,
                 {
@@ -200,15 +200,15 @@ macro_rules! derive_newtype_conv {
         let ident = &$meta.name;
 
         quote! {
-            impl Into<Node> for #ident {
-                fn into(self) -> Node {
-                    Node::#$dm_ty
+            impl Into<SelectedNode> for #ident {
+                fn into(self) -> SelectedNode {
+                    SelectedNode::#$dm_ty
                 }
             }
 
-            impl Into<Value> for #ident {
-                fn into(self) -> Value {
-                    Value::#$dm_ty
+            impl Into<Any> for #ident {
+                fn into(self) -> Any {
+                    Any::#$dm_ty
                 }
             }
         }
@@ -217,15 +217,15 @@ macro_rules! derive_newtype_conv {
         let ident = &$meta.name;
 
         quote! {
-            impl Into<Node> for #ident {
-                fn into(self) -> Node {
-                    Node::#$dm_ty(self.0)
+            impl Into<SelectedNode> for #ident {
+                fn into(self) -> SelectedNode {
+                    SelectedNode::#$dm_ty(self.0)
                 }
             }
 
-            impl Into<Value> for #ident {
-                fn into(self) -> Value {
-                    Value::#$dm_ty(self.0)
+            impl Into<Any> for #ident {
+                fn into(self) -> Any {
+                    Any::#$dm_ty(self.0)
                 }
             }
         }
@@ -276,7 +276,7 @@ impl expand::ExpandBasicRepresentation for BoolReprDefinition {
         tokens
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        let dm_ty = DataModelKind::Bool.to_ident();
+        let dm_ty = SchemaKind::Bool.to_ident();
         derive_newtype_conv!(@has_constructor self, meta => dm_ty)
     }
 }
@@ -295,7 +295,7 @@ impl expand::ExpandBasicRepresentation for IntReprDefinition {
         derive_newtype_select!(@select self, meta => inner_ty)
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        let dm_ty = DataModelKind::Int.to_ident();
+        let dm_ty = SchemaKind::Int.to_ident();
         derive_newtype_conv!(@has_constructor self, meta => dm_ty)
     }
 }
@@ -314,7 +314,7 @@ impl expand::ExpandBasicRepresentation for FloatReprDefinition {
         derive_newtype_select!(@select self, meta => inner_ty)
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        let dm_ty = DataModelKind::Float.to_ident();
+        let dm_ty = SchemaKind::Float.to_ident();
         derive_newtype_conv!(@has_constructor self, meta => dm_ty)
     }
 }
@@ -339,7 +339,7 @@ impl expand::ExpandBasicRepresentation for StringReprDefinition {
         derive_newtype_select!(@select self, meta => inner_ty)
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        let dm_ty = DataModelKind::String.to_ident();
+        let dm_ty = SchemaKind::String.to_ident();
         derive_newtype_conv!(@has_constructor self, meta => dm_ty)
     }
 }
@@ -360,7 +360,7 @@ impl expand::ExpandBasicRepresentation for CopyReprDefinition {
         derive_newtype_select!(@select self, meta => inner_ty)
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        let dm_ty = DataModelKind::String.to_ident();
+        let dm_ty = SchemaKind::String.to_ident();
         derive_newtype_conv!(@has_constructor self, meta => dm_ty)
     }
 }

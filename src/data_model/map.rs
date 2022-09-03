@@ -2,20 +2,58 @@ use crate::dev::*;
 use std::collections::BTreeMap;
 
 ///
-pub type Map<K = String, V = Value> = BTreeMap<K, V>;
+pub type Map<K = String, V = Any> = BTreeMap<K, V>;
 
 // TODO: write the 4 Select impls, then the latter 3 for BTreeMap<K, Link<V>>
 
-impl<K: Representation + Ord, V: Representation> Representation for Map<K, V> {
+impl<K, V> Representation for Map<K, V>
+where
+    K: Representation + Ord,
+    V: Representation,
+{
     const NAME: &'static str = "Map";
-    // const SCHEMA: &'static str = format!("type {} = &{}", Self::NAME, T::NAME);
-    const KIND: Kind = Kind::Map;
+    const SCHEMA: &'static str = concat!(
+        "type ",
+        stringify!(Self::NAME),
+        " {",
+        stringify!(K::NAME),
+        ":",
+        stringify!(V::NAME),
+        "}",
+    );
+    const DATA_MODEL_KIND: Kind = Kind::Map;
 
     fn has_links(&self) -> bool {
         self.iter().any(|(k, v)| k.has_links() || v.has_links())
     }
 }
 
+// impl_ipld_serde! { @context_visitor
+//     { K: Representation + Ord + 'static, V: Representation }
+//     { for<'b> ContextSeed<'b, C, V>: DeserializeSeed<'de, Value = ()>, }
+//     Map<K, V>
+// {
+//     #[inline]
+//     fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(f, "{}", Map::<K, V>::NAME)
+//     }
+// }}
+
+// impl_ipld_serde! { @context_deseed
+//     { K: Representation + Ord + 'static, V: Representation }
+//     { for<'b> ContextSeed<'b, C, V>: DeserializeSeed<'de, Value = ()>, }
+//     Map<K, V>
+// {
+//     #[inline]
+//     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         deserializer.deserialize_map(self)
+//     }
+// }}
+
+/*
 ///
 /// ? should be explicitly implemented for each concrete Map<K, V>
 #[macro_export]
@@ -46,54 +84,49 @@ macro_rules! impl_ipld_map {
             }
 
             #[inline]
-            fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+            fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
             where
-                A: $crate::dev::SeqAccess<'de>,
+                A: $crate::dev::MapAccess<'de>,
             {
                 match self.selector {
                     s if type_eq::<$type, T>() && s.is_matcher() => {
-                        let dag = self.into::<$type, T>().visit_map(seq)?;
+                        let dag = self.into::<$type, T>().visit_map(map)?;
                         Ok(take_concrete_type::<_, T>(dag))
                     }
-                    s if s.is_explore_fields() => self.into::<$type, T>().visit_map_fields(seq),
-                    s if s.is_explore_all() => self.into::<$type, T>().visit_map_full(seq),
+                    s if s.is_explore_fields() => self.into::<$type, T>().visit_map_fields(map),
+                    s if s.is_explore_all() => self.into::<$type, T>().visit_map_all(map),
                     _ => Err(A::Error::custom($crate::Error::unsupported_selector::<$type, T>(self.selector))),
                 }
             }
         }
     };
 }
+ */
 
-impl<'a, C, K, V, W> ContextSeed<'a, C, Map<K, V>, W>
+impl<'a, C, K, V> ContextSeed<'a, C, Map<K, V>>
 where
     C: Context,
-    K: Representation + Ord,
+    K: Representation + Ord + 'static,
     V: Representation + Send + Sync + 'static,
-    W: Representation + Send + Sync + 'static,
+    // W: Representation + Send + Sync + 'static,
 {
     ///
-    pub fn visit_map<'de, A>(self, mut seq: A) -> Result<Option<Map<K, V>>, A::Error>
+    pub(crate) fn visit_map<'de, A>(self, mut map: A) -> Result<Option<Map<K, V>>, A::Error>
     where
-        A: SeqAccess<'de>,
+        A: MapAccess<'de>,
         for<'b> ContextSeed<'b, C, V>: DeserializeSeed<'de, Value = Option<V>>,
     {
-        let Self {
-            selector,
-            state,
-            ctx,
-            ..
-        } = self;
-
-        let matcher = selector
-            .assert_matcher::<Map<K, V>, W>()
-            .map_err(A::Error::custom)?;
+        let matcher = self
+            .selector
+            .as_matcher()
+            .expect("should know that this is a matcher");
 
         // match state.mode() {
         //     SelectorState::NODE_MODE => {
         //         state
         //             .send_matched(Node::Map < K, Vmatcher.label.clone())
         //             .map_err(A::Error::custom)?;
-
+        //
         //         for i in 0.. {
         //             let seed = ContextSeed::<C, V>::from(selector, state, ctx)
         //                 .descend_index(i)
@@ -102,12 +135,12 @@ where
         //                 break;
         //             }
         //         }
-
+        //
         //         Ok(None)
         //     }
         //     SelectorState::DAG_MATCH_MODE | SelectorState::DAG_MODE => {
         //         let mut dag = Vec::with_capacity(seq.size_hint().unwrap_or(256));
-
+        //
         //         for i in 0.. {
         //             let seed = ContextSeed::<C, V>::from(selector, state, ctx)
         //                 .descend_index(i)
@@ -118,7 +151,7 @@ where
         //                 Some(None) => unreachable!(),
         //             };
         //         }
-
+        //
         //         match state.mode() {
         //             SelectorState::DAG_MATCH_MODE => Ok(Some(dag)),
         //             SelectorState::DAG_MODE => {
@@ -136,46 +169,33 @@ where
     }
 
     ///
-    pub fn visit_map_fields<'de, A>(self, mut seq: A) -> Result<Option<W>, A::Error>
+    pub(crate) fn visit_map_fields<'de, A>(self, mut seq: A) -> Result<(), A::Error>
     where
         A: SeqAccess<'de>,
-        for<'b> ContextSeed<'b, C, V, W>: DeserializeSeed<'de, Value = Option<W>>,
+        for<'b> ContextSeed<'b, C, V>: DeserializeSeed<'de, Value = ()>,
     {
-        let Self {
-            selector,
-            state,
-            ctx,
-            ..
-        } = self;
-
         unimplemented!()
     }
 
     ///
-    pub fn visit_map_full<'de, A>(self, mut seq: A) -> Result<Option<W>, A::Error>
+    pub(crate) fn visit_map_all<'de, A>(self, mut seq: A) -> Result<(), A::Error>
     where
         A: SeqAccess<'de>,
-        for<'b> ContextSeed<'b, C, V, W>: DeserializeSeed<'de, Value = Option<W>>,
+        for<'b> ContextSeed<'b, C, V>: DeserializeSeed<'de, Value = ()>,
     {
-        let Self {
-            selector,
-            state,
-            ctx,
-            ..
-        } = self;
-
         unimplemented!()
     }
 }
 
-impl<'de, 'a, C: Context, K: Representation, V: Representation, W: Representation>
-    DeserializeSeed<'de> for ContextSeed<'a, C, Map<K, V>, W>
+impl<'de, 'a, C, K, V> DeserializeSeed<'de> for ContextSeed<'a, C, Map<K, V>>
 where
-    K: Ord,
+    C: Context,
+    K: Representation + Ord + 'static,
+    V: Representation + Send + Sync + 'static,
     // ContextSeed<'a, C, V, W>: DeserializeSeed<'de, Value = Option<V>>,
-    ContextSeed<'a, C, Map<K, V>, W>: Visitor<'de, Value = Option<W>>,
+    ContextSeed<'a, C, Map<K, V>>: Visitor<'de, Value = ()>,
 {
-    type Value = Option<W>;
+    type Value = ();
 
     #[inline]
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -183,5 +203,16 @@ where
         D: Deserializer<'de>,
     {
         deserializer.deserialize_map(self)
+    }
+}
+
+impl<'a, C, K, V> Select<C> for Map<K, V>
+where
+    C: Context,
+    K: Representation + Ord + 'static,
+    V: Representation + Send + Sync + 'static,
+{
+    fn select(params: SelectionParams<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
+        unimplemented!()
     }
 }

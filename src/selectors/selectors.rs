@@ -1,6 +1,11 @@
 use crate::dev::*;
-use macros::derive_more::{From, TryInto};
-use std::{fmt, rc::Rc, str::FromStr};
+use macros::derive_more::{AsMut, AsRef, From, TryInto};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+    rc::Rc,
+    str::FromStr,
+};
 
 schema! {
     /// SelectorEnvelope is the recommended top-level value for serialized
@@ -443,6 +448,13 @@ impl Selector {
     //     }
     // }
 
+    ///
+    pub const DEFAULT: Self = Self::Matcher(Matcher {
+        onlyIf: None,
+        label: None,
+        subset: None,
+    });
+
     /// Attempts to produce the next selector to apply, given an optional field
     /// (key or index).
     pub fn next<'a, F>(&self, field: Option<F>) -> Option<&Selector>
@@ -498,7 +510,7 @@ impl Selector {
 
 impl Default for Selector {
     fn default() -> Self {
-        Self::Matcher(Matcher::default())
+        Self::default()
     }
 }
 
@@ -515,7 +527,7 @@ impl FromStr for Selector {
     }
 }
 
-/* Matcher */
+/* Slice */
 
 impl From<std::ops::Range<i32>> for Slice {
     fn from(range: std::ops::Range<i32>) -> Self {
@@ -536,8 +548,116 @@ impl From<Slice> for std::ops::Range<i32> {
 }
 
 /* ExploreFields */
+
 impl ExploreFields {
     pub fn contains_key(&self, key: &str) -> bool {
         unimplemented!()
+    }
+}
+
+/* state */
+
+///
+#[derive(AsRef, AsMut, Debug, Default)]
+pub struct SelectionState {
+    // selector: Selector,
+    // mode: SelectionMode,
+    #[as_ref]
+    #[as_mut]
+    pub(crate) path: PathBuf,
+    // path: &'a mut PathBuf,
+    pub(crate) path_depth: usize,
+    pub(crate) link_depth: usize,
+    pub(crate) max_path_depth: Option<usize>,
+    pub(crate) max_link_depth: Option<usize>,
+    // sender: Option<SelectionSender>,
+    // params: SelectionParams<'a, C, T, U>,
+}
+
+// impl<'a> SelectorState<'a> {
+impl SelectionState {
+    #[inline]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    #[inline]
+    pub(crate) const fn max_path_depth(&self) -> usize {
+        match self.max_path_depth {
+            Some(max) => max,
+            None => usize::MAX,
+        }
+    }
+
+    #[inline]
+    pub(crate) const fn max_link_depth(&self) -> usize {
+        match self.max_link_depth {
+            Some(max) => max,
+            None => usize::MAX,
+        }
+    }
+
+    // ///
+    // #[inline]
+    // pub(crate) const fn with_max_path_depth(mut self, max_path_depth: usize) -> Self {
+    //     self.max_path_depth = Some(max_path_depth);
+    //     self
+    // }
+    //
+    // ///
+    // #[inline]
+    // pub(crate) const fn with_max_link_depth(mut self, max_link_depth: usize) -> Self {
+    //     self.max_link_depth = Some(max_link_depth);
+    //     self
+    // }
+
+    #[inline]
+    pub(crate) fn descend<T: Representation>(
+        &mut self,
+        // next_selector: Selector,
+        next_path: Field<'_>,
+    ) -> Result<(), Error> {
+        if self.path_depth >= self.max_path_depth() {
+            return Err(Error::SelectorDepth(
+                "descending would exceed max path depth",
+                self.max_path_depth(),
+            ));
+        }
+        if self.link_depth >= self.max_link_depth() {
+            return Err(Error::SelectorDepth(
+                "descending would exceed max link depth",
+                self.max_link_depth(),
+            ));
+        }
+
+        next_path.append_to_path(&mut self.path);
+        self.path_depth += 1;
+        if T::IS_LINK {
+            self.link_depth += 1;
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    pub(crate) fn ascend<T: Representation>(
+        &mut self,
+        // previous_selector: Selector,
+    ) -> Result<(), Error> {
+        self.path.pop();
+        self.path_depth = self
+            .path_depth
+            .checked_sub(1)
+            .ok_or_else(|| Error::SelectorDepth("exceeds root path depth", self.path_depth))?;
+
+        if T::IS_LINK {
+            self.link_depth = self
+                .link_depth
+                .checked_sub(1)
+                .ok_or_else(|| Error::SelectorDepth("exceeds root link depth", self.link_depth))?;
+        }
+
+        // self.selector = previous_selector;
+        Ok(())
     }
 }

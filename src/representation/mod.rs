@@ -9,41 +9,63 @@
 //! type from/to bytes, as well query and mutate a type, while specifically
 //! defining for the type it's `Context` requirements for these operations.
 
-mod impls;
-
 use crate::dev::*;
-use downcast_rs::{impl_downcast, DowncastSync};
+use downcast_rs::{impl_downcast, Downcast};
 use std::{rc::Rc, sync::Arc};
 
+/// Enum of possible [Data Model]() and [Schema]() kinds.
 ///
-/// TODO: represents Schema or Representation kind?
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Kind {
+    ///
     Null,
+    ///
     Bool,
-    Int8,
-    Int16,
+    // ///
+    // Int8,
+    // ///
+    // Int16,
+    ///
     Int,
-    Int64,
-    Int128,
-    Uint8,
-    Uint16,
-    Uint32,
-    Uint64,
-    Uint128,
-    Float32,
+    // ///
+    // Int64,
+    // ///
+    // Int128,
+    // ///
+    // Uint8,
+    // ///
+    // Uint16,
+    // ///
+    // Uint32,
+    // ///
+    // Uint64,
+    // ///
+    // Uint128,
+    // ///
+    // Float32,
+    ///
     Float,
+    ///
     String,
+    ///
     Bytes,
+    ///
     List,
+    ///
     Map,
+    ///
     Link,
+    ///
     Struct,
+    ///
     Enum,
+    ///
     Union,
+    ///
     Copy,
 }
 
+// ///
 // #[derive(Debug, Eq, Hash, PartialEq)]
 // pub struct Field<A> {
 //     /// Name of the `Representation` type contained within this field.
@@ -139,10 +161,17 @@ where
     /// not defined by IPLD).
     const SCHEMA: &'static str = unimplemented!();
 
-    /// The [IPLD Schema
+    /// The IPLD [Data Model Kind](https://ipld.io/docs/data-model/kinds/) of
+    /// the type.
+    const DATA_MODEL_KIND: Kind;
+
+    /// The IPLD [Schema
     /// Kind](https://ipld.io/docs/schemas/features/typekinds/#schema-kinds) of
     /// the type.
-    const KIND: Kind;
+    const SCHEMA_KIND: Kind = Self::DATA_MODEL_KIND;
+
+    /// The IPLD [Representation Kind]() of the type.
+    const REPR_KIND: Kind = Self::DATA_MODEL_KIND;
 
     ///
     const IS_LINK: bool = false;
@@ -154,15 +183,15 @@ where
     // const FIELDS: Fields = Fields::None;
 
     ///
-    /// for unions, this delegates to the variant's type name
+    /// for unions, this ?should delegate to the variant's type name
     fn name(&self) -> &'static str {
         Self::NAME
     }
 
-    ///
-    fn kind(&self) -> Kind {
-        Self::KIND
-    }
+    // ///
+    // fn kind(&self) -> Kind {
+    //     Self::KIND
+    // }
 
     ///
     fn has_links(&self) -> bool {
@@ -218,9 +247,10 @@ where
     T: Representation,
 {
     const NAME: &'static str = "Option";
-    // TODO:
-    const KIND: Kind = Kind::Union;
     const SCHEMA: &'static str = concat!("nullable ", stringify!(T::NAME));
+    // TODO
+    const DATA_MODEL_KIND: Kind = T::DATA_MODEL_KIND;
+    const SCHEMA_KIND: Kind = T::DATA_MODEL_KIND;
     const HAS_LINKS: bool = T::HAS_LINKS;
 
     fn name(&self) -> &'static str {
@@ -230,12 +260,12 @@ where
         }
     }
 
-    fn kind(&self) -> Kind {
-        match self {
-            Self::None => Null::KIND,
-            Self::Some(t) => t.kind(),
-        }
-    }
+    // fn kind(&self) -> Kind {
+    //     match self {
+    //         Self::None => Null::KIND,
+    //         Self::Some(t) => t.kind(),
+    //     }
+    // }
 
     fn has_links(&self) -> bool {
         match self {
@@ -245,128 +275,180 @@ where
     }
 }
 
-impl<T> Representation for Box<T>
-where
-    T: Representation,
-{
-    // type Visitor
-    const NAME: &'static str = T::NAME;
-    const KIND: Kind = T::KIND;
-    const SCHEMA: &'static str = T::SCHEMA;
+macro_rules! impl_wrapper {
+    ($wrapper:ident) => {
+        impl<T> Representation for $wrapper<T>
+        where
+            T: Representation,
+        {
+            const NAME: &'static str = T::NAME;
+            const SCHEMA: &'static str = T::SCHEMA;
+            const DATA_MODEL_KIND: Kind = T::DATA_MODEL_KIND;
+            const SCHEMA_KIND: Kind = T::SCHEMA_KIND;
+            const REPR_KIND: Kind = T::REPR_KIND;
 
-    #[inline]
-    fn name(&self) -> &'static str {
-        self.as_ref().name()
-    }
+            #[inline]
+            fn name(&self) -> &'static str {
+                self.as_ref().name()
+            }
 
-    #[inline]
-    fn kind(&self) -> Kind {
-        self.as_ref().kind()
-    }
+            #[inline]
+            fn has_links(&self) -> bool {
+                self.as_ref().has_links()
+            }
+        }
+    };
+    (@dyn $wrapper:ident) => {
+        impl Representation for $wrapper<dyn ErasedRepresentation> {
+            const NAME: &'static str = T::NAME;
+            const SCHEMA: &'static str = T::SCHEMA;
+            const DATA_MODEL_KIND: Kind = T::DATA_MODEL_KIND;
+            const SCHEMA_KIND: Kind = T::SCHEMA_KIND;
+            const REPR_KIND: Kind = T::REPR_KIND;
 
-    #[inline]
-    fn has_links(&self) -> bool {
-        self.as_ref().has_links()
-    }
+            #[inline]
+            fn name(&self) -> &'static str {
+                self.as_ref().name()
+            }
+
+            #[inline]
+            fn has_links(&self) -> bool {
+                self.as_ref().has_links()
+            }
+        }
+    };
 }
 
-impl<T> Representation for Rc<T>
-where
-    T: Representation,
-{
-    const NAME: &'static str = T::NAME;
-    const KIND: Kind = T::KIND;
-    const SCHEMA: &'static str = T::SCHEMA;
-
-    #[inline]
-    fn name(&self) -> &'static str {
-        self.as_ref().name()
-    }
-
-    #[inline]
-    fn kind(&self) -> Kind {
-        self.as_ref().kind()
-    }
-
-    #[inline]
-    fn has_links(&self) -> bool {
-        self.as_ref().has_links()
-    }
-}
-
-impl<T> Representation for Arc<T>
-where
-    T: Representation,
-{
-    const NAME: &'static str = T::NAME;
-    const KIND: Kind = T::KIND;
-    const SCHEMA: &'static str = T::SCHEMA;
-
-    #[inline]
-    fn name(&self) -> &'static str {
-        self.as_ref().name()
-    }
-
-    #[inline]
-    fn kind(&self) -> Kind {
-        self.as_ref().kind()
-    }
-
-    #[inline]
-    fn has_links(&self) -> bool {
-        self.as_ref().has_links()
-    }
-}
-
-// impl<'a, T> Representation for &'a T
-// where
-//     T: Representation,
-// {
-//     const NAME: &'static str = T::NAME;
-// }
-
-// impl<'a, T> Representation for &'a mut T
-// where
-//     T: Representation,
-// {
-//     const NAME: &'static str = T::NAME;
-// }
+impl_wrapper!(Box);
+impl_wrapper!(Rc);
+impl_wrapper!(Arc);
 
 ///
 /// TODO: possibly look at erased-serde to complete this "hack"
-pub trait ErasedRepresentation: DowncastSync {
+pub(crate) trait ErasedRepresentation: Downcast {
     // /// The underlying [`Representation`] type this type will downcast to.
-    // type Representation: Representation;
+    // type Representation: Representation = Self;
 
     ///
     fn name(&self) -> &'static str;
 
     ///
-    fn kind(&self) -> Kind;
-}
-impl Debug for dyn ErasedRepresentation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ErasedRepresentation")
-            .field("name", &self.name())
-            .field("kind", &self.kind())
-            .finish()
-    }
-}
-impl<T: Representation + Send + Sync + 'static> ErasedRepresentation for T {
-    // type Representation = T;
+    fn data_model_kind(&self) -> Kind;
 
     ///
+    fn schema_kind(&self) -> Kind;
+
+    ///
+    fn repr_kind(&self) -> Kind;
+}
+
+// impl_downcast!(sync ErasedRepresentation assoc Representation
+//    where Representation: crate::Representation);
+impl_downcast!(ErasedRepresentation);
+
+impl<T> ErasedRepresentation for T
+where
+    T: Representation + 'static,
+{
     fn name(&self) -> &'static str {
         T::NAME
     }
 
-    ///
-    fn kind(&self) -> Kind {
-        T::KIND
+    fn data_model_kind(&self) -> Kind {
+        T::DATA_MODEL_KIND
+    }
+
+    fn schema_kind(&self) -> Kind {
+        T::SCHEMA_KIND
+    }
+
+    fn repr_kind(&self) -> Kind {
+        T::REPR_KIND
     }
 }
-// impl_downcast!(sync ErasedRepresentation assoc Representation where Representation: crate::Representation);
-impl_downcast!(sync ErasedRepresentation);
+
+///
+// #[derive(Debug)]
+pub struct AnyRepresentation(Box<dyn ErasedRepresentation>);
+
+impl AnyRepresentation {
+    ///
+    #[inline]
+    pub fn is<T>(&self) -> bool
+    where
+        T: Representation + 'static,
+    {
+        (*self.0).as_any().is::<T>()
+    }
+
+    ///
+    #[inline]
+    pub fn downcast_ref<T>(&self) -> Option<&T>
+    where
+        T: Representation + 'static,
+    {
+        (*self.0).as_any().downcast_ref()
+    }
+
+    ///
+    #[inline]
+    pub fn downcast<T>(self) -> Result<T, Error>
+    where
+        T: Representation + 'static,
+    {
+        let dag = self
+            .0
+            .downcast()
+            .map_err(|_| Error::DowncastFailure(T::NAME))?;
+        Ok(*dag)
+    }
+}
+
+impl<T: Representation + 'static> From<T> for AnyRepresentation {
+    fn from(dag: T) -> Self {
+        Self(Box::new(dag))
+    }
+}
+
+// impl<T: Representation + 'static> TryFrom<AnyRepresentation> for T {
+//     type Error = Error;
+//     // fn try_into(self) -> Result<T, Self::Error> {
+//     fn try_from(any: AnyRepresentation) -> Result<Self, Self::Error> {
+//         any.0.downcast().map_err(Error::DowncastFailure)
+//     }
+// }
+
+// impl Debug for dyn ErasedRepresentation {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         // let dag = Self::downcast_as(self).unrwap();
+//         // dag.fmt(f)
+//         // self.downcast_as().fmt(f)
+//         unimplemented!()
+//     }
+// }
+
+// pub trait ErasedRepresentationExt: ErasedRepresentation {
+//     ///
+//     #[inline]
+//     fn is(&self) -> bool {
+//         (*self)
+//             .as_any()
+//             .is::<<Self as ErasedRepresentation>::Representation>()
+//     }
+
+//     ///
+//     #[inline]
+//     fn downcast_as(&self) -> Option<&<Self as ErasedRepresentation>::Representation> {
+//         (*self).as_any().downcast_ref()
+//     }
+// }
+
+// impl ErasedRepresentationExt for dyn ErasedRepresentation
+// // where
+// //     T: Representation + ErasedRepresentation + 'static,
+// {
+//     type Representation = Self;
+// }
 
 /*
 

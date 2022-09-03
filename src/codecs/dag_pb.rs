@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::dev::*;
 use std::convert::TryFrom;
 
 ///
@@ -52,7 +52,7 @@ impl TryFrom<u64> for DagPb {
     fn try_from(code: u64) -> Result<Self, Self::Error> {
         match code {
             Self::CODE => Ok(Self),
-            _ => Err(Error::UnknownCodec(code)),
+            _ => Err(Error::UnknownMulticodec(code)),
         }
     }
 }
@@ -76,6 +76,19 @@ impl Codec for DagPb {
     fn read<T, R>(&mut self, reader: R) -> Result<T, Error>
     where
         T: Representation,
+        R: Read,
+    {
+        unimplemented!()
+    }
+
+    /// Given a `Read`, deserialize a dag.
+    fn read_with_seed<'de, S, R>(
+        &mut self,
+        seed: S,
+        reader: R,
+    ) -> Result<<S as DeserializeSeed<'de>>::Value, Error>
+    where
+        S: DeserializeSeed<'de>,
         R: Read,
     {
         unimplemented!()

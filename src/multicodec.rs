@@ -1,10 +1,13 @@
 use crate::dev::*;
-use std::convert::TryFrom;
+use std::{
+    convert::TryFrom,
+    io::{Read, Write},
+};
 
 macro_rules! impl_multicodec {
     ($(
         $(#[$meta:meta])*
-        $variant:ident -> $ty:ty,
+        $variant:ident -> $ty:ty as $name:expr,
     )*) => {
         ///
         #[derive(Clone, Debug)]
@@ -23,6 +26,22 @@ macro_rules! impl_multicodec {
                     $(Self::$variant(_) => <$ty>::CODE,)*
                 }
             }
+
+            ///
+            pub const fn from_code<const C: u64>() -> Result<Self, Error> {
+                match C {
+                    $(<$ty>::CODE => Ok(Self::$variant(<$ty>::new())),)*
+                    code => Err(Error::UnknownMulticodecCode(code))
+                }
+            }
+
+            ///
+            pub fn from_str(name: &str) -> Result<Self, Error> {
+                match name {
+                    $($name => Ok(Self::$variant(<$ty>::new())),)*
+                    name => Err(Error::UnknownMulticodecName(name.to_string()))
+                }
+            }
         }
 
         impl TryFrom<u64> for Multicodec {
@@ -30,11 +49,21 @@ macro_rules! impl_multicodec {
             #[inline]
             fn try_from(code: u64) -> Result<Self, Self::Error> {
                 match code {
-                    $(<$ty>::CODE => Ok(Self::$variant(<$ty>::default())),)*
-                    _ => Err(Error::UnknownMulticodec(code)),
+                    $(<$ty>::CODE => Ok(Self::$variant(<$ty>::new())),)*
+                    _ => Err(Error::UnknownMulticodecCode(code)),
                 }
             }
         }
+
+        // impl<'a> TryFrom<&'a str> for Multicodec {
+        //     type Error = Error;
+        //     fn try_from(s: &'a str) -> Result<Self, Self::Error> {
+        //         match s {
+        //             $($str => Ok(Self::$variant(<$ty>::default())),)*
+        //             _ => Err(Error::UnknownMulticodec(code)),
+        //         }
+        //     }
+        // }
 
         impl Codec for Multicodec {
             fn write<T, W>(&mut self, dag: &T, writer: W) -> Result<(), Error>
@@ -84,8 +113,8 @@ macro_rules! impl_multicodec {
 }
 
 impl_multicodec! {
-    DagCbor -> DagCbor,
-    DagJson -> DagJson,
+    DagCbor -> DagCbor as "dag-cbor",
+    DagJson -> DagJson as "dag-json",
     // VerkleDagCbor,
     // Custom(Box<dyn Codec>),
 }

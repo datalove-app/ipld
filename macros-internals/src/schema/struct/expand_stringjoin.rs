@@ -1,7 +1,10 @@
 use super::*;
-use crate::dev::{
-    schema::expand::{self, ExpandAdvancedRepresentation, ExpandBasicRepresentation},
-    SchemaMeta,
+use crate::{
+    dev::{
+        schema::expand::{self, ExpandAdvancedRepresentation, ExpandBasicRepresentation},
+        SchemaMeta,
+    },
+    schema::SchemaKind,
 };
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens, TokenStreamExt};
@@ -13,10 +16,7 @@ impl ExpandBasicRepresentation for StringjoinStructReprDefinition {
         let attrs = &meta.attrs;
         let vis = &meta.vis;
         let ident = &meta.name;
-        let fields: Vec<TokenStream> = self
-            .iter()
-            .map(super::expand::default_field_def)
-            .collect();
+        let fields: Vec<TokenStream> = self.iter().map(super::expand::default_field_def).collect();
 
         quote! {
             #(#attrs)*
@@ -30,7 +30,7 @@ impl ExpandBasicRepresentation for StringjoinStructReprDefinition {
         TokenStream::default()
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        super::expand::impl_repr(self.iter(), meta)
+        super::expand::impl_repr(self.iter(), meta, SchemaKind::String.to_ident())
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()

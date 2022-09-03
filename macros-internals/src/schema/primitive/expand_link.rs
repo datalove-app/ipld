@@ -2,7 +2,7 @@ use super::LinkReprDefinition;
 use crate::{
     define_newtype,
     dev::{
-        schema::{expand, DataModelKind},
+        schema::{expand, SchemaKind},
         SchemaMeta,
     },
 };

@@ -1,7 +1,10 @@
 use super::*;
-use crate::dev::{
-    schema::expand::{self, ExpandAdvancedRepresentation, ExpandBasicRepresentation},
-    SchemaMeta,
+use crate::{
+    dev::{
+        schema::expand::{self, ExpandAdvancedRepresentation, ExpandBasicRepresentation},
+        SchemaMeta,
+    },
+    schema::SchemaKind,
 };
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens, TokenStreamExt};
@@ -27,7 +30,7 @@ impl ExpandBasicRepresentation for TupleStructReprDefinition {
         TokenStream::default()
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        super::expand::impl_repr(self.iter(), meta)
+        super::expand::impl_repr(self.iter(), meta, SchemaKind::List.to_ident())
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()

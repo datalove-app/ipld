@@ -10,17 +10,21 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("CID error: {0}")]
+    #[error("Cid error: {0}")]
     Cid(#[from] CidError),
 
     #[error("Multihash error: {0}")]
     Multihash(#[from] MultihashError),
 
-    #[error("Value error: {0}")]
-    Value(&'static str),
+    //////////////////////////////////////////////////////////////////////
+    // codec
+    //////////////////////////////////////////////////////////////////////
+    ///
+    #[error("Unknown multicodec code: {0}")]
+    UnknownMulticodecCode(u64),
 
-    #[error("{0}")]
-    BlockMeta(&'static str),
+    #[error("Unknown multicodec name: {0}")]
+    UnknownMulticodecName(String),
 
     #[error("IPLD format encoding error: {0}")]
     Encoder(Box<dyn StdError + Send + Sync + 'static>),
@@ -28,6 +32,14 @@ pub enum Error {
     #[error("IPLD format decoding error: {0}")]
     Decoder(Box<dyn StdError + Send + Sync + 'static>),
 
+    // #[error("Value error: {0}")]
+    // Value(&'static str),
+    // #[error("{0}")]
+    // BlockMeta(&'static str),
+
+    //////////////////////////////////////////////////////////////////////
+    // selector
+    //////////////////////////////////////////////////////////////////////
     #[error("Selector Context error: {0}")]
     Context(#[from] anyhow::Error),
 
@@ -43,14 +55,13 @@ pub enum Error {
     #[error("Invalid selector: selector `{0}` does not possess an inner selector")]
     MissingNextSelector(&'static str),
 
-    #[error(
-        "Invalid selection: type `{desired_type_name}` cannot be selected from schema type `{actual_type_name}`"
-    )]
-    InvalidTypeSelection {
-        actual_type_name: &'static str,
-        desired_type_name: &'static str,
-    },
-
+    // #[error(
+    //     "Invalid selection: type `{desired_type_name}` cannot be selected from schema type `{actual_type_name}`"
+    // )]
+    // InvalidTypeSelection {
+    //     actual_type_name: &'static str,
+    //     desired_type_name: &'static str,
+    // },
     #[error("ExploreIndex failure: no node at index {0}")]
     ExploreIndexFailure(usize),
 
@@ -63,8 +74,11 @@ pub enum Error {
     #[error("Selector range error: {0}")]
     SelectorRange(&'static str),
 
-    #[error("Unknown multicodec: {0}")]
-    UnknownMulticodec(u64),
+    //////////////////////////////////////////////////////////////////////
+    // misc
+    //////////////////////////////////////////////////////////////////////
+    #[error("Downcast failure")]
+    DowncastFailure(&'static str),
 
     #[error("{0}")]
     Custom(anyhow::Error),
@@ -78,12 +92,12 @@ impl Error {
         Self::UnsupportedSelector {
             type_name: <T as Representation>::NAME,
             // selected_type_name: <U as Representation>::NAME,
-            selector_name: selector.name(),
+            selector_name: Representation::name(selector),
         }
     }
 
     pub(crate) fn missing_next_selector(selector: &Selector) -> Self {
-        Self::MissingNextSelector(selector.name())
+        Self::MissingNextSelector(Representation::name(selector))
     }
 
     pub(crate) fn explore_list_failure(selector: &Selector, current_index: usize) -> Self {

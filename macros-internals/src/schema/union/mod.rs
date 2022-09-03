@@ -6,7 +6,7 @@ mod expand_inline; // struct/map flattens, enum tag=dk
 mod expand_kinded; // enum untagged, but by schema kind
 mod parse;
 
-use crate::dev::{schema::DataModelKind, Fields, OuterAttributes};
+use crate::dev::{schema::SchemaKind, Fields, OuterAttributes};
 use std::ops::Deref;
 use syn::{parse::Parse, Generics, Ident, LitInt, LitStr, Type};
 
@@ -61,12 +61,12 @@ deref! {
     Envelope, LitStr => EnvelopeUnionReprDefinition,
     Inline, LitStr => InlineUnionReprDefinition,
     BytePrefix, LitInt => BytePrefixUnionReprDefinition,
-    Kinded, DataModelKind => KindedUnionReprDefinition,
+    Kinded, SchemaKind => KindedUnionReprDefinition,
 }
 
 pub type UnionStrFields = Fields<UnionField<LitStr>>;
 pub type UnionIntFields = Fields<UnionField<LitInt>>;
-pub type UnionKindedFields = Fields<UnionField<DataModelKind>>;
+pub type UnionKindedFields = Fields<UnionField<SchemaKind>>;
 
 #[derive(Debug)]
 pub struct UnionField<T: Parse> {

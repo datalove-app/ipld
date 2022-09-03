@@ -95,27 +95,28 @@ impl ToTokens for SchemaDefinition {
 
         let meta = &self.meta;
         tokens.append_all::<TokenStream>(match &self.repr {
+            // standard data model kinds
             ReprDefinition::Null(def) => expand_basic!(meta, def),
             ReprDefinition::Bool(def) => expand_basic!(meta, def),
             ReprDefinition::Int(def) => expand_basic!(meta, def),
             ReprDefinition::Float(def) => expand_basic!(meta, def),
             ReprDefinition::String(def) => expand_basic!(meta, def),
+            ReprDefinition::Bytes(def) => expand_basic!(meta, def),
+            // ReprDefinition::List(def) => expand_basic_def!(meta, def),
+            // ReprDefinition::Map(def) => expand_basic_def!(meta, def),
             ReprDefinition::Link(def) => expand_basic!(meta, def),
-            ReprDefinition::Copy(def) => expand_basic!(meta, def),
+
+            // schema kinds
+            ReprDefinition::Struct(def) => expand_basic!(meta, def),
             ReprDefinition::Enum(def) => expand_basic!(meta, def),
             ReprDefinition::Union(def) => expand_basic!(meta, def),
+            ReprDefinition::Copy(def) => expand_basic!(meta, def),
 
-            // possibly advanced reprs
+            // advanced reprs
             // ReprDefinition::Bytes(BytesReprDefinition::Advanced(def))
             // ReprDefinition::List(ListReprDefinition::Advanced(def))
             // ReprDefinition::Map(MapReprDefinition::Advanced(def))
             // ReprDefinition::Struct(StructReprDefinition::Advanced(def))
-
-            // non-advanced reprs
-            ReprDefinition::Bytes(def) => expand_basic!(meta, def),
-            // ReprDefinition::List(def) => expand_basic_def!(meta, def),
-            // ReprDefinition::Map(def) => expand_basic_def!(meta, def),
-            ReprDefinition::Struct(def) => expand_basic!(meta, def),
             _ => unimplemented!(),
         });
     }
@@ -191,6 +192,41 @@ pub trait ExpandAdvancedRepresentation {
     /// of a type that implements `Representation`.
     fn expand_struct(repr: AdvancedStructReprDefinition) -> TokenStream {
         unimplemented!()
+    }
+}
+
+impl SchemaKind {
+    pub(crate) fn to_ident(&self) -> Ident {
+        Ident::new(
+            match self {
+                Self::Null => "Null",
+                Self::Bool => "Bool",
+                Self::Int => "Int",
+                // Self::Int8 => "Int8",
+                // Self::Int16 => "Int16",
+                // Self::Int32 => "In32t",
+                // Self::Int64 => "Int64",
+                // Self::Int128 => "Int128",
+                // Self::Uint8 => "Uint8",
+                // Self::Uint16 => "Uint16",
+                // Self::Uint32 => "Uint32",
+                // Self::Uint64 => "Uint64",
+                // Self::Uint128 => "Uint128",
+                Self::Float => "Float",
+                // Self::Float32 => "Float32",
+                // Self::Float64 => "Float64",
+                Self::Bytes => "Bytes",
+                Self::String => "String",
+                Self::List => "List",
+                Self::Map => "Map",
+                Self::Link => "Link",
+                Self::Struct => "Struct",
+                Self::Union => "Union",
+                Self::Enum => "Enum",
+                Self::Copy => "Copy",
+            },
+            Span::call_site(),
+        )
     }
 }
 
@@ -425,37 +461,6 @@ pub(crate) fn impl_select(
 //         }
 //     }
 // }
-
-impl DataModelKind {
-    pub(crate) fn to_ident(&self) -> Ident {
-        Ident::new(
-            match self {
-                Self::Null => "Null",
-                Self::Bool => "Bool",
-                Self::Int => "Int",
-                // Self::Int8 => "Int8",
-                // Self::Int16 => "Int16",
-                // Self::Int32 => "In32t",
-                // Self::Int64 => "Int64",
-                // Self::Int128 => "Int128",
-                // Self::Uint8 => "Uint8",
-                // Self::Uint16 => "Uint16",
-                // Self::Uint32 => "Uint32",
-                // Self::Uint64 => "Uint64",
-                // Self::Uint128 => "Uint128",
-                Self::Float => "Float",
-                // Self::Float32 => "Float32",
-                // Self::Float64 => "Float64",
-                Self::Bytes => "Bytes",
-                Self::String => "String",
-                Self::List => "List",
-                Self::Map => "Map",
-                Self::Link => "Link",
-            },
-            Span::call_site(),
-        )
-    }
-}
 
 // pub(crate) fn impl_primtive_de_seed(meta: &SchemaMeta) -> TokenStream {
 //     let name = &meta.name;

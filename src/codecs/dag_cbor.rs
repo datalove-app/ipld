@@ -24,6 +24,12 @@ pub struct DagCbor;
 impl DagCbor {
     /// The multicodec code that identifies this IPLD Codec.
     pub const CODE: u64 = 0x71;
+
+    #[doc(hidden)]
+    #[inline]
+    pub const fn new() -> Self {
+        Self
+    }
 }
 
 impl Into<u64> for DagCbor {
@@ -37,7 +43,7 @@ impl TryFrom<u64> for DagCbor {
     fn try_from(code: u64) -> Result<Self, Self::Error> {
         match code {
             Self::CODE => Ok(Self),
-            _ => Err(Error::UnknownCodec(code)),
+            _ => Err(Error::UnknownMulticodecCode(code)),
         }
     }
 }
@@ -89,7 +95,7 @@ impl Codec for DagCbor {
 
 impl<'a, W: CborWrite> Encoder for &'a mut CborSerializer<W> {
     #[inline]
-    fn serialize_link<const SI: usize>(self, cid: &CidGeneric<SI>) -> Result<Self::Ok, CborError> {
+    fn serialize_link(self, cid: &Cid) -> Result<Self::Ok, CborError> {
         let bytes = cid.to_bytes();
         Tagged::new(Some(CBOR_LINK_TAG), bytes.as_slice()).serialize(self)
     }

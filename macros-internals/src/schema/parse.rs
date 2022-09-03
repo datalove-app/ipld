@@ -9,6 +9,27 @@ use syn::{
     Type, Visibility,
 };
 
+impl Parse for SchemaDefinition {
+    fn parse(input: ParseStream) -> ParseResult<Self> {
+        //
+        let meta = input.parse::<SchemaMeta>()?;
+        let repr = input.parse::<ReprDefinition>()?;
+
+        if meta.try_from.is_some() && !repr.supports_try_from() {
+            Err(input.error(format!("`{}` attribute only supported for Int, Float, String, and basic Bytes representations", attr::TRY_FROM)))
+        } else {
+            let mut schema_def = SchemaDefinition { meta, repr };
+            // TODO: complete this
+            // schema_def.meta.typedef_str = format!("{}", &schema_def);
+
+            // parse ending semicolon
+            parse_end(input)?;
+
+            Ok(schema_def)
+        }
+    }
+}
+
 impl Parse for SchemaMeta {
     fn parse(input: ParseStream) -> ParseResult<Self> {
         /* TODO: typedef str
@@ -41,27 +62,6 @@ impl Parse for SchemaMeta {
             name,
             generics,
         })
-    }
-}
-
-impl Parse for SchemaDefinition {
-    fn parse(input: ParseStream) -> ParseResult<Self> {
-        //
-        let meta = input.parse::<SchemaMeta>()?;
-        let repr = input.parse::<ReprDefinition>()?;
-
-        if meta.try_from.is_some() && !repr.supports_try_from() {
-            Err(input.error(format!("`{}` attribute only supported for Int, Float, String, and basic Bytes representations", attr::TRY_FROM)))
-        } else {
-            let mut schema_def = SchemaDefinition { meta, repr };
-            // TODO: complete this
-            // schema_def.meta.typedef_str = format!("{}", &schema_def);
-
-            // parse ending semicolon
-            parse_end(input)?;
-
-            Ok(schema_def)
-        }
     }
 }
 
@@ -162,6 +162,45 @@ impl Parse for ReprDefinition {
         };
 
         Ok(repr_def)
+    }
+}
+
+impl Parse for SchemaKind {
+    fn parse(input: ParseStream) -> ParseResult<Self> {
+        macro_rules! parse_kw {
+            ($input:expr, $kw:path => $variant:ident) => {{
+                $input.parse::<$kw>()?;
+                Ok(Self::$variant)
+            }};
+        }
+
+        match input {
+            _ if input.peek(kw::null) => parse_kw!(input, kw::null => Null),
+            _ if input.peek(kw::bool) => parse_kw!(input, kw::bool => Bool),
+            _ if input.peek(kw::boolean) => parse_kw!(input, kw::boolean => Bool),
+            _ if input.peek(kw::int) => parse_kw!(input, kw::int => Int),
+            // _ if input.peek(kw::int8) => parse_kw!(input, kw::int8 => Int8),
+            // _ if input.peek(kw::int16) => parse_kw!(input, kw::int16 => Int16),
+            // _ if input.peek(kw::int32) => parse_kw!(input, kw::int32 => Int32),
+            // _ if input.peek(kw::int64) => parse_kw!(input, kw::int64 => Int64),
+            // _ if input.peek(kw::int128) => parse_kw!(input, kw::int128 => Int128),
+            // _ if input.peek(kw::uint8) => parse_kw!(input, kw::uint8 => Uint8),
+            // _ if input.peek(kw::uint16) => parse_kw!(input, kw::uint16 => Uint16),
+            // _ if input.peek(kw::uint32) => parse_kw!(input, kw::uint32 => Uint32),
+            // _ if input.peek(kw::uint64) => parse_kw!(input, kw::uint64 => Uint64),
+            // _ if input.peek(kw::uint128) => parse_kw!(input, kw::uint128 => Uint128),
+            _ if input.peek(kw::float) => parse_kw!(input, kw::float => Float),
+            // _ if input.peek(kw::float32) => parse_kw!(input, kw::float32 => Float32),
+            // _ if input.peek(kw::float64) => parse_kw!(input, kw::float64 => Float64),
+            _ if input.peek(kw::bytes) => parse_kw!(input, kw::bytes => Bytes),
+            _ if input.peek(kw::string) => parse_kw!(input, kw::string => String),
+            _ if input.peek(kw::list) => parse_kw!(input, kw::list => List),
+            _ if input.peek(kw::map) => parse_kw!(input, kw::map => Map),
+            _ if input.peek(kw::link) => parse_kw!(input, kw::link => Link),
+            _ => Err(input.error(
+                "invalid IPLD union kinded representation definition: invalid data model kind",
+            )),
+        }
     }
 }
 

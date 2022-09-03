@@ -2,7 +2,7 @@ use super::*;
 use crate::dev::{
     schema::{
         expand::{self, ExpandBasicRepresentation},
-        kw, DataModelKind,
+        kw, SchemaKind,
     },
     SchemaMeta,
 };
@@ -17,7 +17,7 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
         let ident = &meta.name;
         let fields: Vec<TokenStream> = self
             .iter()
-            .map(UnionField::<DataModelKind>::field_typedef)
+            .map(UnionField::<SchemaKind>::field_typedef)
             .collect();
 
         quote! {
@@ -42,7 +42,9 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
         expand::impl_repr(
             meta,
             quote! {
-                const KIND: Kind = Kind::Union;
+                const DATA_MODEL_KIND: Kind = unimplemented!();
+                const SCHEMA_KIND: Kind = Kind::Union;
+                const REPR_KIND: Kind = unimplemented!();
                 // const FIELDS: Fields = Fields::Keyed(&[#(#fields,)*]);
 
                 #[inline]
@@ -52,22 +54,40 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
                     }
                 }
 
-                #[inline]
-                fn kind(&self) -> Kind {
-                    match self {
-                        #(#kind_branches,)*
-                    }
-                }
+                // #[inline]
+                // fn kind(&self) -> Kind {
+                //     match self {
+                //         #(#kind_branches,)*
+                //     }
+                // }
             },
         )
     }
 
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
-        TokenStream::default()
+        let lib = &meta.lib;
+        expand::impl_select(
+            meta,
+            // quote! {
+            //     // unimplemented!()
+            //     Ok(Null::r#match(seed)?.map(|_| Self))
+            // },
+            quote! {
+                unimplemented!()
+
+                // if #lib::dev::type_eq::<Self, S>() {
+                //     type_cast_selection::<Self, S, _, _>(|| {
+                //         Ok(Null::select::<Null>(seed)?.map(|_| Self))
+                //     })
+                // } else {
+                //     Null::select::<S>(seed)
+                // }
+            },
+        )
     }
 }
 
-impl UnionField<DataModelKind> {
+impl UnionField<SchemaKind> {
     const NULL: &'static str = "Null";
     const BOOL: &'static str = "Bool";
     const INT: &'static str = "Int";
@@ -93,9 +113,9 @@ impl UnionField<DataModelKind> {
     /// Outputs the kinded enum variant name.
     fn field_name(&self) -> Ident {
         let kind = match self.key {
-            DataModelKind::Null => Self::NULL,
-            DataModelKind::Bool => Self::BOOL,
-            DataModelKind::Int => Self::INT,
+            SchemaKind::Null => Self::NULL,
+            SchemaKind::Bool => Self::BOOL,
+            SchemaKind::Int => Self::INT,
             // DataModelKind::Int8 => Self::INT8,
             // DataModelKind::Int16 => Self::INT16,
             // DataModelKind::Int32 => Self::INT32,
@@ -106,14 +126,15 @@ impl UnionField<DataModelKind> {
             // DataModelKind::Uint32 => Self::UINT32,
             // DataModelKind::Uint64 => Self::UINT64,
             // DataModelKind::Uint128 => Self::UINT128,
-            DataModelKind::Float => Self::FLOAT,
+            SchemaKind::Float => Self::FLOAT,
             // DataModelKind::Float32 => Self::FLOAT32,
             // DataModelKind::Float64 => Self::FLOAT64,
-            DataModelKind::Bytes => Self::BYTES,
-            DataModelKind::String => Self::STRING,
-            DataModelKind::List => Self::LIST,
-            DataModelKind::Map => Self::MAP,
-            DataModelKind::Link => Self::LINK,
+            SchemaKind::Bytes => Self::BYTES,
+            SchemaKind::String => Self::STRING,
+            SchemaKind::List => Self::LIST,
+            SchemaKind::Map => Self::MAP,
+            SchemaKind::Link => Self::LINK,
+            _ => unreachable!(),
         };
 
         Ident::new(kind, Span::call_site())
@@ -190,4 +211,4 @@ impl UnionField<DataModelKind> {
     }
 }
 
-impl DataModelKind {}
+impl SchemaKind {}

@@ -24,6 +24,13 @@ use std::ops::Deref;
 use syn::{parse_str, Attribute, Generics, Ident, LitStr, Path, Type, Visibility};
 
 ///
+#[derive(Debug)]
+pub struct SchemaDefinition {
+    meta: SchemaMeta,
+    repr: ReprDefinition,
+}
+
+///
 #[derive(Debug, Clone)]
 pub struct SchemaMeta {
     pub lib: TokenStream,
@@ -73,18 +80,30 @@ impl SchemaMeta {
     }
 }
 
+impl SchemaMeta {
+    // fn to_try_from_meta(&self) -> Self {
+    //     SchemaMeta {
+    //         typedef_str: String::new(),
+    //         ipld_schema_lib: self.ipld_schema_lib.clone(),
+    //         try_from: None,
+    //         attrs: self.attrs.clone(),
+    //         vis: Visibility::Inherited,
+    //         name: self.try_from_name(),
+    //         generics: self.generics.clone(),
+    //     }
+    // }
+
+    // fn try_from_name(&self) -> Ident {
+    //     let try_from_name = self.try_from.as_ref().unwrap().value();
+    //     Ident::new(&try_from_name, Span::call_site())
+    // }
+}
+
 // #[derive(Debug, Clone)]
 // pub struct SchemaAttrs {
 //     lib: Path,
 //     try_from: Option<LitStr>,
 // }
-
-///
-#[derive(Debug)]
-pub struct SchemaDefinition {
-    meta: SchemaMeta,
-    repr: ReprDefinition,
-}
 
 ///
 #[derive(Debug)]
@@ -95,13 +114,55 @@ pub enum ReprDefinition {
     Float(FloatReprDefinition),
     String(StringReprDefinition),
     Bytes(BytesReprDefinition),
-    Link(LinkReprDefinition),
-    Copy(CopyReprDefinition),
     List(ListReprDefinition),
     Map(MapReprDefinition),
+    Link(LinkReprDefinition),
     Struct(StructReprDefinition),
     Enum(EnumReprDefinition),
     Union(UnionReprDefinition),
+    Copy(CopyReprDefinition),
+}
+
+impl ReprDefinition {
+    fn supports_try_from(&self) -> bool {
+        match self {
+            Self::Int(_)
+            | Self::Float(_)
+            | Self::String(_)
+            | Self::Bytes(BytesReprDefinition::Basic) => true,
+            _ => false,
+        }
+    }
+}
+
+///
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub enum SchemaKind {
+    Null,
+    Bool,
+    Int,
+    // Int8,
+    // Int16,
+    // Int32,
+    // Int64,
+    // Int128,
+    // Uint8,
+    // Uint16,
+    // Uint32,
+    // Uint64,
+    // Uint128,
+    Float,
+    // Float32,
+    // Float64,
+    Bytes,
+    String,
+    List,
+    Map,
+    Link,
+    Struct,
+    Enum,
+    Union,
+    Copy,
 }
 
 // #[derive(Debug)]
@@ -133,31 +194,6 @@ pub enum SchemaAttr {
 // pub struct FieldAttr {
 //     wrapper: Option<Ident>,
 // }
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub enum DataModelKind {
-    Null,
-    Bool,
-    Int,
-    // Int8,
-    // Int16,
-    // Int32,
-    // Int64,
-    // Int128,
-    // Uint8,
-    // Uint16,
-    // Uint32,
-    // Uint64,
-    // Uint128,
-    Float,
-    // Float32,
-    // Float64,
-    Bytes,
-    String,
-    List,
-    Map,
-    Link,
-}
 
 /// Keywords unique to IPLD Schemas and Representations
 #[macro_use]
@@ -210,37 +246,6 @@ macro_rules! def_attributes {
             item
         }
     };
-}
-
-impl SchemaMeta {
-    // fn to_try_from_meta(&self) -> Self {
-    //     SchemaMeta {
-    //         typedef_str: String::new(),
-    //         ipld_schema_lib: self.ipld_schema_lib.clone(),
-    //         try_from: None,
-    //         attrs: self.attrs.clone(),
-    //         vis: Visibility::Inherited,
-    //         name: self.try_from_name(),
-    //         generics: self.generics.clone(),
-    //     }
-    // }
-
-    // fn try_from_name(&self) -> Ident {
-    //     let try_from_name = self.try_from.as_ref().unwrap().value();
-    //     Ident::new(&try_from_name, Span::call_site())
-    // }
-}
-
-impl ReprDefinition {
-    fn supports_try_from(&self) -> bool {
-        match self {
-            Self::Int(_)
-            | Self::Float(_)
-            | Self::String(_)
-            | Self::Bytes(BytesReprDefinition::Basic) => true,
-            _ => false,
-        }
-    }
 }
 
 // struct Methods(Vec<ItemFn>);

@@ -3,7 +3,7 @@
 use super::*;
 use crate::dev::{
     common, parse_kwarg,
-    schema::{kw, DataModelKind},
+    schema::{kw, SchemaKind},
     OuterAttributes,
 };
 use std::collections::HashSet;
@@ -73,7 +73,7 @@ impl Parse for UnionReprDefinition {
                     let set = &fields
                         .iter()
                         .map(|field| &field.key)
-                        .collect::<HashSet<&DataModelKind>>();
+                        .collect::<HashSet<&SchemaKind>>();
                     fields.len() == set.len()
                 };
                 if !all_unique_kinds {
@@ -116,45 +116,6 @@ impl<T: Parse> Parse for UnionField<T> {
             key,
             linked,
         })
-    }
-}
-
-impl Parse for DataModelKind {
-    fn parse(input: ParseStream) -> ParseResult<Self> {
-        macro_rules! parse_kw {
-            ($input:expr, $kw:path => $variant:ident) => {{
-                $input.parse::<$kw>()?;
-                Ok(DataModelKind::$variant)
-            }};
-        }
-
-        match input {
-            _ if input.peek(kw::null) => parse_kw!(input, kw::null => Null),
-            _ if input.peek(kw::bool) => parse_kw!(input, kw::bool => Bool),
-            _ if input.peek(kw::boolean) => parse_kw!(input, kw::boolean => Bool),
-            _ if input.peek(kw::int) => parse_kw!(input, kw::int => Int),
-            // _ if input.peek(kw::int8) => parse_kw!(input, kw::int8 => Int8),
-            // _ if input.peek(kw::int16) => parse_kw!(input, kw::int16 => Int16),
-            // _ if input.peek(kw::int32) => parse_kw!(input, kw::int32 => Int32),
-            // _ if input.peek(kw::int64) => parse_kw!(input, kw::int64 => Int64),
-            // _ if input.peek(kw::int128) => parse_kw!(input, kw::int128 => Int128),
-            // _ if input.peek(kw::uint8) => parse_kw!(input, kw::uint8 => Uint8),
-            // _ if input.peek(kw::uint16) => parse_kw!(input, kw::uint16 => Uint16),
-            // _ if input.peek(kw::uint32) => parse_kw!(input, kw::uint32 => Uint32),
-            // _ if input.peek(kw::uint64) => parse_kw!(input, kw::uint64 => Uint64),
-            // _ if input.peek(kw::uint128) => parse_kw!(input, kw::uint128 => Uint128),
-            _ if input.peek(kw::float) => parse_kw!(input, kw::float => Float),
-            // _ if input.peek(kw::float32) => parse_kw!(input, kw::float32 => Float32),
-            // _ if input.peek(kw::float64) => parse_kw!(input, kw::float64 => Float64),
-            _ if input.peek(kw::bytes) => parse_kw!(input, kw::bytes => Bytes),
-            _ if input.peek(kw::string) => parse_kw!(input, kw::string => String),
-            _ if input.peek(kw::list) => parse_kw!(input, kw::list => List),
-            _ if input.peek(kw::map) => parse_kw!(input, kw::map => Map),
-            _ if input.peek(kw::link) => parse_kw!(input, kw::link => Link),
-            _ => Err(input.error(
-                "invalid IPLD union kinded representation definition: invalid data model kind",
-            )),
-        }
     }
 }
 

@@ -14,7 +14,7 @@ path = "src/lib.rs"
 # core
 bytes = "0.5"
 cid = { version = "0.8", features = ["std"] }
-erased-serde = { version = "0.3", features = ["std"] }
+# erased-serde = { version = "0.3", features = ["std"] }
 # ipfs = { git = "https://github.com/ipfs-rust/rust-ipfs", branch = "master", optional = true }
 ipld-macros = { path = "./macros" }
 ipld-macros-internals = { path = "./macros-internals" }

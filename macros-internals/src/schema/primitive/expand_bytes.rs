@@ -2,7 +2,7 @@ use super::BytesReprDefinition;
 use crate::{
     define_newtype,
     dev::{
-        schema::{expand, DataModelKind},
+        schema::{expand, SchemaKind},
         SchemaMeta,
     },
 };
@@ -77,7 +77,7 @@ impl expand::ExpandBasicRepresentation for BytesReprDefinition {
         expand::impl_repr(
             meta,
             quote! {
-                const KIND: #lib::dev::Kind = #lib::dev::Kind::Bytes;
+                const DATA_MODEL_KIND: #lib::dev::Kind = #lib::dev::Kind::Bytes;
             },
         )
     }

@@ -12,10 +12,6 @@ use serde_json::{
 // use simd_json::{};
 use std::convert::TryFrom;
 
-/// All bytes are encoded with the multibase `base64` w/o padding, resulting
-/// in the prefix `"m"`.
-pub const DEFAULT_MB: Multibase = Multibase::Base64;
-
 // TODO: add support for simd-json
 #[cfg(not(feature = "simd"))]
 /// The [DagJSON](https://github.com/ipld/specs/blob/master/block-layer/codecs/dag-json.md) codec, that delegates to `serde_json`.
@@ -25,6 +21,16 @@ pub struct DagJson;
 impl DagJson {
     /// The multicodec code that identifies this IPLD Codec.
     pub const CODE: u64 = 0x0129;
+
+    /// All bytes are encoded with the multibase `base64` w/o padding, resulting
+    /// in the prefix `"m"`.
+    pub const BYTES_MULTIBASE: Multibase = Multibase::Base64;
+
+    #[doc(hidden)]
+    #[inline]
+    pub const fn new() -> Self {
+        Self
+    }
 }
 
 impl Into<u64> for DagJson {
@@ -38,7 +44,7 @@ impl TryFrom<u64> for DagJson {
     fn try_from(code: u64) -> Result<Self, Self::Error> {
         match code {
             Self::CODE => Ok(Self),
-            _ => Err(Error::UnknownMulticodec(code)),
+            _ => Err(Error::UnknownMulticodecCode(code)),
         }
     }
 }
@@ -82,7 +88,10 @@ impl Codec for DagJson {
     }
 }
 
-impl<'a, W: Write> Encoder for &'a mut JsonSerializer<W> {
+impl<'a, W> Encoder for &'a mut JsonSerializer<W>
+where
+    W: Write,
+{
     /// Serializes bytes as a struct variant, e.g.
     /// `{ "/": { "base64": <some base64-encoded string> } }`.
     #[inline]
@@ -90,7 +99,7 @@ impl<'a, W: Write> Encoder for &'a mut JsonSerializer<W> {
         use ser::SerializeStructVariant;
 
         let mut sv = self.serialize_struct_variant("", 0, "/", 1)?;
-        sv.serialize_field("bytes", &multibase::encode(DEFAULT_MB, bytes))?;
+        sv.serialize_field("bytes", &multibase::encode(DagJson::BYTES_MULTIBASE, bytes))?;
         sv.end()
     }
 
@@ -101,7 +110,10 @@ impl<'a, W: Write> Encoder for &'a mut JsonSerializer<W> {
     }
 }
 
-impl<'de, 'a, R: JsonRead<'de>> Decoder<'de> for &'a mut JsonDeserializer<R> {
+impl<'a, 'de, R> Decoder<'de> for &'a mut JsonDeserializer<R>
+where
+    R: JsonRead<'de>,
+{
     /// In the DagJSON IPLD codec, three IPLD types map to the map as represented
     /// in the Serde data model:
     ///     - maps
@@ -147,11 +159,14 @@ impl<'de, 'a, R: JsonRead<'de>> Decoder<'de> for &'a mut JsonDeserializer<R> {
 mod visitor {
     use super::*;
 
-    /// `JsonVisitor` wraps an "any" type `Visitor` in order to enhance how maps are
+    /// `JsonVisitor` wraps a `Visitor` in order to enhance how maps are
     /// deserialized.
     pub struct JsonVisitor<V>(pub V);
 
-    impl<'de, V: IpldVisitorExt<'de>> Visitor<'de> for JsonVisitor<V> {
+    impl<'de, V> Visitor<'de> for JsonVisitor<V>
+    where
+        V: IpldVisitorExt<'de>,
+    {
         type Value = V::Value;
 
         #[inline]
@@ -323,7 +338,7 @@ mod visitor {
             }
 
             match multibase::decode(byte_str) {
-                Ok((mb, bytes)) if mb == DEFAULT_MB => Ok(MapLikeVisitor::Bytes(bytes)),
+                Ok((DagJson::BYTES_MULTIBASE, bytes)) => Ok(MapLikeVisitor::Bytes(bytes)),
                 _ => Err(de::Error::custom(
                     "DagJSON only supports bytes as base64-encoded strings",
                 )),

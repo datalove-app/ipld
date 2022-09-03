@@ -2,12 +2,8 @@ use crate::dev::*;
 use macros::derive_more::{AsMut, AsRef, From};
 use std::{
     boxed::Box,
-    marker::PhantomData,
+    fmt,
     path::{Path, PathBuf},
-    sync::{
-        mpsc::{channel, Receiver, SendError, Sender},
-        Arc,
-    },
 };
 
 // ///
@@ -118,7 +114,8 @@ pub(crate) use callbacks::*;
 mod callbacks {
     use super::*;
 
-    pub trait SelectNodeOp<C>: FnMut(SelectedNode, &mut C) -> Result<(), Error> {
+    ///
+    pub trait SelectNodeOp<C>: FnMut(NodeSelection, &mut C) -> Result<(), Error> {
         ///
         fn clone_box<'a>(&self) -> Box<dyn SelectNodeOp<C> + 'a>
         where
@@ -127,7 +124,7 @@ mod callbacks {
 
     impl<C, F> SelectNodeOp<C> for F
     where
-        F: FnMut(SelectedNode, &mut C) -> Result<(), Error> + Clone,
+        F: FnMut(NodeSelection, &mut C) -> Result<(), Error> + Clone,
     {
         fn clone_box<'a>(&self) -> Box<dyn SelectNodeOp<C> + 'a>
         where
@@ -147,7 +144,7 @@ mod callbacks {
     }
 
     ///
-    pub trait SelectDagOp<C>: FnMut(SelectedDag, &mut C) -> Result<(), Error> {
+    pub trait SelectDagOp<C>: FnMut(DagSelection, &mut C) -> Result<(), Error> {
         ///
         fn clone_box<'a>(&self) -> Box<dyn SelectDagOp<C> + 'a>
         where
@@ -156,7 +153,7 @@ mod callbacks {
 
     impl<C, F> SelectDagOp<C> for F
     where
-        F: FnMut(SelectedDag, &mut C) -> Result<(), Error> + Clone,
+        F: FnMut(DagSelection, &mut C) -> Result<(), Error> + Clone,
     {
         fn clone_box<'a>(&self) -> Box<dyn SelectDagOp<C> + 'a>
         where
@@ -281,11 +278,12 @@ pub(crate) enum SelectionCallback<'a, C, T> {
        // }
 }
 
-impl<'a, C, T> Debug for SelectionCallback<'a, C, T>
+impl<'a, C, T> fmt::Debug for SelectionCallback<'a, C, T>
 where
+    C: Context,
     T: Representation,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::SelectNode { only_matched, .. } => f
                 .debug_struct("SelectionParams::SelectNode")
@@ -309,16 +307,39 @@ where
     }
 }
 
-impl<'a, C, T> Default for SelectionCallback<'a, C, T> {
+impl<'a, C, T> Default for SelectionCallback<'a, C, T>
+where
+    C: Context,
+    T: Representation,
+{
+    /// Defaults to a no-op function for selecting nodes.
     fn default() -> Self {
-        Self::SelectDag {
+        Self::SelectNode {
             cb: Box::new(|_, _| Ok(())),
-            // cb: |_, _| Ok(()),
+            only_matched: true,
         }
     }
 }
 
-impl<'a, C, T> SelectionCallback<'a, C, T> {
+// impl<'a, C, T, Cb> Into<SelectionCallback<'a, C, T>> for Cb
+// where
+//     C: Context,
+//     T: Representation,
+//     Cb: SelectNodeOp<C> + 'a,
+// {
+//     fn into(self) -> SelectionCallback<'a, C, T> {
+//         Self::SelectNode {
+//             cb: Box::new(self),
+//             only_matched: false,
+//         }
+//     }
+// }
+
+impl<'a, C, T> SelectionCallback<'a, C, T>
+where
+    C: Context,
+    T: Representation,
+{
     // #[inline]
     // pub(crate) fn select_node(&self, node: SelectedNode) -> Result<(), Error> {
     //     self.sender()?.send_node(node)
@@ -380,15 +401,13 @@ impl<'a, C, T> SelectionCallback<'a, C, T> {
 
     pub(super) fn select_node(
         &mut self,
-        selected_node: SelectedNode,
+        selected_node: NodeSelection,
         ctx: &mut C,
-        matched: bool,
     ) -> Result<(), Error> {
         match self {
-            Self::SelectNode { cb, only_matched } if matched && *only_matched => {
-                cb(selected_node, ctx)
-            }
-            Self::SelectNode { cb, only_matched } if !matched && !*only_matched => {
+            Self::SelectNode { cb, only_matched }
+                if !*only_matched || selected_node.matched && *only_matched =>
+            {
                 cb(selected_node, ctx)
             }
             Self::SelectNode { .. } => Ok(()),
@@ -396,153 +415,10 @@ impl<'a, C, T> SelectionCallback<'a, C, T> {
         }
     }
 
-    pub(super) fn select_dag(&mut self, dag: SelectedDag, ctx: &mut C) -> Result<(), Error> {
+    pub(super) fn select_dag(&mut self, dag: DagSelection, ctx: &mut C) -> Result<(), Error> {
         match self {
             Self::SelectDag { cb } => cb(dag, ctx),
             _ => unreachable!(),
         }
-    }
-
-    // /// replaces the inner dag to patch with the next dag
-    // pub(crate) fn to_patch<'b, V>(self, dag_ref: &'b mut V) -> SelectionParams<'b, C, V, U>
-    // where
-    //     'a: 'b,
-    // {
-    //     match self {
-    //         Self::Patch { op, flush, .. } => SelectionParams::Patch {
-    //             current: dag_ref,
-    //             op,
-    //             flush,
-    //         },
-    //         _ => unreachable!(),
-    //     }
-    // }
-    //
-    // pub(crate) fn to_patch_self<'b>(self) -> SelectionParams<'b, C, T>
-    // where
-    //     'a: 'b,
-    // {
-    //     match self {
-    //         Self::Patch { current, op, flush } if type_eq::<T, U>() => SelectionParams::Patch {
-    //             current,
-    //             flush,
-    //             // TODO? provide T to op, safe transmute it to U, call op with U
-    //             // op: Box::new(|dag: &mut T, ctx: &mut C| {
-    //             //     //
-    //             //     unimplemented!()
-    //             // }),
-    //             op,
-    //         },
-    //         _ => unreachable!(),
-    //     }
-    // }
-}
-
-// fn noop<C, U>(dag: &mut U, ctx: &mut C) -> Result<Option<U>, Error> {
-//     Ok(None)
-// }
-
-///
-#[derive(AsRef, AsMut, Debug, Default)]
-pub struct SelectionState {
-    // selector: Selector,
-    // mode: SelectionMode,
-    #[as_ref]
-    #[as_mut]
-    pub(crate) path: PathBuf,
-    // path: &'a mut PathBuf,
-    pub(crate) path_depth: usize,
-    pub(crate) link_depth: usize,
-    pub(crate) max_path_depth: Option<usize>,
-    pub(crate) max_link_depth: Option<usize>,
-    // sender: Option<SelectionSender>,
-    // params: SelectionParams<'a, C, T, U>,
-}
-
-// impl<'a> SelectorState<'a> {
-impl SelectionState {
-    #[inline]
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    #[inline]
-    pub(crate) const fn max_path_depth(&self) -> usize {
-        match self.max_path_depth {
-            Some(max) => max,
-            None => usize::MAX,
-        }
-    }
-
-    #[inline]
-    pub(crate) const fn max_link_depth(&self) -> usize {
-        match self.max_link_depth {
-            Some(max) => max,
-            None => usize::MAX,
-        }
-    }
-
-    ///
-    #[inline]
-    pub(crate) const fn with_max_path_depth(mut self, max_path_depth: usize) -> Self {
-        self.max_path_depth = Some(max_path_depth);
-        self
-    }
-
-    ///
-    #[inline]
-    pub(crate) const fn with_max_link_depth(mut self, max_link_depth: usize) -> Self {
-        self.max_link_depth = Some(max_link_depth);
-        self
-    }
-
-    #[inline]
-    pub(crate) fn descend<T: Representation>(
-        &mut self,
-        // next_selector: Selector,
-        next_path: Field<'_>,
-    ) -> Result<(), Error> {
-        if self.path_depth >= self.max_path_depth() {
-            return Err(Error::SelectorDepth(
-                "descending would exceed max path depth",
-                self.max_path_depth(),
-            ));
-        }
-        if self.link_depth >= self.max_link_depth() {
-            return Err(Error::SelectorDepth(
-                "descending would exceed max link depth",
-                self.max_link_depth(),
-            ));
-        }
-
-        next_path.append_to_path(&mut self.path);
-        self.path_depth += 1;
-        if T::IS_LINK {
-            self.link_depth += 1;
-        }
-
-        Ok(())
-    }
-
-    #[inline]
-    pub(crate) fn ascend<T: Representation>(
-        &mut self,
-        // previous_selector: Selector,
-    ) -> Result<(), Error> {
-        self.path.pop();
-        self.path_depth = self
-            .path_depth
-            .checked_sub(1)
-            .ok_or_else(|| Error::SelectorDepth("exceeds root path depth", self.path_depth))?;
-
-        if T::IS_LINK {
-            self.link_depth = self
-                .link_depth
-                .checked_sub(1)
-                .ok_or_else(|| Error::SelectorDepth("exceeds root link depth", self.link_depth))?;
-        }
-
-        // self.selector = previous_selector;
-        Ok(())
     }
 }

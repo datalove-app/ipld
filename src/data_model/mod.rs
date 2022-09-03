@@ -8,9 +8,9 @@ mod map;
 mod primitive;
 // mod recursive;
 
-use std::{boxed::Box, path::Path};
+use std::{boxed::Box, path::Path, rc::Rc};
 
-pub use link::{Cid, Link};
+pub use link::Link;
 pub use list::List;
 pub use map::Map;
 pub use primitive::*;
@@ -21,7 +21,7 @@ use macros::derive_more::{From, IsVariant, TryInto, Unwrap};
 ///
 #[derive(Clone, Debug, IsVariant, Unwrap)]
 pub enum Dag<T: Representation> {
-    Value(Value),
+    Value(Any),
     Type(T),
 }
 
@@ -32,7 +32,7 @@ schema! {
     // #[from(forward)]
     #[try_into(owned, ref, ref_mut)]
     // TODO: impl from(forward) and try_into for all unions and enums
-    pub type Value union {
+    pub type Any union {
         #[from(ignore)]
         | Null null
         | Bool bool
@@ -40,22 +40,20 @@ schema! {
         | Float float
         | String string
         | Bytes bytes
-        | List<Value> list
-        | Map<String, Value> map
-        | Link<BoxedValue> link
+        | List<Any> list
+        | Map<String, Any> map
+        | Link<AnyRc> link
     } representation kinded;
 }
 
-/// A shorthand type alias for any valid IPLD data model type.
-pub type Any = Value;
+/// Reference-counted [`Any`] type.
+pub type AnyRc = Rc<Any>;
 
-///
-pub type BoxedValue = Box<Value>;
+// /// A constant `Value::Null`.
+// pub const NULL_VALUE: Any = Any::Null;
 
-/// A constant `Value::Null`.
-pub const NULL_VALUE: Value = Value::Null;
-
-impl Value {
+/// TODO: convert this to a Node trait, that all types implement
+impl Any {
     /// LookupByString looks up a child object in this node and returns it.
     /// The returned Node may be any of the Kind:
     /// a primitive (string, int64, etc), a map, a list, or a link.
@@ -65,10 +63,11 @@ impl Value {
     ///
     /// If the key does not exist, a nil node and an error will be returned.
     pub fn lookup_by_string(&self, key: &str) -> Result<&Self, Error> {
-        match self {
-            Self::Map(inner) => unimplemented!(),
-            _ => Err(Error::Value("Value must be a map")),
-        }
+        // match self {
+        //     Self::Map(inner) => unimplemented!(),
+        //     _ => Err(Error::Value("Value must be a map")),
+        // }
+        unimplemented!()
     }
 
     /// LookupByNode is the equivalent of LookupByString, but takes a reified Node

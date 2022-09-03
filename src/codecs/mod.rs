@@ -4,15 +4,15 @@
 pub mod dag_cbor;
 #[cfg(feature = "dag-json")]
 pub mod dag_json;
-#[cfg(feature = "dag-pb")]
-pub mod dag_pb;
-
-#[cfg(feature = "multicodec")]
-pub mod multicodec;
+// #[cfg(feature = "dag-pb")]
+// pub mod dag_pb;
 
 use crate::dev::*;
 use serde::{de, ser};
-use std::convert::TryFrom;
+use std::{
+    convert::TryFrom,
+    io::{Read, Write},
+};
 
 /// An IPLD
 /// [Codec](https://github.com/ipld/specs/blob/master/block-layer/codecs/README.md)
@@ -175,6 +175,9 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
 mod specialization {
     use crate::dev::*;
 
+    // default impl<'de, V> IpldVisitorExt<'de> for V where V: Visitor<'de> {}
+
+    // TODO remove this macro, since I dont think we need erased-serde anymore
     macro_rules! default_impl_codec {
         (@ser {$($generics:tt)*} $ty:ty) => {
             /// Default (specialized) implementation for all `Serializer`s (to avoid having
@@ -256,14 +259,14 @@ mod specialization {
     default_impl_codec!(@ser {S: Serializer} S);
     default_impl_codec!(@de {D: Deserializer<'de>} D);
 
-    default_impl_codec!(@ser {'a} &'a mut dyn ErasedSerializer);
-    default_impl_codec!(@ser {'a} &'a mut (dyn ErasedSerializer + Send));
-    default_impl_codec!(@ser {'a} &'a mut (dyn ErasedSerializer + Sync));
-    default_impl_codec!(@ser {'a} &'a mut (dyn ErasedSerializer + Send + Sync));
-    default_impl_codec!(@de {'a} &'a mut dyn ErasedDeserializer<'de>);
-    default_impl_codec!(@de {'a} &'a mut (dyn ErasedDeserializer<'de> + Send));
-    default_impl_codec!(@de {'a} &'a mut (dyn ErasedDeserializer<'de> + Sync));
-    default_impl_codec!(@de {'a} &'a mut (dyn ErasedDeserializer<'de> + Send + Sync));
+    // default_impl_codec!(@ser {'a} &'a mut dyn ErasedSerializer);
+    // default_impl_codec!(@ser {'a} &'a mut (dyn ErasedSerializer + Send));
+    // default_impl_codec!(@ser {'a} &'a mut (dyn ErasedSerializer + Sync));
+    // default_impl_codec!(@ser {'a} &'a mut (dyn ErasedSerializer + Send + Sync));
+    // default_impl_codec!(@de {'a} &'a mut dyn ErasedDeserializer<'de>);
+    // default_impl_codec!(@de {'a} &'a mut (dyn ErasedDeserializer<'de> + Send));
+    // default_impl_codec!(@de {'a} &'a mut (dyn ErasedDeserializer<'de> + Sync));
+    // default_impl_codec!(@de {'a} &'a mut (dyn ErasedDeserializer<'de> + Send + Sync));
 
     // default_impl_codec!(@ser {'a} Box<dyn ErasedSerializer + 'a>);
     // default_impl_codec!(@ser {'a} Box<dyn ErasedSerializer + Send + 'a>);
@@ -281,6 +284,7 @@ mod specialization {
 
 pub(crate) mod test_utils {
     use crate::dev::*;
+
     use std::{convert::TryFrom, fmt::Debug, io::Read, string::ToString};
 
     pub fn roundtrip_bytes_codec<'de, T>(code: u64, cases: &[(T, &'de [u8])])

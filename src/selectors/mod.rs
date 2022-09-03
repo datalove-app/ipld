@@ -7,21 +7,27 @@
 #![allow(non_camel_case_types)]
 
 // mod path;
+mod callback;
 mod context;
-mod schema;
 mod seed;
-mod state;
+mod selectors;
 
+pub use callback::*;
 pub use context::*;
 pub use field::*;
-pub use schema::*;
+pub use params::*;
 pub use seed::*;
-pub use state::*;
+pub use selection::*;
+pub use selectors::*;
 
 use crate::dev::*;
 use macros::derive_more::From;
 use serde::de::DeserializeSeed;
-use std::path::{Path, PathBuf};
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+    vec::IntoIter,
+};
 
 ///
 /// TODO:
@@ -31,10 +37,10 @@ pub trait Select<C: Context>: Representation + 'static {
     //     type_eq2::<true, Self, S>()
     // }
 
-    /// Produces a stream of [`Selection`]s of some type `S`.
+    /// Produces a stream of [`Selection`]s of some type `T`.
     ///
     /// General impl flow:
-    ///     - select is given a context (seed) that can provide a block
+    ///     - select is given a context that can provide blocks (and other utilities required by this type for selection)
     ///     - grab the current block deserializer, use the seed
     ///         - until reaching a link, everything is in serde
     ///
@@ -48,20 +54,41 @@ pub trait Select<C: Context>: Representation + 'static {
         ctx: &mut C,
     ) -> Result<(), Error>;
 
+    /// Produces a stream of selections of some type `T` from within an in-memory dag.
+    fn select_in<T>(&self, params: SelectionParams<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
+        unimplemented!()
+    }
+
     // fn patch<S: Select<C>>(seed: ContextSeed<'_, C, Self, S>) -> Result<(), Error> {
     //     unimplemented!()
     // }
 }
 
-pub fn select_from_seed<const S: usize, C, T>(
-    params: SelectionParams<'_, S, C, T>,
+// impl<C, T> Select<C> for T
+// where
+//     C: Context,
+//     T: Representation + 'static,
+//     for<'a, 'de> ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
+// {
+//     fn select(params: SelectionParams<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
+//         select_from_seed::<C, T>(params, ctx)
+//     }
+// }
+
+///
+#[doc(hidden)]
+#[inline]
+pub fn select_from_seed<'de, C, T>(
+    params: SelectionParams<'_, C, T>,
     mut ctx: &mut C,
 ) -> Result<(), Error>
 where
     C: Context,
     T: Representation + 'static,
-    for<'a, 'de> ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
+    for<'a> ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
 {
+    let default_selector = Selector::DEFAULT;
+
     let SelectionParams {
         cid,
         selector,
@@ -75,261 +102,379 @@ where
         ..Default::default()
     };
     let seed = ContextSeed {
-        selector: &selector,
+        selector: &selector.unwrap_or(&default_selector),
         state: &mut state,
         callback,
         ctx: &mut ctx,
     };
+
+    Ok(seed.read(&cid)?)
+}
+
+mod params {
+    use super::*;
+
+    ///
+    #[derive(Debug)]
+    pub struct SelectionParams<'a, C, T = Any>
+    where
+        C: Context,
+        T: Representation,
     {
-        seed.read(&cid)?;
+        pub(crate) cid: Cid,
+        pub(crate) selector: Option<&'a Selector>,
+        pub(crate) max_path_depth: Option<usize>,
+        pub(crate) max_link_depth: Option<usize>,
+        pub(crate) callback: SelectionCallback<'a, C, T>,
     }
 
-    Ok(())
+    impl<'a, C, T> SelectionParams<'a, C, T>
+    where
+        C: Context,
+        T: Representation,
+    {
+        ///
+        pub fn new(cid: Cid) -> Self {
+            Self {
+                cid,
+                selector: None,
+                max_path_depth: None,
+                max_link_depth: None,
+                callback: Default::default(),
+            }
+        }
+
+        ///
+        pub fn with_selector(mut self, selector: &'a Selector) -> Self {
+            self.selector.replace(selector);
+            self
+        }
+
+        ///
+        pub fn with_max_path_depth(mut self, max_path_depth: usize) -> Self {
+            self.max_path_depth.replace(max_path_depth);
+            self
+        }
+
+        ///
+        pub fn with_max_link_depth(mut self, max_link_depth: usize) -> Self {
+            self.max_link_depth.replace(max_link_depth);
+            self
+        }
+
+        ///
+        pub fn into_node_iter(
+            self,
+            only_matched: bool,
+            ctx: &mut C,
+        ) -> Result<IntoIter<NodeSelection>, Error>
+        where
+            T: Select<C>,
+        {
+            let vec = RefCell::new(Vec::new());
+            let params = SelectionParams {
+                callback: SelectionCallback::SelectNode {
+                    only_matched,
+                    cb: Box::new(|node, _| {
+                        vec.borrow_mut().push(node);
+                        Ok(())
+                    }),
+                },
+                ..self
+            };
+
+            T::select(params, ctx)?;
+            Ok(vec.into_inner().into_iter())
+        }
+
+        ///
+        pub fn into_dag_iter(self, ctx: &mut C) -> Result<IntoIter<DagSelection>, Error>
+        where
+            T: Select<C>,
+        {
+            let vec = RefCell::new(Vec::new());
+            let params = SelectionParams {
+                callback: SelectionCallback::SelectDag {
+                    cb: Box::new(|node, _| {
+                        vec.borrow_mut().push(node);
+                        Ok(())
+                    }),
+                },
+                ..self
+            };
+
+            T::select(params, ctx)?;
+            Ok(vec.into_inner().into_iter())
+        }
+
+        /*
+        pub(crate) fn into_parts(
+            self,
+        ) -> (
+            Cid,
+            &'a Selector,
+            Option<usize>,
+            Option<usize>,
+            SelectionCallback<'a, C, T>,
+        ) {
+            let SelectionParams {
+                cid,
+                selector,
+                max_path_depth,
+                max_link_depth,
+                callback,
+            } = self;
+            (cid, selector, max_path_depth, max_link_depth, callback)
+        }
+         */
+    }
 }
 
-pub struct SelectionParams<'a, C, T> {
-    pub cid: Cid,
-    pub selector: &'a Selector,
-    pub max_path_depth: Option<usize>,
-    pub max_link_depth: Option<usize>,
-    pub(crate) callback: SelectionCallback<'a, C, T>,
-}
+mod selection {
+    use super::*;
 
-impl<'a, C, T> SelectionParams<'a, C, T>
-where
-    C: Context,
-    T: Representation,
-{
-    // pub fn into_seed(self, ctx: &'a mut C) -> ContextSeed<'a, C, T> {
-    //     ContextSeed {
-    //         selector,
-    //         callback,
-    //         ctx,
+    ///
+    #[derive(Clone, Debug, Deserialize, Serialize)]
+    pub struct NodeSelection {
+        pub path: PathBuf,
+        pub node: SelectedNode,
+        pub matched: bool,
+        pub label: Option<String>,
+    }
+
+    impl NodeSelection {
+        ///
+        pub fn new<T>(path: &Path, node: T) -> Self
+        where
+            T: Into<SelectedNode>,
+        {
+            Self {
+                path: path.to_owned(),
+                node: node.into(),
+                matched: false,
+                label: None,
+            }
+        }
+
+        ///
+        pub fn new_match<T>(path: &Path, node: T, label: Option<&str>) -> Self
+        where
+            T: Into<SelectedNode>,
+        {
+            Self {
+                path: path.to_owned(),
+                node: node.into(),
+                matched: true,
+                label: label.map(str::to_string),
+            }
+        }
+    }
+
+    ///
+    pub struct DagSelection {
+        pub path: PathBuf,
+        pub dag: AnyRepresentation,
+        pub label: Option<String>,
+    }
+
+    impl DagSelection {
+        ///
+        pub fn new<T>(path: &Path, dag: T, label: Option<&str>) -> Self
+        where
+            T: Representation + 'static,
+        {
+            Self {
+                path: path.to_owned(),
+                dag: dag.into(),
+                label: label.map(str::to_string),
+            }
+        }
+    }
+
+    // pub trait IntoDagIterator: Iterator<Item = DagSelection> + Sized {
+    //     fn into<T: Representation + 'static>(
+    //         self,
+    //     ) -> std::iter::Map<Self, Box<dyn Fn(DagSelection) -> Result<T, Error>>> {
+    //         self.map(Box::new(|DagSelection { dag, .. }| dag.downcast()))
     //     }
     // }
 
-    //     pub fn new_node_config<F>(cid: CidGeneric<S>, callback: F) -> Self
-    //     where F: SelectNodeOp<C> {
-    //         Self {
-    //             cid,
-    //             max_path_depth: None,
-    //             max_link_depth: None,
-    //             callback: Selection,
-    //         }
+    // impl<I> IntoDagIterator for I where I: Iterator<Item = DagSelection> + Sized {}
+
+    // impl<T> Into<(PathBuf, Option<T>, Option<String>)> for DagSelection
+    // where
+    //     T: Representation + 'static,
+    // {
+    //     fn into(self) -> (PathBuf, Option<T>, Option<String>) {
+    //         let dag = self.dag.downcast();
+    //         (self.path, dag, self.label)
     //     }
+    // }
 
-    //     pub fn new_dag_config(cid: CidGeneric<S>) -> Self {
-    //         Self {
-    //             cid,
-    //             max_path_depth: None,
-    //             max_link_depth: None,
-    //             callback: Default::default(),
-    //         }
-    //     }
+    ///
+    #[derive(Clone, Debug, From, Deserialize, Serialize)]
+    // #[from(forward)]
+    pub enum SelectedNode {
+        ///
+        #[serde(rename = "null")]
+        Null,
 
-    //     ///
-    //     #[inline]
-    //     pub fn with_max_path_depth(mut self, max_path_depth: usize) -> Self {
-    //         self.max_path_depth = Some(max_path_depth);
-    //         self
-    //     }
+        ///
+        #[serde(rename = "bool")]
+        Bool(bool),
 
-    //     ///
-    //     #[inline]
-    //     pub fn with_max_link_depth(mut self, max_link_depth: usize) -> Self {
-    //         self.max_link_depth = Some(max_link_depth);
-    //         self
-    //     }
-}
+        ///
+        #[serde(rename = "int8")]
+        Int8(i8),
 
-///
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SelectedNode {
-    pub path: PathBuf,
-    pub node: Node,
-    pub matched: bool,
-    pub label: Option<String>,
-}
+        ///
+        #[serde(rename = "int16")]
+        Int16(i16),
 
-///
-#[derive(Debug)]
-pub struct SelectedDag {
-    path: PathBuf,
-    dag: Box<dyn ErasedRepresentation>,
-    label: Option<String>,
-}
+        ///
+        #[serde(rename = "int")]
+        Int(Int),
 
-impl SelectedDag {
-    #[inline]
-    pub fn path(&self) -> &Path {
-        &self.path
+        ///
+        #[serde(rename = "int64")]
+        Int64(i64),
+
+        ///
+        #[serde(rename = "int128")]
+        Int128(i128),
+
+        ///
+        #[serde(rename = "uint8")]
+        Uint8(u8),
+
+        ///
+        #[serde(rename = "uint16")]
+        Uint16(u16),
+
+        ///
+        #[serde(rename = "uint32")]
+        Uint32(u32),
+
+        ///
+        #[serde(rename = "uint64")]
+        Uint64(u64),
+
+        ///
+        #[serde(rename = "uint128")]
+        Uint128(u128),
+
+        ///
+        #[serde(rename = "float32")]
+        Float32(f32),
+
+        ///
+        #[serde(rename = "float")]
+        Float(Float),
+
+        ///
+        #[serde(rename = "string")]
+        String(String),
+
+        ///
+        #[serde(rename = "bytes")]
+        Bytes(crate::dev::Bytes),
+
+        ///
+        #[serde(rename = "list")]
+        #[from(ignore)]
+        List,
+
+        ///
+        #[serde(rename = "map")]
+        #[from(ignore)]
+        Map,
+
+        ///
+        #[serde(rename = "link")]
+        Link(Cid),
     }
 
-    #[inline]
-    pub fn label(&self) -> Option<&str> {
-        self.label.as_deref()
-    }
-
-    ///
-    #[inline]
-    pub fn is<T>(&self) -> bool
-    where
-        T: Representation + 'static,
-    {
-        (*self.dag).as_any().is::<T>()
-    }
-
-    ///
-    #[inline]
-    pub fn downcast_as<T>(&self) -> Option<&T>
-    where
-        T: Representation + 'static,
-    {
-        (*self.dag).as_any().downcast_ref()
-    }
-}
-
-impl<T> Into<(PathBuf, Option<T>, Option<String>)> for SelectedDag
-where
-    T: Representation + 'static,
-{
-    fn into(self) -> (PathBuf, Option<T>, Option<String>) {
-        let dag = self.dag.into_any().downcast().ok().map(|t| *t);
-        (self.path, dag, self.label)
-    }
-}
-
-///
-#[derive(Clone, Debug, From, Deserialize, Serialize)]
-// #[from(forward)]
-pub enum Node {
-    ///
-    #[serde(rename = "null")]
-    Null,
-
-    ///
-    #[serde(rename = "bool")]
-    Bool(bool),
-
-    ///
-    #[serde(rename = "int8")]
-    Int8(i8),
-
-    ///
-    #[serde(rename = "int16")]
-    Int16(i16),
-
-    ///
-    #[serde(rename = "int")]
-    Int(Int),
-
-    ///
-    #[serde(rename = "int64")]
-    Int64(i64),
-
-    ///
-    #[serde(rename = "int128")]
-    Int128(i128),
-
-    ///
-    #[serde(rename = "uint8")]
-    Uint8(u8),
-
-    ///
-    #[serde(rename = "uint16")]
-    Uint16(u16),
-
-    ///
-    #[serde(rename = "uint32")]
-    Uint32(u32),
-
-    ///
-    #[serde(rename = "uint64")]
-    Uint64(u64),
-
-    ///
-    #[serde(rename = "uint128")]
-    Uint128(u128),
-
-    ///
-    #[serde(rename = "float32")]
-    Float32(f32),
-
-    ///
-    #[serde(rename = "float")]
-    Float(Float),
-
-    ///
-    #[serde(rename = "string")]
-    String(String),
-
-    ///
-    #[serde(rename = "bytes")]
-    Bytes(crate::dev::Bytes),
-
-    ///
-    #[serde(rename = "list")]
-    #[from(ignore)]
-    List,
-
-    ///
-    #[serde(rename = "map")]
-    #[from(ignore)]
-    Map,
-
-    ///
-    #[serde(rename = "link")]
-    Link(Cid),
-}
-
-impl<'a> From<&'a str> for Node {
-    fn from(s: &'a str) -> Self {
-        Self::String(s.into())
-    }
-}
-
-impl<T: Representation> From<List<T>> for Node {
-    fn from(_: List<T>) -> Self {
-        Self::List
-    }
-}
-
-impl<K: Representation, V: Representation> From<Map<K, V>> for Node {
-    fn from(_: Map<K, V>) -> Self {
-        Self::Map
-    }
-}
-
-impl<T: Representation> From<Link<T>> for Node {
-    fn from(link: Link<T>) -> Self {
-        Self::Link(link.into())
-    }
-}
-
-impl<T: Representation> From<Option<T>> for Node
-where
-    Node: From<T>,
-{
-    fn from(opt: Option<T>) -> Self {
-        match opt {
-            None => Self::Null,
-            Some(t) => <Self as From<T>>::from(t),
+    impl SelectedNode {
+        /// The IPLD [Data Model]() [`Kind`] of the selected node.
+        pub const fn kind(&self) -> Kind {
+            match self {
+                Self::Null => Kind::Null,
+                Self::Bool(_) => Kind::Bool,
+                Self::Int(_)
+                | Self::Int8(_)
+                | Self::Int16(_)
+                | Self::Int64(_)
+                | Self::Int128(_)
+                | Self::Uint8(_)
+                | Self::Uint16(_)
+                | Self::Uint32(_)
+                | Self::Uint64(_)
+                | Self::Uint128(_) => Kind::Int,
+                Self::Float(_) | Self::Float32(_) => Kind::Float,
+                Self::String(_) => Kind::String,
+                Self::Bytes(_) => Kind::Bytes,
+                Self::List => Kind::List,
+                Self::Map => Kind::Map,
+                Self::Link(_) => Kind::Link,
+            }
         }
     }
-}
 
-impl From<Value> for Node {
-    fn from(val: Value) -> Self {
-        match val {
-            Value::Null => Self::Null,
-            Value::Bool(inner) => Self::Bool(inner),
-            Value::Int(inner) => Self::Int(inner),
-            Value::Float(inner) => Self::Float(inner),
-            Value::String(inner) => Self::String(inner),
-            Value::Bytes(inner) => Self::Bytes(inner),
-            Value::List(_) => Self::List,
-            Value::Map(_) => Self::Map,
-            Value::Link(link) => Self::Link(link.into()),
+    impl From<Null> for SelectedNode {
+        fn from(_: Null) -> Self {
+            Self::Null
+        }
+    }
+
+    impl<'a> From<&'a str> for SelectedNode {
+        fn from(s: &'a str) -> Self {
+            Self::String(s.into())
+        }
+    }
+
+    impl<T: Representation> From<List<T>> for SelectedNode {
+        fn from(_: List<T>) -> Self {
+            Self::List
+        }
+    }
+
+    impl<K: Representation, V: Representation> From<Map<K, V>> for SelectedNode {
+        fn from(_: Map<K, V>) -> Self {
+            Self::Map
+        }
+    }
+
+    impl<T: Representation> From<Link<T>> for SelectedNode {
+        fn from(link: Link<T>) -> Self {
+            Self::Link(link.into())
+        }
+    }
+
+    impl<T: Representation> From<Option<T>> for SelectedNode
+    where
+        SelectedNode: From<T>,
+    {
+        fn from(opt: Option<T>) -> Self {
+            match opt {
+                None => Self::Null,
+                Some(t) => <Self as From<T>>::from(t),
+            }
+        }
+    }
+
+    impl From<Any> for SelectedNode {
+        fn from(val: Any) -> Self {
+            match val {
+                Any::Null => Self::Null,
+                Any::Bool(inner) => Self::Bool(inner),
+                Any::Int(inner) => Self::Int(inner),
+                Any::Float(inner) => Self::Float(inner),
+                Any::String(inner) => Self::String(inner),
+                Any::Bytes(inner) => Self::Bytes(inner),
+                Any::List(_) => Self::List,
+                Any::Map(_) => Self::Map,
+                Any::Link(link) => Self::Link(link.into()),
+            }
         }
     }
 }

@@ -17,22 +17,20 @@ mod _cid;
 mod _codecs;
 #[path = "multihash.rs"]
 mod _multihash;
-mod advanced_layouts;
-mod block;
+mod data_model;
 mod error;
+#[macro_use]
+mod macros;
 #[cfg(feature = "multicodec")]
 mod multicodec;
 mod representation;
 mod selectors;
-mod value;
 
 #[doc(inline)]
 pub use error::Error;
 // pub use ipld::borrowed::Ipld as BorrowedIpld;
 #[doc(inline)]
 pub use specs::*;
-#[doc(inline)]
-pub use value::Value;
 
 mod specs {
     use super::*;
@@ -42,8 +40,8 @@ mod specs {
     pub use crate::_codecs::dag_cbor::DagCbor;
     #[cfg(feature = "dag-json")]
     pub use crate::_codecs::dag_json::DagJson;
-    #[cfg(feature = "dag-pb")]
-    pub use crate::_codecs::dag_pb::DagPb;
+    // #[cfg(feature = "dag-pb")]
+    // pub use crate::_codecs::dag_pb::DagPb;
     pub use crate::_codecs::{Codec, Decoder, Encoder};
 
     // multiformats
@@ -60,14 +58,13 @@ mod specs {
     pub use crate::_cid::Cid;
     pub use cid::{Cid as DefaultCid, CidGeneric, Version};
 
-    // representation
+    // data model, schemas and representation
+    pub use crate::data_model::*;
     pub use crate::representation::Representation;
-
-    // schema
     pub use ipld_macros::{ipld_attr, schema};
 
     // selectors
-    pub use crate::selectors::{Context, Select, Selector};
+    pub use crate::selectors::{Context, Select, SelectionParams, Selector};
     pub use ipld_macros::selector;
 }
 
@@ -78,16 +75,9 @@ pub mod prelude {
     #[doc(inline)]
     pub use crate::_codecs::IpldVisitorExt;
     #[doc(inline)]
-    pub use crate::advanced_layouts::*;
-    #[doc(inline)]
     pub use crate::specs::*;
     #[doc(inline)]
-    pub use crate::value::*;
-    #[doc(inline)]
-    pub use crate::{Cid, Context, Error, Representation, Select, Selector, Value};
-
-    ///
-    pub const DEFAULT_MULTIHASH_SIZE: usize = 64;
+    pub use crate::{Any, Cid, Context, Error, Representation, Select, Selector};
 
     #[doc(hidden)]
     pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -105,7 +95,12 @@ pub mod dev {
     pub use anyhow;
     pub use bytes;
     // pub use erased_serde::{Deserializer as ErasedDeserializer, Serializer as ErasedSerializer};
-    pub use ipld_macros_internals as macros;
+    /// Useful macros for aiding in providing bespoke IPLD support.
+    pub mod macros {
+        pub use impl_ipld_serde;
+        pub use ipld_macros_internals::*;
+    }
+
     pub use serde::{
         self,
         de::{

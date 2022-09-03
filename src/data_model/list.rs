@@ -5,20 +5,18 @@ use std::{
 };
 
 ///
-pub type List<T = Value> = Vec<T>;
-
-// TODO: write the 4 Select impls, then the latter 3 for Vec<Link<T>>
+pub type List<T = Any> = Vec<T>;
 
 impl<T: Representation> Representation for List<T> {
     const NAME: &'static str = concat!("List<", stringify!(T::NAME), ">");
     const SCHEMA: &'static str = concat!(
         "type ",
         stringify!(Self::NAME),
-        " = [",
+        " [",
         stringify!(T::NAME),
         "]",
     );
-    const KIND: Kind = Kind::List;
+    const DATA_MODEL_KIND: Kind = Kind::List;
     const HAS_LINKS: bool = T::HAS_LINKS;
 
     fn has_links(&self) -> bool {
@@ -26,10 +24,66 @@ impl<T: Representation> Representation for List<T> {
     }
 }
 
+impl_ipld_serde! { @context_visitor
+    { T: Representation + 'static }
+    {
+        for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+        // ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
+    }
+    List<T>
+{
+    #[inline]
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", <List<T>>::NAME)
+    }
+
+    #[inline]
+    fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        match self.selector {
+            Selector::Matcher(matcher) => self.match_list(matcher, seq),
+            Selector::ExploreIndex(s) => self.explore_list(s.index as usize..s.index as usize, seq),
+            Selector::ExploreRange(s) => self.explore_list(s.start as usize..s.end as usize, seq),
+            Selector::ExploreAll(s) => self.explore_list(0.., seq),
+            _ => Err(A::Error::custom(Error::unsupported_selector::<List<T>>(
+                self.selector,
+            ))),
+        }
+    }
+}}
+
+impl_ipld_serde! { @context_deseed
+    { T: Representation + 'static }
+    {
+        for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+        // ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
+    }
+    List<T>
+{
+    #[inline]
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(self)
+    }
+}}
+
+impl_ipld_serde! { @context_select
+    { T: Representation + Send + Sync + 'static }
+    {
+        for<'b, 'de> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>
+    }
+    List<T>
+}
+
+/*
 impl<'a, 'de, C, T> Visitor<'de> for ContextSeed<'a, C, List<T>>
 where
     C: Context,
-    T: Representation + Send + Sync + 'static,
+    T: Representation + 'static,
     for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
 {
     type Value = ();
@@ -59,7 +113,7 @@ where
 impl<'a, 'de, C, T> DeserializeSeed<'de> for ContextSeed<'a, C, List<T>>
 where
     C: Context,
-    T: Representation + Send + Sync + 'static,
+    T: Representation + 'static,
     for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
 {
     type Value = ();
@@ -73,43 +127,39 @@ where
     }
 }
 
-// // TODO replace with impl_ipld_serde
-// impl<'a, C, T> Select<C> for List<T>
-// where
-//     C: Context,
-//     T: Representation + Send + Sync + 'static,
-// {
-//     fn select(params: SelectionParams<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
-//         unimplemented!()
-//     }
-// }
-
-impl_ipld_serde! { @select_with_seed
-    { T: Representation + Send + Sync + 'static }
-    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
-    List<T>
+// TODO replace with impl_ipld_serde
+impl<'a, C, T> Select<C> for List<T>
+where
+    C: Context,
+    T: Representation + Send + Sync + 'static,
+{
+    fn select(params: SelectionParams<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
+        unimplemented!()
+    }
 }
+ */
 
 // match impl
 impl<'a, C, T> ContextSeed<'a, C, List<T>>
 where
     C: Context,
-    T: Representation + Send + Sync + 'static,
+    T: Representation + 'static,
 {
     /// match
     fn match_list<'de, A>(mut self, matcher: &Matcher, mut seq: A) -> Result<(), A::Error>
     where
         A: SeqAccess<'de>,
         for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+        // ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
     {
         let mode = self.mode();
-        let mut dag: RefCell<List<T>> = RefCell::new(List::<T>::new());
+        let mut dag: RefCell<List<T>> = Default::default();
 
         // select list node, or set up list
         match mode {
             // select the list node
             SelectionMode::SelectNode => {
-                self.select_matched_node(Node::List, matcher.label.as_deref())
+                self.select_matched_node(SelectedNode::List, matcher.label.as_deref())
                     .map_err(A::Error::custom)?;
             }
             SelectionMode::SelectDag => {
@@ -163,10 +213,12 @@ where
         A: SeqAccess<'de>,
         R: RangeBounds<usize> + Iterator<Item = usize>,
         for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+        // ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
     {
         // select the list node
         if self.is_node() {
-            self.select_node(Node::List).map_err(A::Error::custom)?;
+            self.select_node(SelectedNode::List)
+                .map_err(A::Error::custom)?;
         }
 
         let is_unbounded = range.end_bound() == Bound::Unbounded;

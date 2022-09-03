@@ -32,7 +32,9 @@ impl ExpandBasicRepresentation for KeyedUnionReprDefinition {
         expand::impl_repr(
             meta,
             quote! {
-                const KIND: Kind = Kind::Union;
+                const DATA_MODEL_KIND: Kind = unimplemented!();
+                const SCHEMA_KIND: Kind = Kind::Union;
+                const REPR_KIND: Kind = unimplemented!();
                 // const FIELDS: Fields = Fields::Keyed(&[#(#fields,)*]);
 
                 #[inline]
@@ -42,12 +44,12 @@ impl ExpandBasicRepresentation for KeyedUnionReprDefinition {
                     }
                 }
 
-                #[inline]
-                fn kind(&self) -> Kind {
-                    match self {
-                        #(#kind_branches,)*
-                    }
-                }
+                // #[inline]
+                // fn kind(&self) -> Kind {
+                //     match self {
+                //         #(#kind_branches,)*
+                //     }
+                // }
 
                 #[inline]
                 fn has_links(&self) -> bool {

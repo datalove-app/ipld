@@ -196,13 +196,14 @@ macro_rules! derive_newtype_select {
 
 ///
 macro_rules! derive_newtype_conv {
-    ($def:ident, $meta:ident => $dm_ty:ident) => {{
+    ($def:ident, $meta:ident =>
+        $dm_ty:ident $selected_node:ident) => {{
         let ident = &$meta.name;
 
         quote! {
             impl Into<SelectedNode> for #ident {
                 fn into(self) -> SelectedNode {
-                    SelectedNode::#$dm_ty
+                    SelectedNode::#$selected_node
                 }
             }
 
@@ -213,13 +214,14 @@ macro_rules! derive_newtype_conv {
             }
         }
     }};
-    (@has_constructor $def:ident, $meta:ident => $dm_ty:ident) => {{
+    (@has_constructor $def:ident, $meta:ident =>
+        $dm_ty:ident $selected_node:ident) => {{
         let ident = &$meta.name;
 
         quote! {
             impl Into<SelectedNode> for #ident {
                 fn into(self) -> SelectedNode {
-                    SelectedNode::#$dm_ty(self.0)
+                    SelectedNode::#$selected_node(self.0)
                 }
             }
 
@@ -276,8 +278,9 @@ impl expand::ExpandBasicRepresentation for BoolReprDefinition {
         tokens
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        let dm_ty = SchemaKind::Bool.to_ident();
-        derive_newtype_conv!(@has_constructor self, meta => dm_ty)
+        let dm_ty = SchemaKind::Bool.data_model_ident();
+        let sn_ty = SchemaKind::Bool.selected_node_ident();
+        derive_newtype_conv!(@has_constructor self, meta => dm_ty sn_ty)
     }
 }
 
@@ -295,8 +298,9 @@ impl expand::ExpandBasicRepresentation for IntReprDefinition {
         derive_newtype_select!(@select self, meta => inner_ty)
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        let dm_ty = SchemaKind::Int.to_ident();
-        derive_newtype_conv!(@has_constructor self, meta => dm_ty)
+        let dm_ty = self.1.data_model_ident();
+        let sn_ty = self.1.selected_node_ident();
+        derive_newtype_conv!(@has_constructor self, meta => dm_ty sn_ty)
     }
 }
 
@@ -314,8 +318,9 @@ impl expand::ExpandBasicRepresentation for FloatReprDefinition {
         derive_newtype_select!(@select self, meta => inner_ty)
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        let dm_ty = SchemaKind::Float.to_ident();
-        derive_newtype_conv!(@has_constructor self, meta => dm_ty)
+        let dm_ty = self.1.data_model_ident();
+        let sn_ty = self.1.selected_node_ident();
+        derive_newtype_conv!(@has_constructor self, meta => dm_ty sn_ty)
     }
 }
 
@@ -339,8 +344,9 @@ impl expand::ExpandBasicRepresentation for StringReprDefinition {
         derive_newtype_select!(@select self, meta => inner_ty)
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        let dm_ty = SchemaKind::String.to_ident();
-        derive_newtype_conv!(@has_constructor self, meta => dm_ty)
+        let dm_ty = SchemaKind::String.data_model_ident();
+        let sn_ty = SchemaKind::String.data_model_ident();
+        derive_newtype_conv!(@has_constructor self, meta => dm_ty sn_ty)
     }
 }
 
@@ -360,7 +366,21 @@ impl expand::ExpandBasicRepresentation for CopyReprDefinition {
         derive_newtype_select!(@select self, meta => inner_ty)
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        let dm_ty = SchemaKind::String.to_ident();
-        derive_newtype_conv!(@has_constructor self, meta => dm_ty)
+        // let ident = meta.name;
+        // let dm_ty = SchemaKind::String.to_ident();
+        // derive_newtype_conv!(@has_constructor self, meta => dm_ty)
+        quote! {
+            // impl Into<SelectedNode> for #ident {
+            //     fn into(self) -> SelectedNode {
+            //         SelectedNode::#$selected_node
+            //     }
+            // }
+
+            // impl Into<Any> for #ident {
+            //     fn into(self) -> Any {
+            //         Any::#$dm_ty
+            //     }
+            // }
+        }
     }
 }

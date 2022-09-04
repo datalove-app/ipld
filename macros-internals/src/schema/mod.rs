@@ -78,9 +78,7 @@ impl SchemaMeta {
             .map(|g| quote!(#g))
             .unwrap_or(TokenStream::default())
     }
-}
 
-impl SchemaMeta {
     // fn to_try_from_meta(&self) -> Self {
     //     SchemaMeta {
     //         typedef_str: String::new(),
@@ -92,7 +90,7 @@ impl SchemaMeta {
     //         generics: self.generics.clone(),
     //     }
     // }
-
+    //
     // fn try_from_name(&self) -> Ident {
     //     let try_from_name = self.try_from.as_ref().unwrap().value();
     //     Ident::new(&try_from_name, Span::call_site())
@@ -140,20 +138,20 @@ impl ReprDefinition {
 pub enum SchemaKind {
     Null,
     Bool,
-    Int,
-    // Int8,
-    // Int16,
-    // Int32,
-    // Int64,
-    // Int128,
-    // Uint8,
-    // Uint16,
-    // Uint32,
-    // Uint64,
-    // Uint128,
-    Float,
-    // Float32,
-    // Float64,
+    Int, // same as Int128
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    Int128,
+    Uint8,
+    Uint16,
+    Uint32,
+    Uint64,
+    Uint128,
+    Float, // same as Float64
+    Float32,
+    Float64,
     Bytes,
     String,
     List,

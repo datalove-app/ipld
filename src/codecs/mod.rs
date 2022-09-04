@@ -14,47 +14,6 @@ use std::{
     io::{Read, Write},
 };
 
-/// An IPLD
-/// [Codec](https://github.com/ipld/specs/blob/master/block-layer/codecs/README.md)
-/// for reading and writing blocks.
-/// TODO const generic over CODE?
-pub trait Codec: Into<u64> + TryFrom<u64, Error = Error> {
-    /// Given a dag and a `Write`, encode it to the writer.
-    fn write<T, W>(&mut self, dag: &T, writer: W) -> Result<(), Error>
-    where
-        T: Representation,
-        W: Write;
-
-    /// Given some bytes, deserialize a dag.
-    fn decode<'de, T>(&mut self, bytes: &'de [u8]) -> Result<T, Error>
-    where
-        T: Representation;
-
-    // /// Given some bytes, deserialize a dag.
-    // fn decode_with_seed<'de, T>(&mut self, bytes: &'de [u8]) -> Result<T, Error>
-    // where
-    //     T: Representation,
-    // {
-    //     unimplemented!()
-    // }
-
-    /// Given a `Read`, deserialize a dag.
-    fn read<T, R>(&mut self, reader: R) -> Result<T, Error>
-    where
-        T: Representation,
-        R: Read;
-
-    /// Given a `Read`, deserialize a dag.
-    fn read_with_seed<'de, S, R>(
-        &mut self,
-        seed: S,
-        reader: R,
-    ) -> Result<<S as DeserializeSeed<'de>>::Value, Error>
-    where
-        S: DeserializeSeed<'de>,
-        R: Read;
-}
-
 // pub trait CodecExt<'de>: Codec {
 //     type Encoder: Encoder;
 //     type Decoder: Decoder<'de>;
@@ -128,7 +87,7 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
     where
         E: de::Error,
     {
-        Err(de::Error::invalid_type(de::Unexpected::Other("CID"), &self))
+        Err(E::invalid_type(de::Unexpected::Other("Cid"), &self))
     }
 
     /// The input contains the bytes of a `Cid`.
@@ -137,7 +96,7 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
     where
         E: de::Error,
     {
-        Err(de::Error::invalid_type(de::Unexpected::Other("CID"), &self))
+        Err(E::invalid_type(de::Unexpected::Other("Cid"), &self))
     }
 
     /// The input contains a string representation of a `Cid`.
@@ -147,7 +106,7 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
     where
         E: de::Error,
     {
-        Err(de::Error::invalid_type(de::Unexpected::Other("CID"), &self))
+        Err(E::invalid_type(de::Unexpected::Other("Cid"), &self))
     }
 
     /// The input contains a string representation of a `Cid`.
@@ -157,7 +116,7 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
     where
         E: de::Error,
     {
-        Err(de::Error::invalid_type(de::Unexpected::Other("CID"), &self))
+        Err(E::invalid_type(de::Unexpected::Other("Cid"), &self))
     }
 }
 

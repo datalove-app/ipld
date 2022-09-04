@@ -196,25 +196,56 @@ pub trait ExpandAdvancedRepresentation {
 }
 
 impl SchemaKind {
-    pub(crate) fn to_ident(&self) -> Ident {
+    pub(crate) fn data_model_ident(&self) -> Ident {
         Ident::new(
             match self {
                 Self::Null => "Null",
                 Self::Bool => "Bool",
-                Self::Int => "Int",
-                // Self::Int8 => "Int8",
-                // Self::Int16 => "Int16",
-                // Self::Int32 => "In32t",
-                // Self::Int64 => "Int64",
-                // Self::Int128 => "Int128",
-                // Self::Uint8 => "Uint8",
-                // Self::Uint16 => "Uint16",
-                // Self::Uint32 => "Uint32",
-                // Self::Uint64 => "Uint64",
-                // Self::Uint128 => "Uint128",
-                Self::Float => "Float",
-                // Self::Float32 => "Float32",
-                // Self::Float64 => "Float64",
+                Self::Int
+                | Self::Int8
+                | Self::Int16
+                | Self::Int32
+                | Self::Int64
+                | Self::Int128
+                | Self::Uint8
+                | Self::Uint16
+                | Self::Uint32
+                | Self::Uint64
+                | Self::Uint128 => "Int",
+                Self::Float | Self::Float32 | Self::Float64 => "Float",
+                Self::Bytes => "Bytes",
+                Self::String => "String",
+                Self::List => "List",
+                Self::Map => "Map",
+                Self::Link => "Link",
+                Self::Struct => "Struct",
+                Self::Union => "Union",
+                Self::Enum => "Enum",
+                Self::Copy => "Copy",
+            },
+            Span::call_site(),
+        )
+    }
+
+    pub(crate) fn selected_node_ident(&self) -> Ident {
+        Ident::new(
+            match self {
+                Self::Null => "Null",
+                Self::Bool => "Bool",
+                Self::Int => "Int128",
+                Self::Int8 => "Int8",
+                Self::Int16 => "Int16",
+                Self::Int32 => "Int32",
+                Self::Int64 => "Int64",
+                Self::Int128 => "Int128",
+                Self::Uint8 => "Uint8",
+                Self::Uint16 => "Uint16",
+                Self::Uint32 => "Uint32",
+                Self::Uint64 => "Uint64",
+                Self::Uint128 => "Uint128",
+                Self::Float => "Float64",
+                Self::Float32 => "Float32",
+                Self::Float64 => "Float64",
                 Self::Bytes => "Bytes",
                 Self::String => "String",
                 Self::List => "List",

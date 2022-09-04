@@ -1,8 +1,9 @@
 use crate::dev::*;
 use macros::derive_more::From;
+use std::fmt;
 
 ///
-#[derive(Clone, Debug, Eq, From, PartialEq)]
+#[derive(Clone, Debug, Eq, From, Ord, PartialEq, PartialOrd)]
 pub enum Link<T: Representation = Any> {
     ///
     Cid(Cid),
@@ -38,15 +39,6 @@ impl<T: Representation> Link<T> {
      */
 }
 
-impl<T: Representation> Into<Cid> for Link<T> {
-    fn into(self) -> Cid {
-        match self {
-            Self::Cid(cid) => cid,
-            Self::Inner { cid, .. } => cid,
-        }
-    }
-}
-
 impl<T: Representation> Representation for Link<T> {
     const NAME: &'static str = "Link";
     const SCHEMA: &'static str = concat!("type Link &", stringify!(T::NAME));
@@ -69,16 +61,105 @@ impl<T: Representation> Representation for Link<T> {
     }
 }
 
-// impl_ipld_serde! { @context_visitor
-//     { T: Representation + 'static }
-//     { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>, }
-//     Link<T>
-// {
-//     #[inline]
-//     fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         write!(f, "{}", Link::<T>::NAME)
-//     }
-// }}
+impl_ipld_serde! { @context_visitor
+    { T: Representation + 'static }
+    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>, }
+    Link<T>
+{
+    #[inline]
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "A link to a `{}`", T::NAME)
+    }
+}}
+
+impl_ipld_serde! { @context_visitor_ext
+    { T: Representation + 'static }
+    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>, }
+    Link<T>
+{
+    #[inline]
+    fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        self.visit_link(cid_str)
+    }
+
+    #[inline]
+    fn visit_link_borrowed_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        self.visit_link(cid_str)
+    }
+
+    #[inline]
+    fn visit_link_bytes<E>(self, cid_bytes: &[u8]) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        self.visit_link(cid_bytes)
+    }
+
+    #[inline]
+    fn visit_link_borrowed_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        self.visit_link(cid_bytes)
+    }
+}}
+
+impl_ipld_serde! { @context_deseed
+    { T: Representation + 'static }
+    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
+    Link<T>
+{
+    #[inline]
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_link(self)
+    }
+}}
+
+impl_ipld_serde! { @context_select
+    { T: Representation + 'static }
+    { for<'b, 'de> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
+    Link<T>
+}
+
+impl<'a, C, T> ContextSeed<'a, C, Link<T>>
+where
+    C: Context,
+    T: Representation + 'static,
+{
+    ///
+    /// TODO: continue selection if the current selector is not a matcher
+    fn visit_link<Ci, E>(mut self, cid: Ci) -> Result<(), E>
+    where
+        Cid: TryFrom<Ci, Error = Error>,
+        E: de::Error,
+    {
+        let cid = Cid::try_from(cid).map_err(E::custom)?;
+        if let Some(matcher) = self.selector.as_matcher() {
+            return Ok(match self.mode() {
+                SelectionMode::SelectNode => {
+                    self.select_matched_node(cid.into(), matcher.label.as_deref())
+                        .map_err(E::custom)?;
+                }
+                SelectionMode::SelectDag => {
+                    self.select_matched_dag(Link::Cid(cid), matcher.label.as_deref())
+                        .map_err(E::custom)?;
+                }
+                _ => unimplemented!(),
+            });
+        }
+
+        unimplemented!()
+    }
+}
 
 // impl<'a, 'de, C, T> Visitor<'de> for ContextSeed<'a, C, Link<T>>
 // where
@@ -87,7 +168,7 @@ impl<T: Representation> Representation for Link<T> {
 //     for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
 // {
 //     type Value = ();
-
+//
 //     #[inline]
 //     fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 //         write!(formatter, "{}", Link::<T>::NAME)
@@ -110,7 +191,7 @@ impl<T: Representation> Representation for Link<T> {
 //     for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
 // {
 //     type Value = ();
-
+//
 //     #[inline]
 //     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
 //     where
@@ -120,22 +201,36 @@ impl<T: Representation> Representation for Link<T> {
 //     }
 // }
 
-// impl_ipld_serde! { @context_select
-//     { T: Representation + Send + Sync + 'static }
-//     { for<'b, 'de> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
-//     List<T>
+// impl<'a, 'de, C, T> Select<C> for Link<T>
+// where
+//     C: Context,
+//     T: Representation + Send + Sync + 'static,
+//     // ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
+// {
+//     fn select(params: SelectionParams<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
+//         unimplemented!()
+//     }
 // }
+
+impl<T: Representation> Into<Cid> for Link<T> {
+    fn into(self) -> Cid {
+        match self {
+            Self::Cid(cid) => cid,
+            Self::Inner { cid, .. } => cid,
+        }
+    }
+}
 
 // TODO dirty links?
 impl<T> Serialize for Link<T>
 where
     T: Representation,
 {
-    fn serialize<Se>(&self, serializer: Se) -> Result<Se::Ok, Se::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        Se: Serializer,
+        S: Serializer,
     {
-        <Se as Encoder>::serialize_link(serializer, self.cid())
+        <S as Encoder>::serialize_link(serializer, self.cid())
     }
 }
 
@@ -150,23 +245,6 @@ where
         Ok(Self::Cid(Cid::deserialize(deserializer)?))
     }
 }
-
-// impl<'a, 'de, C, T> Select<C> for Link<T>
-// where
-//     C: Context,
-//     T: Representation + Send + Sync + 'static,
-//     // ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
-// {
-//     fn select(params: SelectionParams<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
-//         unimplemented!()
-//     }
-// }
-
-// impl_ipld_serde! { @select_with_seed
-//     { T: Representation + Send + Sync + 'static }
-//     { for<'b, 'de> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
-//     Link<T>
-// }
 
 ////////////////////////////////////////////////////////////////////////////////
 // additional implementations

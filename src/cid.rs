@@ -1,13 +1,15 @@
 use crate::dev::{Multihash, *};
 use macros::derive_more::From;
 use multihash::Hasher;
-use std::{convert::TryFrom, io::BufRead};
+use std::{convert::TryFrom, fmt, io::BufRead};
 
 ///
 #[derive(Copy, Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Cid(DefaultCid);
+pub struct Cid(cid::CidGeneric<{ Self::SIZE }>);
 
 impl Cid {
+    const SIZE: usize = 64;
+
     ///
     #[inline]
     pub const fn version(&self) -> Version {
@@ -123,6 +125,39 @@ impl TryFrom<String> for Cid {
     }
 }
 
+// impl Representation for Cid {
+//     const NAME: &'static str = "Link";
+//     const SCHEMA: &'static str = "type Link &Any";
+//     const DATA_MODEL_KIND: Kind = Kind::Link;
+//     const IS_LINK: bool = true;
+// }
+
+// impl_ipld_serde! { @context_visitor {} {} Cid {
+//     #[inline]
+//     fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(f, "{}", Cid::NAME)
+//     }
+// }}
+
+// impl_ipld_serde! { @context_visitor_ext {} {} Cid {
+//     #[inline]
+//     fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(f, "{}", Cid::NAME)
+//     }
+// }}
+
+// impl_ipld_serde! { @context_select
+//     { T: Representation + Send + Sync + 'static }
+//     { for<'b, 'de> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
+//     List<T>
+// }
+
+// impl_ipld_serde! { @select_with_seed
+//     { T: Representation + Send + Sync + 'static }
+//     { for<'b, 'de> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
+//     Link<T>
+// }
+
 /// Helper [`Visitor`] for visiting [`CidGeneric`]s.
 ///
 /// [`Visitor`]: serde::de::Visitor
@@ -134,13 +169,12 @@ impl<'de> Visitor<'de> for CidVisitor {
     type Value = Cid;
 
     #[inline]
-    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("a CID")
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "a Cid of a multihash no longer than {} bytes", Cid::SIZE)
     }
 }
 
 impl<'de> IpldVisitorExt<'de> for CidVisitor {
-    /// The input contains the bytes of a `Cid`.
     #[inline]
     fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
     where
@@ -149,7 +183,6 @@ impl<'de> IpldVisitorExt<'de> for CidVisitor {
         Self::Value::try_from(cid_str).map_err(E::custom)
     }
 
-    /// The input contains the bytes of a `Cid`.
     #[inline]
     fn visit_link_borrowed_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
     where
@@ -158,7 +191,6 @@ impl<'de> IpldVisitorExt<'de> for CidVisitor {
         Self::Value::try_from(cid_str).map_err(E::custom)
     }
 
-    /// The input contains a string representation of a `Cid`.
     #[inline]
     fn visit_link_bytes<E>(self, cid_bytes: &[u8]) -> Result<Self::Value, E>
     where
@@ -167,7 +199,6 @@ impl<'de> IpldVisitorExt<'de> for CidVisitor {
         Self::Value::try_from(cid_bytes).map_err(E::custom)
     }
 
-    /// The input contains a string representation of a `Cid`.
     #[inline]
     fn visit_link_borrowed_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
     where
@@ -191,8 +222,7 @@ impl<'de> Deserialize<'de> for Cid {
     where
         D: Deserializer<'de>,
     {
-        let visitor = CidVisitor::default();
-        let cid = <D as Decoder<'de>>::deserialize_link(deserializer, visitor)?;
+        let cid = <D as Decoder<'de>>::deserialize_link(deserializer, CidVisitor)?;
         Ok(cid)
     }
 }

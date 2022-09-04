@@ -36,17 +36,19 @@ mod specs {
     use super::*;
 
     // codecs
+    pub use crate::_codecs::{Decoder, Encoder};
+    pub use crate::multicodec::Codec;
+
     #[cfg(feature = "dag-cbor")]
     pub use crate::_codecs::dag_cbor::DagCbor;
     #[cfg(feature = "dag-json")]
     pub use crate::_codecs::dag_json::DagJson;
     // #[cfg(feature = "dag-pb")]
     // pub use crate::_codecs::dag_pb::DagPb;
-    pub use crate::_codecs::{Codec, Decoder, Encoder};
-
-    // multiformats
     #[cfg(feature = "multicodec")]
     pub use crate::multicodec::Multicodec;
+
+    // multiformats
     pub use _multihash::Multihash;
     pub use multibase::Base as Multibase;
     pub use multihash::{
@@ -104,10 +106,10 @@ pub mod dev {
     pub use serde::{
         self,
         de::{
-            DeserializeOwned, DeserializeSeed, EnumAccess, Error as _, IgnoredAny, MapAccess,
+            self, DeserializeOwned, DeserializeSeed, EnumAccess, Error as _, IgnoredAny, MapAccess,
             SeqAccess, VariantAccess, Visitor,
         },
-        Deserialize, Deserializer, Serialize, Serializer,
+        ser, Deserialize, Deserializer, Serialize, Serializer,
     };
     pub use serde_repr;
 }

@@ -26,15 +26,12 @@ impl<T: Representation> Representation for List<T> {
 
 impl_ipld_serde! { @context_visitor
     { T: Representation + 'static }
-    {
-        for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
-        // ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
-    }
+    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
     List<T>
 {
     #[inline]
     fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", <List<T>>::NAME)
+        write!(f, "A list of `{}`", T::NAME)
     }
 
     #[inline]
@@ -56,10 +53,7 @@ impl_ipld_serde! { @context_visitor
 
 impl_ipld_serde! { @context_deseed
     { T: Representation + 'static }
-    {
-        for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
-        // ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
-    }
+    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
     List<T>
 {
     #[inline]
@@ -72,10 +66,8 @@ impl_ipld_serde! { @context_deseed
 }}
 
 impl_ipld_serde! { @context_select
-    { T: Representation + Send + Sync + 'static }
-    {
-        for<'b, 'de> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>
-    }
+    { T: Representation + 'static }
+    { for<'b, 'de> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
     List<T>
 }
 
@@ -150,7 +142,6 @@ where
     where
         A: SeqAccess<'de>,
         for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
-        // ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
     {
         let mode = self.mode();
         let mut dag: RefCell<List<T>> = Default::default();

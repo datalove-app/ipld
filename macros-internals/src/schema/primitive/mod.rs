@@ -3,7 +3,7 @@ mod expand_bytes;
 mod expand_link;
 mod parse;
 
-use crate::dev::SchemaMeta;
+use crate::dev::{SchemaKind, SchemaMeta};
 use proc_macro2::TokenStream;
 use syn::{Path, Type};
 
@@ -14,10 +14,10 @@ pub struct NullReprDefinition;
 pub struct BoolReprDefinition;
 
 #[derive(Debug)]
-pub struct IntReprDefinition(pub Type);
+pub struct IntReprDefinition(pub Type, pub SchemaKind);
 
 #[derive(Debug)]
-pub struct FloatReprDefinition(pub Type);
+pub struct FloatReprDefinition(pub Type, pub SchemaKind);
 
 #[derive(Debug)]
 pub struct StringReprDefinition;

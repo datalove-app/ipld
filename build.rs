@@ -1,5 +1,5 @@
 fn main() {
-    // pull in the codec fixtures
+    // clone the submodule ipld/codec-fixtures
     std::process::Command::new("git")
         .args([
             "submodule",

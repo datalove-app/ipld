@@ -95,7 +95,7 @@ impl ExpandBasicRepresentation for BasicStructReprDefinition {
         TokenStream::default()
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        impl_repr(self.iter(), meta, SchemaKind::Map.to_ident())
+        impl_repr(self.iter(), meta, SchemaKind::Map.data_model_ident())
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()

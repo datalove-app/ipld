@@ -325,51 +325,51 @@ mod selection {
 
         ///
         #[serde(rename = "int8")]
-        Int8(i8),
+        Int8(Int8),
 
         ///
         #[serde(rename = "int16")]
-        Int16(i16),
+        Int16(Int16),
 
         ///
-        #[serde(rename = "int")]
-        Int(Int),
+        #[serde(rename = "int32")]
+        Int32(Int32),
 
         ///
         #[serde(rename = "int64")]
-        Int64(i64),
+        Int64(Int64),
 
         ///
-        #[serde(rename = "int128")]
-        Int128(i128),
+        #[serde(rename = "int")]
+        Int128(Int128),
 
         ///
         #[serde(rename = "uint8")]
-        Uint8(u8),
+        Uint8(Uint8),
 
         ///
         #[serde(rename = "uint16")]
-        Uint16(u16),
+        Uint16(Uint16),
 
         ///
         #[serde(rename = "uint32")]
-        Uint32(u32),
+        Uint32(Uint32),
 
         ///
         #[serde(rename = "uint64")]
-        Uint64(u64),
+        Uint64(Uint64),
 
         ///
         #[serde(rename = "uint128")]
-        Uint128(u128),
+        Uint128(Uint128),
 
         ///
         #[serde(rename = "float32")]
-        Float32(f32),
+        Float32(Float32),
 
         ///
-        #[serde(rename = "float")]
-        Float(Float),
+        #[serde(rename = "float64")]
+        Float64(Float64),
 
         ///
         #[serde(rename = "string")]
@@ -377,7 +377,7 @@ mod selection {
 
         ///
         #[serde(rename = "bytes")]
-        Bytes(crate::dev::Bytes),
+        Bytes(Bytes),
 
         ///
         #[serde(rename = "list")]
@@ -400,9 +400,9 @@ mod selection {
             match self {
                 Self::Null => Kind::Null,
                 Self::Bool(_) => Kind::Bool,
-                Self::Int(_)
-                | Self::Int8(_)
+                Self::Int8(_)
                 | Self::Int16(_)
+                | Self::Int32(_)
                 | Self::Int64(_)
                 | Self::Int128(_)
                 | Self::Uint8(_)
@@ -410,7 +410,7 @@ mod selection {
                 | Self::Uint32(_)
                 | Self::Uint64(_)
                 | Self::Uint128(_) => Kind::Int,
-                Self::Float(_) | Self::Float32(_) => Kind::Float,
+                Self::Float32(_) | Self::Float64(_) => Kind::Float,
                 Self::String(_) => Kind::String,
                 Self::Bytes(_) => Kind::Bytes,
                 Self::List => Kind::List,
@@ -467,8 +467,8 @@ mod selection {
             match val {
                 Any::Null => Self::Null,
                 Any::Bool(inner) => Self::Bool(inner),
-                Any::Int(inner) => Self::Int(inner),
-                Any::Float(inner) => Self::Float(inner),
+                Any::Int(inner) => Self::Int128(inner),
+                Any::Float(inner) => Self::Float64(inner),
                 Any::String(inner) => Self::String(inner),
                 Any::Bytes(inner) => Self::Bytes(inner),
                 Any::List(_) => Self::List,

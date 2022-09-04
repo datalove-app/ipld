@@ -4,6 +4,49 @@ use std::{
     io::{Read, Write},
 };
 
+/// An unified trait for all IPLD
+/// [Codec](https://github.com/ipld/specs/blob/master/block-layer/codecs/README.dsmd)s,
+/// providing methods for reading and writing blocks.
+pub trait Codec: Into<u64> + TryFrom<u64, Error = Error> {
+    /// Given a dag and a `Write`, encode it to the writer.
+    fn write<T, W>(&mut self, dag: &T, writer: W) -> Result<(), Error>
+    where
+        T: Representation,
+        W: Write;
+
+    /// Given some bytes, deserialize a dag.
+    fn decode<'de, T>(&mut self, bytes: &'de [u8]) -> Result<T, Error>
+    where
+        T: Representation,
+    {
+        self.read(bytes)
+    }
+
+    // /// Given some bytes, deserialize a dag.
+    // fn decode_with_seed<'de, T>(&mut self, bytes: &'de [u8]) -> Result<T, Error>
+    // where
+    //     T: Representation,
+    // {
+    //     unimplemented!()
+    // }
+
+    /// Given a `Read`, deserialize a dag.
+    fn read<T, R>(&mut self, reader: R) -> Result<T, Error>
+    where
+        T: Representation,
+        R: Read;
+
+    /// Given a `Read`, deserialize a dag.
+    fn read_with_seed<'de, S, R>(
+        &mut self,
+        seed: S,
+        reader: R,
+    ) -> Result<<S as DeserializeSeed<'de>>::Value, Error>
+    where
+        S: DeserializeSeed<'de>,
+        R: Read;
+}
+
 macro_rules! impl_multicodec {
     ($(
         $(#[$meta:meta])*
@@ -21,6 +64,14 @@ macro_rules! impl_multicodec {
         impl Multicodec {
             ///
             #[inline]
+            pub const fn name(&self) -> &'static str {
+                match self {
+                    $(Self::$variant(_) => $name,)*
+                }
+            }
+
+            ///
+            #[inline]
             pub const fn code(&self) -> u64 {
                 match self {
                     $(Self::$variant(_) => <$ty>::CODE,)*
@@ -28,6 +79,7 @@ macro_rules! impl_multicodec {
             }
 
             ///
+            #[inline]
             pub const fn from_code<const C: u64>() -> Result<Self, Error> {
                 match C {
                     $(<$ty>::CODE => Ok(Self::$variant(<$ty>::new())),)*
@@ -36,7 +88,8 @@ macro_rules! impl_multicodec {
             }
 
             ///
-            pub fn from_str(name: &str) -> Result<Self, Error> {
+            #[inline]
+            pub fn from_name(name: &str) -> Result<Self, Error> {
                 match name {
                     $($name => Ok(Self::$variant(<$ty>::new())),)*
                     name => Err(Error::UnknownMulticodecName(name.to_string()))

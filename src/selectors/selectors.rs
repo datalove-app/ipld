@@ -392,9 +392,15 @@ mod private {
 }
 
 macro_rules! impl_variant {
-    ($variant:ident $selector_ty:ty | { $is:ident, $as:ident }) => {
+    ($variant:ident $selector_ty:ty | { $is:ident, $as:ident, $into:ident }) => {
         impl_variant!(@is $is -> $variant $selector_ty);
         impl_variant!(@as $as -> $variant $selector_ty);
+        impl_variant!(@into $into -> $variant $selector_ty);
+    };
+    (@wrapped $variant:ident $selector_ty:ty | { $is:ident, $as:ident, $into:ident }) => {
+        impl_variant!(@is $is -> $variant $selector_ty);
+        impl_variant!(@as $as -> $variant $selector_ty);
+        impl_variant!(@into $into -> $variant Rc<$selector_ty>);
     };
 
     (@is $fn:ident -> $variant:ident $selector_ty:ty) => {
@@ -409,6 +415,15 @@ macro_rules! impl_variant {
     (@as $fn:ident -> $variant:ident $selector_ty:ty) => {
         #[inline]
         pub fn $fn(&self) -> Option<&$selector_ty> {
+            match self {
+                Self::$variant(inner) => Some(inner),
+                _ => None,
+            }
+        }
+    };
+    (@into $fn:ident -> $variant:ident $selector_ty:ty) => {
+        #[inline]
+        pub fn $fn(self) -> Option<$selector_ty> {
             match self {
                 Self::$variant(inner) => Some(inner),
                 _ => None,
@@ -457,9 +472,9 @@ impl Selector {
 
     /// Attempts to produce the next selector to apply, given an optional field
     /// (key or index).
-    pub fn next<'a, F>(&self, field: Option<F>) -> Option<&Selector>
+    pub fn next<'a, K>(&self, field: Option<K>) -> Option<&Selector>
     where
-        F: AsRef<str> + AsRef<usize>,
+        K: AsRef<str> + AsRef<usize>,
     {
         match (self, field) {
             (Self::Matcher(_), _) => Some(self),
@@ -485,25 +500,25 @@ impl Selector {
     }
 
     impl_variant!(Matcher Matcher |
-        {is_matcher, as_matcher});
-    impl_variant!(ExploreAll ExploreAll |
-        {is_explore_all, as_explore_all});
-    impl_variant!(ExploreFields ExploreFields |
-        {is_explore_fields, as_explore_fields});
-    impl_variant!(ExploreIndex ExploreIndex |
-        {is_explore_index, as_explore_index});
-    impl_variant!(ExploreRange ExploreRange |
-        {is_explore_range, as_explore_range});
-    impl_variant!(ExploreRecursive ExploreRecursive |
-        {is_explore_recursive, as_explore_recursive});
-    impl_variant!(ExploreUnion ExploreUnion |
-        {is_explore_union, as_explore_union});
+        {is_matcher, as_matcher, into_matcher});
+    impl_variant!(@wrapped ExploreAll ExploreAll |
+        {is_explore_all, as_explore_all, into_explore_all});
+    // impl_variant!(ExploreFields ExploreFields |
+    //     {is_explore_fields, as_explore_fields, into_explore_fields});
+    impl_variant!(@wrapped ExploreIndex ExploreIndex |
+        {is_explore_index, as_explore_index, into_explore_index});
+    impl_variant!(@wrapped ExploreRange ExploreRange |
+        {is_explore_range, as_explore_range, into_explore_range});
+    // impl_variant!(ExploreRecursive ExploreRecursive |
+    //     {is_explore_recursive, as_explore_recursive, into_explore_recursive});
+    // impl_variant!(ExploreUnion ExploreUnion |
+    //     {is_explore_union, as_explore_union, into_explore_union});
     // impl_variant!(ExploreConditional ExploreConditional |
-    //     {is_explore_conditional, as_explore_conditional);
-    impl_variant!(ExploreInterpretAs ExploreInterpretAs |
-        {is_explore_interpret_as, as_explore_interpret_as});
-    impl_variant!(ExploreRecursiveEdge ExploreRecursiveEdge |
-        {is_explore_recursive_edge, as_explore_recursive_edge});
+    //     {is_explore_conditional, as_explore_conditional, into_explore_conditional);
+    // impl_variant!(ExploreInterpretAs ExploreInterpretAs |
+    //     {is_explore_interpret_as, as_explore_interpret_as, into_explore_interpret_as});
+    // impl_variant!(ExploreRecursiveEdge ExploreRecursiveEdge |
+    //     {is_explore_recursive_edge, as_explore_recursive_edge, into_explore_recursive_edge});
 }
 
 /* Selector */
@@ -529,8 +544,8 @@ impl FromStr for Selector {
 
 /* Slice */
 
-impl From<std::ops::Range<i32>> for Slice {
-    fn from(range: std::ops::Range<i32>) -> Self {
+impl From<std::ops::Range<Int>> for Slice {
+    fn from(range: std::ops::Range<Int>) -> Self {
         Self {
             from: range.start,
             to: range.end,
@@ -538,9 +553,9 @@ impl From<std::ops::Range<i32>> for Slice {
     }
 }
 
-impl From<Slice> for std::ops::Range<i32> {
-    fn from(slice: Slice) -> std::ops::Range<i32> {
-        std::ops::Range::<i32> {
+impl From<Slice> for std::ops::Range<Int> {
+    fn from(slice: Slice) -> std::ops::Range<Int> {
+        std::ops::Range::<Int> {
             start: slice.from,
             end: slice.to,
         }

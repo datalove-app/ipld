@@ -12,7 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # core
-bytes = "0.5"
+bytes = { version = "1.2", features = ["serde"] }
 cid = { version = "0.8", features = ["std"] }
 # erased-serde = { version = "0.3", features = ["std"] }
 # ipfs = { git = "https://github.com/ipfs-rust/rust-ipfs", branch = "master", optional = true }
@@ -26,13 +26,13 @@ thiserror = "1.0"
 
 # formats
 serde_cbor = { version = "0.11", optional = true } # TODO: use ciborium instead
-serde_json = { version = "1.0", optional = true }
-simd-json = { version = "0.6", optional = true }
+serde_json = { version = "1.0", optional = true, features = ["float_roundtrip"] }
+simd-json = { version = "0.6", optional = true, features = ["128bit"] }
 
 # misc
 anyhow = "1.0"
 const-str = "0.3"
-delegate = { version = "0.7", optional = true }
+delegate = "0.7"
 downcast-rs = "1.2"
 impls = "1.0"
 
@@ -43,7 +43,7 @@ proptest = "1.0"
 [features]
 default = ["multicodec"]
 dag-cbor = ["serde_cbor/tags"]
-dag-json = ["delegate", "serde_json"]
+dag-json = ["serde_json"]
 dag-pb = []
 # enables all available multicodecs
 multicodec = ["dag-cbor", "dag-json", "dag-pb"]

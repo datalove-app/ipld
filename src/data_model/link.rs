@@ -1,5 +1,5 @@
 use crate::dev::*;
-use macros::derive_more::From;
+use macros::{derive_more::From, impl_ipld_serde};
 use std::fmt;
 
 ///
@@ -61,7 +61,7 @@ impl<T: Representation> Representation for Link<T> {
     }
 }
 
-impl_ipld_serde! { @context_visitor
+impl_ipld_serde! { @context_seed_visitor
     { T: Representation + 'static }
     { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>, }
     Link<T>
@@ -72,7 +72,7 @@ impl_ipld_serde! { @context_visitor
     }
 }}
 
-impl_ipld_serde! { @context_visitor_ext
+impl_ipld_serde! { @context_seed_visitor_ext
     { T: Representation + 'static }
     { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>, }
     Link<T>
@@ -82,15 +82,8 @@ impl_ipld_serde! { @context_visitor_ext
     where
         E: serde::de::Error,
     {
-        self.visit_link(cid_str)
-    }
-
-    #[inline]
-    fn visit_link_borrowed_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.visit_link(cid_str)
+        let cid = Cid::try_from(cid_str).map_err(E::custom)?;
+        self.visit_link(cid)
     }
 
     #[inline]
@@ -98,19 +91,12 @@ impl_ipld_serde! { @context_visitor_ext
     where
         E: serde::de::Error,
     {
-        self.visit_link(cid_bytes)
-    }
-
-    #[inline]
-    fn visit_link_borrowed_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.visit_link(cid_bytes)
+        let cid = Cid::try_from(cid_bytes).map_err(E::custom)?;
+        self.visit_link(cid)
     }
 }}
 
-impl_ipld_serde! { @context_deseed
+impl_ipld_serde! { @context_seed_deseed
     { T: Representation + 'static }
     { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
     Link<T>
@@ -124,7 +110,7 @@ impl_ipld_serde! { @context_deseed
     }
 }}
 
-impl_ipld_serde! { @context_select
+impl_ipld_serde! { @context_seed_select
     { T: Representation + 'static }
     { for<'b, 'de> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
     Link<T>
@@ -137,12 +123,10 @@ where
 {
     ///
     /// TODO: continue selection if the current selector is not a matcher
-    fn visit_link<Ci, E>(mut self, cid: Ci) -> Result<(), E>
+    fn visit_link<E>(mut self, cid: Cid) -> Result<(), E>
     where
-        Cid: TryFrom<Ci, Error = Error>,
         E: de::Error,
     {
-        let cid = Cid::try_from(cid).map_err(E::custom)?;
         if let Some(matcher) = self.selector.as_matcher() {
             return Ok(match self.mode() {
                 SelectionMode::SelectNode => {

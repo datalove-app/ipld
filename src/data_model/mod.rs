@@ -18,12 +18,12 @@ pub use primitive::*;
 use crate::dev::*;
 use macros::derive_more::{From, IsVariant, TryInto, Unwrap};
 
-///
-#[derive(Clone, Debug, IsVariant, Unwrap)]
-pub enum Dag<T: Representation> {
-    Value(Any),
-    Type(T),
-}
+// ///
+// #[derive(Clone, Debug, IsVariant, Unwrap)]
+// pub enum Dag<T: Representation> {
+//     Value(Any),
+//     Type(T),
+// }
 
 schema! {
     ///
@@ -40,14 +40,13 @@ schema! {
         | Float float
         | String string
         | Bytes bytes
-        | List<Any> list
-        | Map<String, Any> map
-        | Link<AnyRc> link
+        // listed here b/c decoding untagged variants is attempted in def order
+        #[ipld_attr(wrapper = "Rc")]
+        | Link link
+        | List list
+        | Map map
     } representation kinded;
 }
-
-/// Reference-counted [`Any`] type.
-pub type AnyRc = Rc<Any>;
 
 // /// A constant `Value::Null`.
 // pub const NULL_VALUE: Any = Any::Null;

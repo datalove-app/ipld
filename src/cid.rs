@@ -4,11 +4,12 @@ use multihash::Hasher;
 use std::{convert::TryFrom, fmt, io::BufRead};
 
 ///
-#[derive(Copy, Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Default, Eq, From, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Cid(cid::CidGeneric<{ Self::SIZE }>);
 
 impl Cid {
-    const SIZE: usize = 64;
+    /// Allocated size of the [`Cid`]'s underlying [`Multihash`], in bytes.
+    pub const SIZE: usize = 64;
 
     ///
     #[inline]
@@ -71,7 +72,7 @@ impl Cid {
     }
 
     /// Generates an [`Cid`] from a [`BufRead`] of a block's bytes.
-    pub fn generate<R: BufRead>(
+    pub fn new<R: BufRead>(
         cid_version: Version,
         multicodec_code: u64,
         multihash_code: u64,
@@ -94,6 +95,16 @@ impl Cid {
         let cid = DefaultCid::new(cid_version, multicodec_code, mh)?;
         Ok(Self(cid))
     }
+
+    ///
+    pub fn derive_new<R: BufRead>(&self, block: R) -> Result<Self, Error> {
+        Self::new(
+            self.version(),
+            self.multicodec_code(),
+            self.multihash_code(),
+            block,
+        )
+    }
 }
 
 impl<const S: usize> PartialEq<CidGeneric<S>> for Cid {
@@ -107,7 +118,7 @@ impl<const S: usize> PartialEq<CidGeneric<S>> for Cid {
 impl<'a> TryFrom<&'a [u8]> for Cid {
     type Error = Error;
     fn try_from(bytes: &'a [u8]) -> Result<Self, Self::Error> {
-        Ok(Self(DefaultCid::try_from(bytes)?))
+        Ok(Self(DefaultCid::read_bytes(bytes)?))
     }
 }
 
@@ -178,15 +189,7 @@ impl<'de> IpldVisitorExt<'de> for CidVisitor {
     #[inline]
     fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
     where
-        E: serde::de::Error,
-    {
-        Self::Value::try_from(cid_str).map_err(E::custom)
-    }
-
-    #[inline]
-    fn visit_link_borrowed_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
+        E: de::Error,
     {
         Self::Value::try_from(cid_str).map_err(E::custom)
     }
@@ -194,15 +197,7 @@ impl<'de> IpldVisitorExt<'de> for CidVisitor {
     #[inline]
     fn visit_link_bytes<E>(self, cid_bytes: &[u8]) -> Result<Self::Value, E>
     where
-        E: serde::de::Error,
-    {
-        Self::Value::try_from(cid_bytes).map_err(E::custom)
-    }
-
-    #[inline]
-    fn visit_link_borrowed_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
+        E: de::Error,
     {
         Self::Value::try_from(cid_bytes).map_err(E::custom)
     }

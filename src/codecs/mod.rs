@@ -80,7 +80,7 @@ pub trait Decoder<'de>: Deserializer<'de> {
 ///
 /// Should be implemented by any types representing IPLD links and maps.
 pub trait IpldVisitorExt<'de>: Visitor<'de> {
-    /// The input contains the bytes of a `Cid`.
+    /// The input contains the string of a `Cid`.
     ///
     /// The default implementation fails with a type error.
     fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
@@ -90,13 +90,15 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
         Err(E::invalid_type(de::Unexpected::Other("Cid"), &self))
     }
 
-    /// The input contains the bytes of a `Cid`.
+    /// The input contains the string of a `Cid`.
+    ///
+    /// The default implementation delegates to [`visit_link_str`].
     #[inline]
     fn visit_link_borrowed_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
-        Err(E::invalid_type(de::Unexpected::Other("Cid"), &self))
+        self.visit_link_str(cid_str)
     }
 
     /// The input contains a string representation of a `Cid`.
@@ -111,12 +113,12 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
 
     /// The input contains a string representation of a `Cid`.
     ///
-    /// The default implementation fails with a type error.
+    /// The default implementation delegates to [`visit_link_bytes`].
     fn visit_link_borrowed_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
-        Err(E::invalid_type(de::Unexpected::Other("Cid"), &self))
+        self.visit_link_bytes(cid_bytes)
     }
 }
 
@@ -287,15 +289,6 @@ pub(crate) mod test_utils {
         let mut codec = Multicodec::try_from(code).expect("should find codec");
 
         for (ref dag, expected) in cases {
-            // writing
-            let string = write_to_str::<T>(&mut codec, dag).expect(&format!(
-                "Failed to encode `{}` {:?} into {}",
-                dag.name(),
-                dag,
-                expected,
-            ));
-            assert_eq!(*expected, string.as_str(), "Writing failure");
-
             // decoding
             let v = decode_from_str::<T>(&mut codec, expected).expect(&format!(
                 "Failed to decode `{}` from {}",
@@ -311,6 +304,15 @@ pub(crate) mod test_utils {
                 expected,
             ));
             assert_eq!(*dag, v, "Reading failure");
+
+            // writing
+            let string = write_to_str::<T>(&mut codec, dag).expect(&format!(
+                "Failed to encode `{}` {:?} into {}",
+                dag.name(),
+                dag,
+                expected,
+            ));
+            assert_eq!(*expected, string.as_str(), "Writing failure");
         }
     }
 

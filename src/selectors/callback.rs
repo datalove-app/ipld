@@ -242,7 +242,8 @@ where
 /// The selection mode of the selector, which determines what gets visited,
 /// matched, sent and returned.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) enum SelectionMode {
+#[doc(hidden)]
+pub enum SelectionMode {
     /// Selection will invoke the provided callback on all traversed [`Node`]s.
     SelectNode,
 
@@ -256,7 +257,8 @@ pub(crate) enum SelectionMode {
 }
 
 ///
-pub(crate) enum SelectionCallback<'a, C, T> {
+#[doc(hidden)]
+pub enum SelectionCallback<'a, C, T> {
     SelectNode {
         cb: Box<dyn SelectNodeOp<C> + 'a>,
         only_matched: bool,
@@ -385,6 +387,7 @@ where
         }
     }
 
+    ///
     pub const fn is_node(&self) -> bool {
         match self {
             Self::SelectNode { .. } => true,
@@ -392,6 +395,7 @@ where
         }
     }
 
+    ///
     pub const fn is_dag(&self) -> bool {
         match self {
             Self::SelectDag { .. } | Self::MatchDag { .. } => true,

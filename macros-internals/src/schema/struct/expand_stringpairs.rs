@@ -30,7 +30,7 @@ impl ExpandBasicRepresentation for StringpairsStructReprDefinition {
         TokenStream::default()
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        super::expand::impl_repr(self.iter(), meta, SchemaKind::String.data_model_ident())
+        super::expand::impl_repr(self.iter(), meta, SchemaKind::String.data_model_kind())
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()

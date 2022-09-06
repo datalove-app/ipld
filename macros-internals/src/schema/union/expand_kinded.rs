@@ -30,9 +30,15 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
         }
     }
 
-    // fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
-    //     TokenStream::default()
-    // }
+    fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
+        // impl DeSeed for ContextSeed, delegating to deserialize_any
+        // impl Visitor for ContextSeed, where each visit_fn:
+        //  - maps the visited type to a deserializer
+        //  - augments the callback to call on the right variant
+        //  - then calls ContextSeed::<C, inner_ty>::deserialize(deserializer)
+
+        quote! {}
+    }
 
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         let lib = &meta.lib;
@@ -42,9 +48,9 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
         expand::impl_repr(
             meta,
             quote! {
-                const DATA_MODEL_KIND: Kind = unimplemented!();
+                const DATA_MODEL_KIND: Kind = Kind::Any;
                 const SCHEMA_KIND: Kind = Kind::Union;
-                const REPR_KIND: Kind = unimplemented!();
+                const REPR_KIND: Kind = Kind::Any;
                 // const FIELDS: Fields = Fields::Keyed(&[#(#fields,)*]);
 
                 #[inline]
@@ -73,15 +79,8 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
             //     Ok(Null::r#match(seed)?.map(|_| Self))
             // },
             quote! {
+                // #lib::dev::select_from_seed::<Ctx, Self>(params, ctx)
                 unimplemented!()
-
-                // if #lib::dev::type_eq::<Self, S>() {
-                //     type_cast_selection::<Self, S, _, _>(|| {
-                //         Ok(Null::select::<Null>(seed)?.map(|_| Self))
-                //     })
-                // } else {
-                //     Null::select::<S>(seed)
-                // }
             },
         )
     }
@@ -140,23 +139,31 @@ impl UnionField<SchemaKind> {
         Ident::new(kind, Span::call_site())
     }
 
-    // fn kind(&self, lib: &TokenStream) -> TokenStream {
-    //     match self.key {
-    //         DataModelKind::Null => quote! { Kind::Null },
-    //         DataModelKind::Boolean => quote! { Kind::Boolean },
-    //         DataModelKind::Integer => quote! { Kind::Integer },
-    //         DataModelKind::Float => quote! { Kind::Float },
-    //         DataModelKind::Bytes => quote! { Kind::Bytes },
-    //         DataModelKind::String => quote! { Kind::String },
-    //         DataModelKind::List => quote! { Kind::List },
-    //         DataModelKind::Map => quote! { Kind::Map },
-    //         DataModelKind::Link => quote! { Kind::Link },
-    //     }
-    // }
+    fn field_ty(&self) -> Ident {
+        match self.key {
+            SchemaKind::String => Ident::new("IpldString", Span::call_site()),
+            _ => self.value.clone(),
+        }
+    }
+
+    fn kind(&self, lib: &TokenStream) -> TokenStream {
+        match self.key {
+            SchemaKind::Null => quote! { Kind::Null },
+            SchemaKind::Bool => quote! { Kind::Bool },
+            SchemaKind::Int => quote! { Kind::Int },
+            SchemaKind::Float => quote! { Kind::Float },
+            SchemaKind::String => quote! { Kind::String },
+            SchemaKind::Bytes => quote! { Kind::Bytes },
+            SchemaKind::List => quote! { Kind::List },
+            SchemaKind::Map => quote! { Kind::Map },
+            SchemaKind::Link => quote! { Kind::Link },
+            _ => unreachable!(),
+        }
+    }
 
     fn field_typedef(&self) -> TokenStream {
         let attrs = &self.attrs;
-        let ty = &self.value;
+        let ty = &self.field_ty();
         let field_name = &self.field_name();
         let generics = &self.generics;
 
@@ -165,49 +172,38 @@ impl UnionField<SchemaKind> {
         // } else {
         //     TokenStream::default()
         // };
-
+        //
         // let rename_attr = if let Some(rename) = &self.rename {
         //     quote!(#[serde(rename = #rename)])
         // } else {
         //     TokenStream::default()
         // };
 
-        let ty = if self.linked {
-            quote!(Link<#ty>)
-        } else {
-            quote!(#ty)
-        };
+        let field_def = self
+            .linked
+            .then(|| quote!(Link<#ty #generics>))
+            .or_else(|| Some(quote!(#ty #generics)))
+            .map(|ty| match &self.wrapper {
+                None => ty,
+                Some(wrapper) => quote!(#wrapper <#ty>),
+            })
+            .map(|ty| quote!(#field_name(#ty)));
 
-        let branch = if field_name == Self::NULL {
-            quote!(#field_name)
-        } else {
-            quote!(#field_name(#ty #generics))
-        };
         quote! {
             #(#attrs)*
-            #branch
+            #field_def
         }
     }
 
     fn name_branch(&self, lib: &TokenStream) -> TokenStream {
         let field_name = self.field_name();
-        let ty = &self.value;
-
-        if field_name == Self::NULL {
-            quote!(Self::#field_name => Null::NAME)
-        } else {
-            quote!(Self::#field_name(ty) => Representation::name(ty))
-        }
+        // let ty = &self.value;
+        quote!(Self::#field_name(ty) => Representation::name(ty))
     }
 
     fn kind_branch(&self, lib: &TokenStream) -> TokenStream {
         let field_name = self.field_name();
-
-        if field_name == Self::NULL {
-            quote!(Self::#field_name => Null::KIND)
-        } else {
-            quote!(Self::#field_name(ty) => Representation::kind(ty))
-        }
+        quote!(Self::#field_name(ty) => Representation::kind(ty))
     }
 }
 

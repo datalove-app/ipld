@@ -121,7 +121,7 @@ impl MemoryContext {
         multihash_code: u64,
         block: Vec<u8>,
     ) -> Result<Cid, Error> {
-        let cid = Cid::generate(version, multicodec_code, multihash_code, block.as_ref())?;
+        let cid = Cid::new(version, multicodec_code, multihash_code, block.as_ref())?;
         self.blocks.insert(cid, block);
         Ok(cid)
     }

@@ -298,6 +298,8 @@ mod visitor {
                 })?;
 
             let byte_str = map.next_value::<String>()?;
+            // TODO: empty string
+
             match multibase::decode(byte_str) {
                 Ok((DagJson::BYTES_MULTIBASE, bytes)) => Ok(MapLikeVisitor::Bytes(bytes)),
                 Ok((mb, _)) => Err(de::Error::custom(format!(
@@ -374,7 +376,12 @@ mod tests {
 
     #[test]
     fn test_string() {
-        let tests = &[(String::from("hello world"), "\"hello world\"")];
+        let tests = &[
+            // standard string
+            (IpldString::from("hello world"), "\"hello world\""),
+            // non-standard UTF-8 string TODO:
+            // (IpldString::from("ÅΩ"), "\"ÅΩ\""),
+        ];
         roundtrip_str_codec::<_>(DagJson::CODE, tests);
     }
 

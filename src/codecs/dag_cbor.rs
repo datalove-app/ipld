@@ -11,6 +11,7 @@ use serde_cbor::{
 };
 use std::{
     convert::TryFrom,
+    fmt,
     io::{Read, Write},
 };
 
@@ -107,17 +108,40 @@ impl<'de, 'a, R: CborRead<'de>> Decoder<'de> for &'a mut CborDeserializer<R> {
     where
         V: IpldVisitorExt<'de>,
     {
-        match current_cbor_tag() {
-            Some(CBOR_LINK_TAG) => {
-                // TODO:
-                let bytes = <&[u8]>::deserialize(self)?;
-                visitor.visit_link_bytes(bytes)
+        struct ByteVec(Vec<u8>);
+        struct ByteVecVisitor;
+        impl<'de> Visitor<'de> for ByteVecVisitor {
+            type Value = ByteVec;
+            #[inline]
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "A slice of bytes representing a Cid")
             }
-            Some(tag) => Err(de::Error::custom(format!(
+            #[inline]
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(ByteVec(v.into()))
+            }
+        }
+        impl<'de> Deserialize<'de> for ByteVec {
+            #[inline]
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                deserializer.deserialize_bytes(ByteVecVisitor)
+            }
+        }
+
+        let Tagged { tag, value } = Tagged::<ByteVec>::deserialize(self)?;
+        match tag {
+            Some(CBOR_LINK_TAG) => visitor.visit_link_bytes(&value.0),
+            Some(tag) => Err(CborError::custom(format!(
                 "unexpected CBOR tag for CID: {}",
                 tag
             ))),
-            _ => Err(de::Error::custom("expected a CID")),
+            _ => Err(CborError::custom("expected a CID")),
         }
     }
 }

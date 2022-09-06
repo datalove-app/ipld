@@ -1,6 +1,8 @@
 use crate::dev::*;
+use macros::impl_ipld_serde;
 use std::{
     cell::RefCell,
+    fmt,
     ops::{Bound, RangeBounds},
 };
 
@@ -8,14 +10,8 @@ use std::{
 pub type List<T = Any> = Vec<T>;
 
 impl<T: Representation> Representation for List<T> {
-    const NAME: &'static str = concat!("List<", stringify!(T::NAME), ">");
-    const SCHEMA: &'static str = concat!(
-        "type ",
-        stringify!(Self::NAME),
-        " [",
-        stringify!(T::NAME),
-        "]",
-    );
+    const NAME: &'static str = "List";
+    const SCHEMA: &'static str = concat!("type List [", stringify!(T::NAME), "]");
     const DATA_MODEL_KIND: Kind = Kind::List;
     const HAS_LINKS: bool = T::HAS_LINKS;
 
@@ -24,13 +20,13 @@ impl<T: Representation> Representation for List<T> {
     }
 }
 
-impl_ipld_serde! { @context_visitor
+impl_ipld_serde! { @context_seed_visitor
     { T: Representation + 'static }
     { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
     List<T>
 {
     #[inline]
-    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "A list of `{}`", T::NAME)
     }
 
@@ -40,10 +36,10 @@ impl_ipld_serde! { @context_visitor
         A: SeqAccess<'de>,
     {
         match self.selector {
-            Selector::Matcher(matcher) => self.match_list(matcher, seq),
-            Selector::ExploreIndex(s) => self.explore_list(s.index as usize..s.index as usize, seq),
-            Selector::ExploreRange(s) => self.explore_list(s.start as usize..s.end as usize, seq),
-            Selector::ExploreAll(s) => self.explore_list(0.., seq),
+            Selector::Matcher(_) => self.match_list(seq),
+            Selector::ExploreIndex(s) => self.explore_list_range(s.index as usize..s.index as usize, seq),
+            Selector::ExploreRange(s) => self.explore_list_range(s.start as usize..s.end as usize, seq),
+            Selector::ExploreAll(_) => self.explore_list_range(0.., seq),
             _ => Err(A::Error::custom(Error::unsupported_selector::<List<T>>(
                 self.selector,
             ))),
@@ -51,7 +47,13 @@ impl_ipld_serde! { @context_visitor
     }
 }}
 
-impl_ipld_serde! { @context_deseed
+impl_ipld_serde! { @context_seed_visitor_ext
+    { T: Representation + 'static }
+    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
+    List<T> {}
+}
+
+impl_ipld_serde! { @context_seed_deseed
     { T: Representation + 'static }
     { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
     List<T>
@@ -65,7 +67,7 @@ impl_ipld_serde! { @context_deseed
     }
 }}
 
-impl_ipld_serde! { @context_select
+impl_ipld_serde! { @context_seed_select
     { T: Representation + 'static }
     { for<'b, 'de> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
     List<T>
@@ -138,17 +140,21 @@ where
     T: Representation + 'static,
 {
     /// match
-    fn match_list<'de, A>(mut self, matcher: &Matcher, mut seq: A) -> Result<(), A::Error>
+    fn match_list<'de, A>(mut self, mut seq: A) -> Result<(), A::Error>
     where
         A: SeqAccess<'de>,
         for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
     {
+        let matcher = self
+            .selector
+            .as_matcher()
+            .expect("should know that this is a matcher");
+
+        // select list node, or set up list
         let mode = self.mode();
         let mut dag: RefCell<List<T>> = Default::default();
 
-        // select list node, or set up list
         match mode {
-            // select the list node
             SelectionMode::SelectNode => {
                 self.select_matched_node(SelectedNode::List, matcher.label.as_deref())
                     .map_err(A::Error::custom)?;
@@ -199,12 +205,11 @@ where
     }
 
     /// explore index, range, or all
-    fn explore_list<'de, A, R>(mut self, range: R, mut seq: A) -> Result<(), A::Error>
+    fn explore_list_range<'de, A, R>(mut self, range: R, mut seq: A) -> Result<(), A::Error>
     where
         A: SeqAccess<'de>,
         R: RangeBounds<usize> + Iterator<Item = usize>,
         for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
-        // ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
     {
         // select the list node
         if self.is_node() {

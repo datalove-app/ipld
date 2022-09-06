@@ -8,6 +8,16 @@ use std::{
 /// [Codec](https://github.com/ipld/specs/blob/master/block-layer/codecs/README.dsmd)s,
 /// providing methods for reading and writing blocks.
 pub trait Codec: Into<u64> + TryFrom<u64, Error = Error> {
+    /// Given a dag, serialize it to a vector of bytes.
+    fn encode<T>(&mut self, dag: &T) -> Result<Vec<u8>, Error>
+    where
+        T: Representation,
+    {
+        let mut vec = vec![];
+        self.write(dag, &mut vec)?;
+        Ok(vec)
+    }
+
     /// Given a dag and a `Write`, encode it to the writer.
     fn write<T, W>(&mut self, dag: &T, writer: W) -> Result<(), Error>
     where

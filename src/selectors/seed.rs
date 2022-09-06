@@ -1,19 +1,29 @@
 use super::*;
 use crate::dev::*;
+use std::fmt;
 
 /// A helper type for guided decoding of a dag, using a selector to direct
 /// and/or ignore fields or entire blocks, and a linked context to fetch more
 /// blocks.
-#[derive(Debug)]
-pub struct ContextSeed<'a, C, T = Any>
-where
-    C: Context,
-    T: Representation,
-{
+pub struct ContextSeed<'a, C, T = Any> {
     pub(crate) selector: &'a Selector,
     pub(crate) state: &'a mut SelectionState,
     pub(crate) callback: SelectionCallback<'a, C, T>,
     pub(crate) ctx: &'a mut C,
+}
+
+impl<'a, C, T> fmt::Debug for ContextSeed<'a, C, T>
+where
+    C: Context,
+    T: fmt::Debug + Representation,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ContextSeed")
+            .field("selector", &self.selector)
+            .field("state", &self.state)
+            .field("callback", &self.callback)
+            .finish()
+    }
 }
 
 // TODO: impl this for every Selectable T, defining:
@@ -241,6 +251,8 @@ where
     C: Context,
     T: Representation,
 {
+    const DEFAULT_SELECTOR: Selector = Selector::DEFAULT;
+
     #[inline]
     pub(crate) const fn mode(&self) -> SelectionMode {
         self.callback.mode()
@@ -289,8 +301,9 @@ where
     }
 
     ///
+    #[doc(hidden)]
     #[inline]
-    pub fn read<'de>(self, cid: &Cid) -> Result<(), Error>
+    pub(crate) fn read<'de>(self, cid: &Cid) -> Result<(), Error>
     where
         Self: DeserializeSeed<'de, Value = ()>,
     {
@@ -317,6 +330,38 @@ where
     C: Context,
     T: Representation,
 {
+    ///
+    #[doc(hidden)]
+    #[inline]
+    pub fn select(params: SelectionParams<'_, C, T>, mut ctx: &mut C) -> Result<(), Error>
+    where
+        C: 'a,
+        for<'b, 'de> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+    {
+        let SelectionParams {
+            cid,
+            selector,
+            max_path_depth,
+            max_link_depth,
+            callback,
+        } = params;
+        let mut state = SelectionState {
+            max_path_depth,
+            max_link_depth,
+            ..Default::default()
+        };
+
+        let default_selector = Self::DEFAULT_SELECTOR;
+        let seed = ContextSeed {
+            selector: &selector.unwrap_or(&default_selector),
+            state: &mut state,
+            callback,
+            ctx: &mut ctx,
+        };
+
+        Ok(seed.read(&cid)?)
+    }
+
     ///
     pub(crate) fn select_node(&mut self, node: SelectedNode) -> Result<(), Error> {
         self.callback

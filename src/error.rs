@@ -74,6 +74,9 @@ pub enum Error {
     #[error("Selector range error: {0}")]
     SelectorRange(&'static str),
 
+    #[error("Selector assertion failure")]
+    SelectorAssertionFailure,
+
     //////////////////////////////////////////////////////////////////////
     // misc
     //////////////////////////////////////////////////////////////////////

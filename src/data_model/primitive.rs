@@ -1,11 +1,17 @@
 use crate::dev::*;
-use macros::derive_more::{AsMut, AsRef, Deref, From, Index, IndexMut, IntoIterator};
+use macros::{
+    derive_more::{AsMut, AsRef, Deref, DerefMut, From, Index, IndexMut, Into, IntoIterator},
+    impl_ipld_serde,
+};
 use serde::de::IntoDeserializer;
-use std::{fmt, ops::RangeBounds};
+use std::{borrow::Cow, fmt, ops::RangeBounds};
 
 pub use self::bool::Bool;
 pub use self::bytes::Bytes;
 pub use self::null::Null;
+pub use self::num::*;
+pub use self::string::IpldString;
+
 ///
 pub type Int = Int128;
 ///
@@ -24,7 +30,7 @@ mod null {
         const DATA_MODEL_KIND: Kind = Kind::Null;
     }
 
-    impl_ipld_serde! { @context_visitor {} {} Null {
+    impl_ipld_serde! { @context_seed_visitor {} {} Null {
         #[inline]
         fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(formatter, "Null")
@@ -35,11 +41,13 @@ mod null {
         where
             E: de::Error,
         {
-            self.visit_primitive(Null)
+            self.match_primitive(Null)
         }
     }}
 
-    impl_ipld_serde! { @context_deseed {} {} Null {
+    impl_ipld_serde! { @context_seed_visitor_ext {} {} Null {} }
+
+    impl_ipld_serde! { @context_seed_deseed {} {} Null {
         #[inline]
         fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
         where
@@ -49,7 +57,7 @@ mod null {
         }
     }}
 
-    impl_ipld_serde! { @context_select {} {} Null }
+    impl_ipld_serde! { @context_seed_select {} {} Null }
 }
 
 mod bool {
@@ -64,7 +72,7 @@ mod bool {
         const DATA_MODEL_KIND: Kind = Kind::Bool;
     }
 
-    impl_ipld_serde! { @context_visitor {} {} Bool {
+    impl_ipld_serde! { @context_seed_visitor {} {} Bool {
         #[inline]
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "A boolean type")
@@ -75,13 +83,13 @@ mod bool {
         where
             E: de::Error,
         {
-            self.visit_primitive(v)
+            self.match_primitive(v)
         }
     }}
 
-    impl_ipld_serde! { @context_visitor_ext {} {} Bool {} }
+    impl_ipld_serde! { @context_seed_visitor_ext {} {} Bool {} }
 
-    impl_ipld_serde! { @context_deseed {} {} Bool {
+    impl_ipld_serde! { @context_seed_deseed {} {} Bool {
         #[inline]
         fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
         where
@@ -91,19 +99,220 @@ mod bool {
         }
     }}
 
-    impl_ipld_serde! { @context_select {} {} Bool }
+    impl_ipld_serde! { @context_seed_select {} {} Bool }
 }
 
-mod string {
+mod num {
     use super::*;
 
-    impl Representation for String {
+    /// Implements IPLD traits for native number types.
+    macro_rules! impl_ipld_num {
+        (   $doc_str:expr ;
+            $native_ty:ident : $name:ident $kind:ident $ipld_type:ident {
+                $deserialize_fn:ident
+                $visit_fn:ident
+                @conv { $($other_ty:ty : $other_visit_fn:ident)* }
+            }
+        ) => {
+            #[doc = $doc_str]
+            pub type $name = $native_ty;
+
+            impl Representation for $native_ty {
+                const NAME: &'static str = stringify!($name);
+                const SCHEMA: &'static str =
+                    concat!("type ", stringify!($name), " ", stringify!($ipld_type));
+                const DATA_MODEL_KIND: Kind = Kind::$kind;
+            }
+
+            impl_ipld_serde! { @context_seed_visitor {} {} $native_ty {
+                #[inline]
+                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    write!(f, $doc_str)
+                }
+
+                #[inline]
+                fn $visit_fn<E>(self, v: $native_ty) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    self.match_primitive(v)
+                }
+
+                $(
+                    #[inline]
+                    fn $other_visit_fn<E>(self, v: $other_ty) -> Result<Self::Value, E>
+                    where
+                        E: de::Error,
+                    {
+                        let n = <$native_ty>::deserialize(v.into_deserializer())?;
+                        self.match_primitive(n)
+                    }
+                )*
+            }}
+
+            impl_ipld_serde! { @context_seed_visitor_ext {} {} $native_ty {} }
+
+            impl_ipld_serde! { @context_seed_deseed {} {} $native_ty {
+                #[inline]
+                fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+                where
+                    D: Deserializer<'de>,
+                {
+                    deserializer.$deserialize_fn(self)
+                }
+            }}
+
+            impl_ipld_serde! { @context_seed_select {} {} $native_ty }
+        };
+    }
+
+    impl_ipld_num! (
+        "A fixed-length number type represented as a int8";
+        i8 : Int8 Int int {
+            deserialize_i8
+            visit_i8
+            @conv {
+                i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+            }
+        }
+    );
+    impl_ipld_num! (
+        "A fixed-length number type represented as a int16" ;
+        i16 : Int16 Int int {
+            deserialize_i16
+            visit_i16
+            @conv {
+                i8:visit_i8 i32:visit_i32 i64:visit_i64 i128:visit_i128
+                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+            }
+        }
+    );
+    impl_ipld_num! (
+        "A fixed-length number type represented as a int32" ;
+        i32 : Int32 Int int {
+            deserialize_i32
+            visit_i32
+            @conv {
+                i8:visit_i8 i16:visit_i16 i64:visit_i64 i128:visit_i128
+                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+            }
+        }
+    );
+    impl_ipld_num! (
+        "A fixed-length number type represented as a int64" ;
+        i64 : Int64 Int int {
+            deserialize_i64
+            visit_i64
+            @conv {
+                i8:visit_i8 i16:visit_i16 i32:visit_i32 i128:visit_i128
+                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+            }
+        }
+    );
+    impl_ipld_num! (
+        "A fixed-length number type represented as a int128" ;
+        i128 : Int128 Int int {
+            deserialize_i128
+            visit_i128
+            @conv {
+                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64
+                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+            }
+        }
+    );
+    impl_ipld_num! (
+        "A fixed-length number type represented as a uint8" ;
+        u8 : Uint8 Int int {
+            deserialize_u8
+            visit_u8
+            @conv {
+                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+                u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+            }
+        }
+    );
+    impl_ipld_num! (
+        "A fixed-length number type represented as a uint16" ;
+        u16 : Uint16 Int int {
+            deserialize_u16
+            visit_u16
+            @conv {
+                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+                u8:visit_u8 u32:visit_u32 u64:visit_u64 u128:visit_u128
+            }
+        }
+    );
+    impl_ipld_num! (
+        "A fixed-length number type represented as a uint32" ;
+        u32 : Uint32 Int int {
+            deserialize_u32
+            visit_u32
+            @conv {
+                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+                u8:visit_u8 u16:visit_u16 u64:visit_u64 u128:visit_u128
+            }
+        }
+    );
+    impl_ipld_num! (
+        "A fixed-length number type represented as a uint64" ;
+        u64 : Uint64 Int int {
+            deserialize_u64
+            visit_u64
+            @conv {
+                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+                u8:visit_u8 u16:visit_u16 u32:visit_u32 u128:visit_u128
+            }
+        }
+    );
+    impl_ipld_num! (
+        "A fixed-length number type represented as a uint128" ;
+        u128 : Uint128 Int int {
+            deserialize_u128
+            visit_u128
+            @conv {
+                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64
+            }
+        }
+    );
+    impl_ipld_num! (
+        "A fixed-length number type represented as a float32" ;
+        f32 : Float32 Float float {
+            deserialize_f32
+            visit_f32
+            @conv { f64:visit_f64 }
+        }
+    );
+    impl_ipld_num! (
+        "A fixed-length number type represented as a float64" ;
+        f64 : Float64 Float float {
+            deserialize_f64
+            visit_f64
+            @conv { f32:visit_f32 }
+        }
+    );
+}
+
+// TODO: unicode normalization? https://ipld.io/docs/data-model/kinds/#string-kind
+mod string {
+    use super::*;
+    use serde::de::value::SeqAccessDeserializer;
+    use unicode_normalization::UnicodeNormalization;
+
+    ///
+    #[derive(
+        Clone, Debug, Default, Eq, Hash, Into, Index, IndexMut, Ord, PartialEq, PartialOrd,
+    )]
+    pub struct IpldString(String);
+
+    impl Representation for IpldString {
         const NAME: &'static str = "String";
         const SCHEMA: &'static str = "type String string";
         const DATA_MODEL_KIND: Kind = Kind::String;
     }
 
-    impl_ipld_serde! { @context_visitor {} {} String {
+    impl_ipld_serde! { @context_seed_visitor {} {} IpldString {
         #[inline]
         fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(formatter, "A UTF-8 string")
@@ -114,21 +323,22 @@ mod string {
         where
             E: de::Error,
         {
-            self.visit_string(s.into())
+            self.visit_string(s.nfc().collect())
         }
 
+        // TODO:
         #[inline]
         fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
         where
             E: de::Error,
         {
-            self.visit_primitive(s)
+            self.match_primitive(IpldString(s))
         }
     }}
 
-    impl_ipld_serde! { @context_visitor_ext {} {} String {} }
+    impl_ipld_serde! { @context_seed_visitor_ext {} {} IpldString {} }
 
-    impl_ipld_serde! { @context_deseed {} {} String {
+    impl_ipld_serde! { @context_seed_deseed {} {} IpldString {
         #[inline]
         fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
         where
@@ -138,7 +348,67 @@ mod string {
         }
     }}
 
-    impl_ipld_serde! { @context_select {} {} String }
+    impl_ipld_serde! { @context_seed_select {} {} IpldString }
+
+    impl<'a> From<&'a str> for IpldString {
+        fn from(s: &'a str) -> Self {
+            Self(s.nfc().collect::<String>())
+        }
+    }
+    impl<'a> From<&'a mut str> for IpldString {
+        fn from(s: &'a mut str) -> Self {
+            Self::from(&*s)
+        }
+    }
+    impl From<Box<str>> for IpldString {
+        fn from(s: Box<str>) -> Self {
+            Self::from(s.as_ref())
+        }
+    }
+    impl<'a> From<Cow<'a, str>> for IpldString {
+        fn from(s: Cow<'a, str>) -> Self {
+            Self::from(s.as_ref())
+        }
+    }
+    impl From<String> for IpldString {
+        fn from(s: String) -> Self {
+            Self(s.as_str().nfc().collect())
+        }
+    }
+
+    // TODO:
+    impl Serialize for IpldString {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.collect_str(&self.0.nfc())
+        }
+    }
+
+    // TODO:
+    impl<'de> Deserialize<'de> for IpldString {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            // struct IpldStringVisitor;
+            // impl<'de> Visitor<'de> for IpldStringVisitor {
+            //     type Value = IpldString;
+            //     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            //         write!(f, "A string or sequence of chars")
+            //     }
+            //     fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+            //         where
+            //             A: SeqAccess<'de>, {
+            //         let iter = SeqAccessDeserializer::new(seq);
+
+            //     }
+            // }
+
+            Ok(Self(String::deserialize(deserializer)?))
+        }
+    }
 }
 
 mod bytes {
@@ -203,7 +473,7 @@ mod bytes {
         const DATA_MODEL_KIND: Kind = Kind::Bytes;
     }
 
-    impl_ipld_serde! { @context_visitor {} {} Bytes {
+    impl_ipld_serde! { @context_seed_visitor {} {} Bytes {
         #[inline]
         fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(formatter, "A slice of bytes")
@@ -226,9 +496,9 @@ mod bytes {
         }
     }}
 
-    impl_ipld_serde! { @context_visitor_ext {} {} Bytes {} }
+    impl_ipld_serde! { @context_seed_visitor_ext {} {} Bytes {} }
 
-    impl_ipld_serde! { @context_deseed {} {} Bytes {
+    impl_ipld_serde! { @context_seed_deseed {} {} Bytes {
         #[inline]
         fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
         where
@@ -238,7 +508,7 @@ mod bytes {
         }
     }}
 
-    impl_ipld_serde! { @context_select {} {} Bytes }
+    impl_ipld_serde! { @context_seed_select {} {} Bytes }
 
     impl<'a, C> ContextSeed<'a, C, Bytes>
     where
@@ -332,201 +602,13 @@ mod bytes {
     }
 }
 
-/// Implements IPLD traits for native primitive types.
-macro_rules! impl_ipld_num {
-    (   $doc_str:expr ;
-        $native_ty:ty : $name:ident $kind:ident $ipld_type:ident {
-            $deserialize_fn:ident
-            $visit_fn:ident
-            @conv { $($other_ty:ty : $other_visit_fn:ident)* }
-        }
-    ) => {
-        #[doc = $doc_str]
-        pub type $name = $native_ty;
-
-        impl Representation for $native_ty {
-            const NAME: &'static str = stringify!($name);
-            const SCHEMA: &'static str =
-                concat!("type ", stringify!($name), " ", stringify!($ipld_type));
-            const DATA_MODEL_KIND: Kind = Kind::$kind;
-        }
-
-        impl_ipld_serde! { @context_visitor {} {} $native_ty {
-            #[inline]
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, $doc_str)
-            }
-
-            #[inline]
-            fn $visit_fn<E>(self, v: $native_ty) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                self.visit_primitive(v)
-            }
-
-            $(
-                #[inline]
-                fn $other_visit_fn<E>(self, v: $other_ty) -> Result<Self::Value, E>
-                where
-                    E: de::Error,
-                {
-                    let n = <$native_ty>::deserialize(v.into_deserializer())?;
-                    self.visit_primitive(n)
-                }
-            )*
-        }}
-
-        impl_ipld_serde! { @context_visitor_ext {} {} $native_ty {} }
-
-        impl_ipld_serde! { @context_deseed {} {} $native_ty {
-            #[inline]
-            fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                deserializer.$deserialize_fn(self)
-            }
-        }}
-
-        impl_ipld_serde! { @context_select {} {} $native_ty }
-    };
-}
-
-impl_ipld_num! (
-    "A fixed-length number type represented as a int8";
-    i8 : Int8 Int int {
-        deserialize_i8
-        visit_i8
-        @conv {
-            i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-            u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-        }
-    }
-);
-impl_ipld_num! (
-    "A fixed-length number type represented as a int16" ;
-    i16 : Int16 Int int {
-        deserialize_i16
-        visit_i16
-        @conv {
-            i8:visit_i8 i32:visit_i32 i64:visit_i64 i128:visit_i128
-            u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-        }
-    }
-);
-impl_ipld_num! (
-    "A fixed-length number type represented as a int32" ;
-    i32 : Int32 Int int {
-        deserialize_i32
-        visit_i32
-        @conv {
-            i8:visit_i8 i16:visit_i16 i64:visit_i64 i128:visit_i128
-            u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-        }
-    }
-);
-impl_ipld_num! (
-    "A fixed-length number type represented as a int64" ;
-    i64 : Int64 Int int {
-        deserialize_i64
-        visit_i64
-        @conv {
-            i8:visit_i8 i16:visit_i16 i32:visit_i32 i128:visit_i128
-            u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-        }
-    }
-);
-impl_ipld_num! (
-    "A fixed-length number type represented as a int128" ;
-    i128 : Int128 Int int {
-        deserialize_i128
-        visit_i128
-        @conv {
-            i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64
-            u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-        }
-    }
-);
-impl_ipld_num! (
-    "A fixed-length number type represented as a uint8" ;
-    u8 : Uint8 Int int {
-        deserialize_u8
-        visit_u8
-        @conv {
-            i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-            u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-        }
-    }
-);
-impl_ipld_num! (
-    "A fixed-length number type represented as a uint16" ;
-    u16 : Uint16 Int int {
-        deserialize_u16
-        visit_u16
-        @conv {
-            i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-            u8:visit_u8 u32:visit_u32 u64:visit_u64 u128:visit_u128
-        }
-    }
-);
-impl_ipld_num! (
-    "A fixed-length number type represented as a uint32" ;
-    u32 : Uint32 Int int {
-        deserialize_u32
-        visit_u32
-        @conv {
-            i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-            u8:visit_u8 u16:visit_u16 u64:visit_u64 u128:visit_u128
-        }
-    }
-);
-impl_ipld_num! (
-    "A fixed-length number type represented as a uint64" ;
-    u64 : Uint64 Int int {
-        deserialize_u64
-        visit_u64
-        @conv {
-            i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-            u8:visit_u8 u16:visit_u16 u32:visit_u32 u128:visit_u128
-        }
-    }
-);
-impl_ipld_num! (
-    "A fixed-length number type represented as a uint128" ;
-    u128 : Uint128 Int int {
-        deserialize_u128
-        visit_u128
-        @conv {
-            i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-            u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64
-        }
-    }
-);
-impl_ipld_num! (
-    "A fixed-length number type represented as a float32" ;
-    f32 : Float32 Float float {
-        deserialize_f32
-        visit_f32
-        @conv { f64:visit_f64 }
-    }
-);
-impl_ipld_num! (
-    "A fixed-length number type represented as a float64" ;
-    f64 : Float64 Float float {
-        deserialize_f64
-        visit_f64
-        @conv { f32:visit_f32 }
-    }
-);
-
 impl<'a, C, T> ContextSeed<'a, C, T>
 where
     C: Context,
     T: Representation + 'static,
 {
     #[inline]
-    fn visit_primitive<'de, E>(mut self, dag: T) -> Result<(), E>
+    fn match_primitive<'de, E>(mut self, dag: T) -> Result<(), E>
     where
         T: Into<SelectedNode>,
         E: de::Error,

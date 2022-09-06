@@ -196,7 +196,7 @@ pub trait ExpandAdvancedRepresentation {
 }
 
 impl SchemaKind {
-    pub(crate) fn data_model_ident(&self) -> Ident {
+    pub(crate) fn data_model_kind(&self) -> Ident {
         Ident::new(
             match self {
                 Self::Null => "Null",

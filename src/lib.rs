@@ -28,7 +28,6 @@ mod selectors;
 
 #[doc(inline)]
 pub use error::Error;
-// pub use ipld::borrowed::Ipld as BorrowedIpld;
 #[doc(inline)]
 pub use specs::*;
 
@@ -88,21 +87,25 @@ pub mod prelude {
 /// All exports from `ipld::prelude`, plus re-exports of first- and third-party
 /// dependencies to aid developers wanting to implement or extend `ipld` behaviour.
 pub mod dev {
+    #[doc(hidden)]
     pub use std::io::{Read, Write};
 
     // pub use crate::impl_root_select;
-    pub use crate::{impl_ipld_serde, prelude::*, representation::*, selectors::*};
+    pub use crate::{prelude::*, representation::*, selectors::*};
 
     // dependency re-exports for macro convenience
+    #[doc(hidden)]
     pub use anyhow;
+    #[doc(hidden)]
     pub use bytes;
     // pub use erased_serde::{Deserializer as ErasedDeserializer, Serializer as ErasedSerializer};
     /// Useful macros for aiding in providing bespoke IPLD support.
     pub mod macros {
-        pub use impl_ipld_serde;
+        pub use crate::impl_ipld_serde;
         pub use ipld_macros_internals::*;
     }
 
+    #[doc(hidden)]
     pub use serde::{
         self,
         de::{
@@ -111,5 +114,6 @@ pub mod dev {
         },
         ser, Deserialize, Deserializer, Serialize, Serializer,
     };
+    #[doc(hidden)]
     pub use serde_repr;
 }

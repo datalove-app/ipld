@@ -31,12 +31,8 @@ use std::{
 
 ///
 /// TODO:
+///     - Selectable?
 pub trait Select<C: Context>: Representation + 'static {
-    // ///
-    // fn selectable<S: Select<C>>() -> bool {
-    //     type_eq2::<true, Self, S>()
-    // }
-
     /// Produces a stream of [`Selection`]s of some type `T`.
     ///
     /// General impl flow:
@@ -44,6 +40,7 @@ pub trait Select<C: Context>: Representation + 'static {
     ///     - grab the current block deserializer, use the seed
     ///         - until reaching a link, everything is in serde
     ///
+    /// TODO: update this interface, since ContextSeed is doing the work and it should be refactored a bit (borrow state, )
     fn select(
         // selector: &Selector,
         // state: &mut SelectorState,
@@ -75,41 +72,40 @@ pub trait Select<C: Context>: Representation + 'static {
 //     }
 // }
 
-///
-#[doc(hidden)]
-#[inline]
-pub fn select_from_seed<'de, C, T>(
-    params: SelectionParams<'_, C, T>,
-    mut ctx: &mut C,
-) -> Result<(), Error>
-where
-    C: Context,
-    T: Representation + 'static,
-    for<'a> ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
-{
-    let default_selector = Selector::DEFAULT;
+// ///
+// #[doc(hidden)]
+// pub fn select_from_seed<C, T>(
+//     params: SelectionParams<'_, C, T>,
+//     mut ctx: &mut C,
+// ) -> Result<(), Error>
+// where
+//     C: Context,
+//     T: Representation + 'static,
+//     for<'a, 'de> ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
+// {
+//     let default_selector = Selector::DEFAULT;
 
-    let SelectionParams {
-        cid,
-        selector,
-        max_path_depth,
-        max_link_depth,
-        callback,
-    } = params;
-    let mut state = SelectionState {
-        max_path_depth,
-        max_link_depth,
-        ..Default::default()
-    };
-    let seed = ContextSeed {
-        selector: &selector.unwrap_or(&default_selector),
-        state: &mut state,
-        callback,
-        ctx: &mut ctx,
-    };
+//     let SelectionParams {
+//         cid,
+//         selector,
+//         max_path_depth,
+//         max_link_depth,
+//         callback,
+//     } = params;
+//     let mut state = SelectionState {
+//         max_path_depth,
+//         max_link_depth,
+//         ..Default::default()
+//     };
+//     let seed = ContextSeed {
+//         selector: &selector.unwrap_or(&default_selector),
+//         state: &mut state,
+//         callback,
+//         ctx: &mut ctx,
+//     };
 
-    Ok(seed.read(&cid)?)
-}
+//     Ok(seed.read(&cid)?)
+// }
 
 mod params {
     use super::*;
@@ -239,7 +235,7 @@ mod selection {
         pub path: PathBuf,
         pub node: SelectedNode,
         pub matched: bool,
-        pub label: Option<String>,
+        pub label: Option<std::string::String>,
     }
 
     impl NodeSelection {
@@ -274,7 +270,7 @@ mod selection {
     pub struct DagSelection {
         pub path: PathBuf,
         pub dag: AnyRepresentation,
-        pub label: Option<String>,
+        pub label: Option<std::string::String>,
     }
 
     impl DagSelection {
@@ -298,9 +294,9 @@ mod selection {
     //         self.map(Box::new(|DagSelection { dag, .. }| dag.downcast()))
     //     }
     // }
-
+    //
     // impl<I> IntoDagIterator for I where I: Iterator<Item = DagSelection> + Sized {}
-
+    //
     // impl<T> Into<(PathBuf, Option<T>, Option<String>)> for DagSelection
     // where
     //     T: Representation + 'static,
@@ -373,7 +369,7 @@ mod selection {
 
         ///
         #[serde(rename = "string")]
-        String(String),
+        String(IpldString),
 
         ///
         #[serde(rename = "bytes")]
@@ -465,7 +461,7 @@ mod selection {
     impl From<Any> for SelectedNode {
         fn from(val: Any) -> Self {
             match val {
-                Any::Null => Self::Null,
+                Any::Null(_) => Self::Null,
                 Any::Bool(inner) => Self::Bool(inner),
                 Any::Int(inner) => Self::Int128(inner),
                 Any::Float(inner) => Self::Float64(inner),
@@ -473,7 +469,7 @@ mod selection {
                 Any::Bytes(inner) => Self::Bytes(inner),
                 Any::List(_) => Self::List,
                 Any::Map(_) => Self::Map,
-                Any::Link(link) => Self::Link(link.into()),
+                Any::Link(link) => Self::Link(*link.as_ref().cid()),
             }
         }
     }

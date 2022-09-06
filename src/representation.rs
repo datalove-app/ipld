@@ -63,6 +63,8 @@ pub enum Kind {
     Union,
     ///
     Copy,
+    ///
+    Any,
 }
 
 // ///
@@ -188,10 +190,20 @@ where
         Self::NAME
     }
 
-    // ///
-    // fn kind(&self) -> Kind {
-    //     Self::KIND
-    // }
+    ///
+    fn data_model_kind(&self) -> Kind {
+        Self::DATA_MODEL_KIND
+    }
+
+    ///
+    fn schema_kind(&self) -> Kind {
+        Self::SCHEMA_KIND
+    }
+
+    ///
+    fn repr_kind(&self) -> Kind {
+        Self::REPR_KIND
+    }
 
     ///
     fn has_links(&self) -> bool {
@@ -402,11 +414,35 @@ impl AnyRepresentation {
             .map_err(|_| Error::DowncastFailure(T::NAME))?;
         Ok(*dag)
     }
+
+    // ///
+    // #[inline]
+    // pub fn cast_between<T, U>(self) -> Result<Self, Error>
+    // where
+    //     T: Representation + 'static,
+    //     U: Representation + From<T> + 'static,
+    // {
+    //     let dag = self.downcast::<T>()?;
+    //     Ok(U::from(dag).into())
+    // }
 }
 
 impl<T: Representation + 'static> From<T> for AnyRepresentation {
     fn from(dag: T) -> Self {
         Self(Box::new(dag))
+    }
+}
+
+mod type_eq {
+    #[doc(hidden)]
+    ///
+    pub trait TypeEq<const EQ: bool, U: ?Sized> {}
+    // Default implementation.
+    default impl<T: ?Sized, U: ?Sized> TypeEq<false, U> for T {}
+    impl<T: ?Sized> TypeEq<true, T> for T {}
+
+    pub const fn cmp<const EQ: bool, T: ?Sized, U: ?Sized>() -> bool {
+        EQ
     }
 }
 
@@ -502,14 +538,5 @@ pub(crate) fn type_cast_mut<T: Sized + 'static, U: Sized + 'static, E, F>(inner:
         .unwrap()
         .take()
         .unwrap()
-}
-
-pub(crate) trait TypeEq2<const EQ: bool, U: ?Sized> {}
-// Default implementation.
-default impl<T: ?Sized, U: ?Sized> TypeEq2<false, U> for T {}
-impl<T: ?Sized> TypeEq2<true, T> for T {}
-
-pub const fn type_eq2<const EQ: bool, T: ?Sized, U: ?Sized>() -> bool {
-    EQ
 }
  */

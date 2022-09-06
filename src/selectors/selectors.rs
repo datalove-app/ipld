@@ -204,7 +204,11 @@ schema! {
     /// simultaneously continuing to explore deeper parts of the tree with
     /// another selector, for example.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug, From)]
+    #[derive(
+        Clone,
+        Debug,
+        // From
+    )]
     pub type ExploreUnion null;
     // TODO: pub type ExploreUnion [Selector];
 }
@@ -392,15 +396,15 @@ mod private {
 }
 
 macro_rules! impl_variant {
-    ($variant:ident $selector_ty:ty | { $is:ident, $as:ident, $into:ident }) => {
+    ($variant:ident $selector_ty:ty | { $is:ident, $as:ident, $try_into:ident }) => {
         impl_variant!(@is $is -> $variant $selector_ty);
         impl_variant!(@as $as -> $variant $selector_ty);
-        impl_variant!(@into $into -> $variant $selector_ty);
+        // impl_variant!(@try_into $try_into -> $variant $selector_ty);
     };
-    (@wrapped $variant:ident $selector_ty:ty | { $is:ident, $as:ident, $into:ident }) => {
+    (@wrapped $variant:ident $selector_ty:ty | { $is:ident, $as:ident, $try_into:ident }) => {
         impl_variant!(@is $is -> $variant $selector_ty);
         impl_variant!(@as $as -> $variant $selector_ty);
-        impl_variant!(@into $into -> $variant Rc<$selector_ty>);
+        // impl_variant!(@try_into $try_into -> $variant Rc<$selector_ty>);
     };
 
     (@is $fn:ident -> $variant:ident $selector_ty:ty) => {
@@ -421,12 +425,12 @@ macro_rules! impl_variant {
             }
         }
     };
-    (@into $fn:ident -> $variant:ident $selector_ty:ty) => {
+    (@try_into $fn:ident -> $variant:ident $selector_ty:ty) => {
         #[inline]
-        pub fn $fn(self) -> Option<$selector_ty> {
+        pub fn $fn(&self) -> Result<&$selector_ty, Error> {
             match self {
-                Self::$variant(inner) => Some(inner),
-                _ => None,
+                Self::$variant(inner) => Ok(inner),
+                _ => Err(Error::SelectorAssertionFailure),
             }
         }
     };
@@ -500,25 +504,25 @@ impl Selector {
     }
 
     impl_variant!(Matcher Matcher |
-        {is_matcher, as_matcher, into_matcher});
+        {is_matcher, as_matcher, try_into_matcher});
     impl_variant!(@wrapped ExploreAll ExploreAll |
-        {is_explore_all, as_explore_all, into_explore_all});
+        {is_explore_all, as_explore_all, try_into_explore_all});
     // impl_variant!(ExploreFields ExploreFields |
-    //     {is_explore_fields, as_explore_fields, into_explore_fields});
+    //     {is_explore_fields, as_explore_fields, try_into_explore_fields});
     impl_variant!(@wrapped ExploreIndex ExploreIndex |
-        {is_explore_index, as_explore_index, into_explore_index});
+        {is_explore_index, as_explore_index, try_into_explore_index});
     impl_variant!(@wrapped ExploreRange ExploreRange |
-        {is_explore_range, as_explore_range, into_explore_range});
+        {is_explore_range, as_explore_range, try_into_explore_range});
     // impl_variant!(ExploreRecursive ExploreRecursive |
-    //     {is_explore_recursive, as_explore_recursive, into_explore_recursive});
+    //     {is_explore_recursive, as_explore_recursive, try_into_explore_recursive});
     // impl_variant!(ExploreUnion ExploreUnion |
-    //     {is_explore_union, as_explore_union, into_explore_union});
+    //     {is_explore_union, as_explore_union, try_into_explore_union});
     // impl_variant!(ExploreConditional ExploreConditional |
-    //     {is_explore_conditional, as_explore_conditional, into_explore_conditional);
+    //     {is_explore_conditional, as_explore_conditional, try_into_explore_conditional);
     // impl_variant!(ExploreInterpretAs ExploreInterpretAs |
-    //     {is_explore_interpret_as, as_explore_interpret_as, into_explore_interpret_as});
+    //     {is_explore_interpret_as, as_explore_interpret_as, try_into_explore_interpret_as});
     // impl_variant!(ExploreRecursiveEdge ExploreRecursiveEdge |
-    //     {is_explore_recursive_edge, as_explore_recursive_edge, into_explore_recursive_edge});
+    //     {is_explore_recursive_edge, as_explore_recursive_edge, try_into_explore_recursive_edge});
 }
 
 /* Selector */
@@ -570,7 +574,8 @@ impl ExploreFields {
     }
 }
 
-/* state */
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
 ///
 #[derive(AsRef, AsMut, Debug, Default)]

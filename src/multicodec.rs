@@ -35,29 +35,12 @@ pub trait Codec: TryFrom<u64, Error = Error> {
         self.read::<T, _>(bytes)
     }
 
-    // /// Given some bytes, deserialize a dag.
-    // fn decode_with_seed<'de, T>(&mut self, bytes: &'de [u8]) -> Result<T, Error>
-    // where
-    //     T: Representation,
-    // {
-    //     unimplemented!()
-    // }
-
     /// Given a `Read`, deserialize a dag.
     fn read<T, R>(&mut self, reader: R) -> Result<T, Error>
     where
         T: Representation,
         R: Read;
-
-    /**************************************************************************/
-    // methods for mapping a generic serializer to a codec code, so
-    // Serialize/Deserialize implementations know what codec they are being
-    // provided
 }
-
-// /// Marker trait for any [`serde::Serializer`] any [`serde::Deserializer`] that
-// /// would be used as the underlying implementation of an IPLD [`Codec`].
-// pub trait CodecExt<const C: u64> {}
 
 // TODO: this feature flag isn't right; we should enable/disable variants and panic if none are enabled
 #[cfg(feature = "multicodec")]

@@ -225,7 +225,8 @@ where
     // const FIELDS: Fields = Fields::None;
 
     ///
-    /// for unions, this ?should delegate to the variant's type name
+    /// for unions, this ?should delegate to the variant's type name'
+    /// TODO what is this really for
     fn name(&self) -> &'static str {
         Self::NAME
     }

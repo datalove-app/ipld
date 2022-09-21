@@ -24,11 +24,11 @@ schema! {
         | Float float
         | String string
         | Bytes bytes
-        | List<Any> list
-        | Map<IpldString, Any> map
+        | List list
+        | Map map
         // todo? should this be listed above? decoding untagged variants is attempted in def order
         #[ipld_attr(wrapper = "Rc")]
-        | Link<Any> link
+        | Link link
     } representation kinded;
 }
 

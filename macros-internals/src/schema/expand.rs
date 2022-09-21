@@ -304,29 +304,13 @@ macro_rules! derive_newtype {
         $crate::dev::impl_repr(
             $meta,
             quote::quote! {
-                #$tokens
                 const DATA_MODEL_KIND: Kind = <#$inner_ty>::DATA_MODEL_KIND;
                 const SCHEMA_KIND: Kind = <#$inner_ty>::SCHEMA_KIND;
                 const REPR_KIND: Kind = <#$inner_ty>::REPR_KIND;
                 const IS_LINK: bool = <#$inner_ty>::IS_LINK;
                 const HAS_LINKS: bool = <#$inner_ty>::HAS_LINKS;
 
-                #[inline]
-                fn data_model_kind(&self) -> Kind {
-                    self.0.data_model_kind()
-                }
-                #[inline]
-                fn schema_kind(&self) -> Kind {
-                    self.0.schema_kind()
-                }
-                #[inline]
-                fn repr_kind(&self) -> Kind {
-                    self.0.repr_kind()
-                }
-                #[inline]
-                fn has_links(&self) -> bool {
-                    self.0.has_links()
-                }
+                #$tokens
 
                 #[inline]
                 #[doc(hidden)]
@@ -334,7 +318,7 @@ macro_rules! derive_newtype {
                 where
                     S: Serializer,
                 {
-                    Representation::serialize::<C, _>(self.0, serializer)
+                    Representation::serialize::<C, _>(&self.0, serializer)
                 }
 
                 #[inline]

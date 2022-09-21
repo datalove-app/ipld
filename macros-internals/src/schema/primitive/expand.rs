@@ -239,9 +239,25 @@ impl expand::ExpandBasicRepresentation for CopyReprDefinition {
         let schema = quote! {
             const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME),  " = ", stringify!(<#inner_ty>::NAME));
 
+            // #[inline]
+            // fn name(&self) -> &'static str {
+            //     Representation::name(&self.0)
+            // }
             #[inline]
-            fn name(&self) -> &'static str {
-                self.0.name()
+            fn data_model_kind(&self) -> Kind {
+                Representation::data_model_kind(&self.0)
+            }
+            #[inline]
+            fn schema_kind(&self) -> Kind {
+                Representation::schema_kind(&self.0)
+            }
+            #[inline]
+            fn repr_kind(&self) -> Kind {
+                Representation::repr_kind(&self.0)
+            }
+            #[inline]
+            fn has_links(&self) -> bool {
+                Representation::has_links(&self.0)
             }
         };
         derive_newtype!(@repr { schema } meta => inner_ty)

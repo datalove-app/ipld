@@ -641,6 +641,7 @@ mod bytes {
                         }
                         _ => unimplemented!(),
                     }
+
                     // self.nodes.push_back(NodeRow::Match {
                     //     repr: Adl::Bytes,
                     //     path: self.path.clone(),
@@ -697,15 +698,6 @@ mod bytes {
         where
             D: Deserializer<'de>,
         {
-            // <D as Decoder>::deserialize_bytes(deserializer, BytesVisitor)
-            // cfg_if::cfg_if! {
-            //     if #[cfg(feature = "serde-codec")] {
-            //         (&mut &mut &mut Decoder(deserializer)).deserialize_bytes(BytesVisitor)
-            //     } else {
-            //         deserializer.deserialize_bytes(BytesVisitor)
-            //     }
-            // }
-
             deserializer.deserialize_bytes(BytesVisitor)
         }
     }

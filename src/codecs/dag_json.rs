@@ -295,7 +295,7 @@ mod visitor {
         where
             D: Deserializer<'de>,
         {
-            deserializer.deserialize_map(MapLikeVisitor::Default)
+            deserializer.deserialize_any(MapLikeVisitor::Default)
         }
     }
 
@@ -320,7 +320,7 @@ mod visitor {
         where
             E: de::Error,
         {
-            Ok(MapLikeVisitor::CidStr(s))
+            Ok(MapLikeVisitor::CidString(s.into()))
         }
 
         #[inline]

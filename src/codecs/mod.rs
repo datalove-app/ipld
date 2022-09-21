@@ -105,7 +105,7 @@ pub(crate) mod test_utils {
                 dag.name(),
                 expected,
             ));
-            assert_eq!(*dag, v, "Decoding failure");
+            assert_eq!(dag, &v, "Decoding failure");
 
             // reading
             let v = codec.read(*expected).expect(&format!(
@@ -113,7 +113,7 @@ pub(crate) mod test_utils {
                 dag.name(),
                 expected,
             ));
-            assert_eq!(*dag, v, "Reading failure");
+            assert_eq!(dag, &v, "Reading failure");
         }
     }
 
@@ -124,14 +124,6 @@ pub(crate) mod test_utils {
         let mut codec = Multicodec::try_from(code).expect("should find codec");
 
         for (ref dag, expected) in cases {
-            // decoding
-            let v = decode_from_str::<T>(&mut codec, expected).expect(&format!(
-                "Failed to decode `{}` from {}",
-                dag.name(),
-                expected,
-            ));
-            assert_eq!(*dag, v, "Decoding failure");
-
             // writing
             let string = write_to_str::<T>(&mut codec, dag).expect(&format!(
                 "Failed to encode `{}` {:?} into {}",
@@ -141,13 +133,21 @@ pub(crate) mod test_utils {
             ));
             assert_eq!(*expected, string.as_str(), "Writing failure");
 
+            // decoding
+            let v = decode_from_str::<T>(&mut codec, expected).expect(&format!(
+                "Failed to decode `{}` from {}",
+                dag.name(),
+                expected,
+            ));
+            assert_eq!(dag, &v, "Decoding failure");
+
             // reading
             let v = codec.read(expected.as_bytes()).expect(&format!(
                 "Failed to read `{}` from {}",
                 dag.name(),
                 expected,
             ));
-            assert_eq!(*dag, v, "Reading failure");
+            assert_eq!(dag, &v, "Reading failure");
         }
     }
 

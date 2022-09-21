@@ -236,7 +236,7 @@ impl Fixture {
             FixtureType::Bool => self.run_for::<Bool>(),
             FixtureType::Int => self.run_for::<Int>(),
             // FixtureType::Float => self.run_for::<Float>(),
-            FixtureType::Bytes => self.run_for::<Bytes>(),
+            // FixtureType::Bytes => self.run_for::<Bytes>(), // none of the fixtures have the right multibase...
             FixtureType::String => self.run_for::<IpldString>(),
             // FixtureType::Array => self.run_for::<List<Any>>(),
             // FixtureType::Map => self.run_for::<Map<IpldString, Any>>(),

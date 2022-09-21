@@ -1,6 +1,6 @@
 use super::{
-    BoolReprDefinition, BytesReprDefinition, CopyReprDefinition, FloatReprDefinition,
-    IntReprDefinition, NullReprDefinition, StringReprDefinition,
+    BoolReprDefinition, CopyReprDefinition, FloatReprDefinition, IntReprDefinition,
+    NullReprDefinition, StringReprDefinition,
 };
 use crate::{
     derive_newtype,
@@ -10,7 +10,7 @@ use crate::{
     },
 };
 use proc_macro2::TokenStream;
-use quote::{quote, TokenStreamExt};
+use quote::quote;
 use syn::Type;
 
 /*
@@ -89,13 +89,11 @@ impl expand::ExpandBasicRepresentation for NullReprDefinition {
         derive_newtype!(@typedef_transparent self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        expand::impl_repr(
-            meta,
-            quote! {
-                const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " null");
-                const DATA_MODEL_KIND: Kind = Kind::Null;
-            },
-        )
+        let inner_ty = Self::inner_ty();
+        let schema = quote! {
+            const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " null");
+        };
+        derive_newtype!(@repr { schema } meta => inner_ty)
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = Self::inner_ty();
@@ -133,13 +131,11 @@ impl expand::ExpandBasicRepresentation for BoolReprDefinition {
         derive_newtype!(@typedef_transparent self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        expand::impl_repr(
-            meta,
-            quote! {
-                const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " bool");
-                const DATA_MODEL_KIND: Kind = Kind::Bool;
-            },
-        )
+        let inner_ty = Self::inner_ty();
+        let schema = quote! {
+            const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " bool");
+        };
+        derive_newtype!(@repr { schema } meta => inner_ty)
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = Self::inner_ty();
@@ -159,13 +155,11 @@ impl expand::ExpandBasicRepresentation for IntReprDefinition {
         derive_newtype!(@typedef_transparent self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        expand::impl_repr(
-            meta,
-            quote! {
-                const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " int");
-                const DATA_MODEL_KIND: Kind = Kind::Int;
-            },
-        )
+        let inner_ty = &self.0;
+        let schema = quote! {
+            const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " int");
+        };
+        derive_newtype!(@repr { schema } meta => inner_ty)
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = &self.0;
@@ -186,13 +180,11 @@ impl expand::ExpandBasicRepresentation for FloatReprDefinition {
         derive_newtype!(@typedef_transparent self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        expand::impl_repr(
-            meta,
-            quote! {
-                const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " float");
-                const DATA_MODEL_KIND: Kind = Kind::Float;
-            },
-        )
+        let inner_ty = &self.0;
+        let schema = quote! {
+            const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " float");
+        };
+        derive_newtype!(@repr { schema } meta => inner_ty)
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = &self.0;
@@ -219,13 +211,11 @@ impl expand::ExpandBasicRepresentation for StringReprDefinition {
         derive_newtype!(@typedef_transparent self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        expand::impl_repr(
-            meta,
-            quote! {
-                const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " string");
-                const DATA_MODEL_KIND: Kind = Kind::String;
-            },
-        )
+        let inner_ty = Self::inner_ty();
+        let schema = quote! {
+            const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " string");
+        };
+        derive_newtype!(@repr { schema } meta => inner_ty)
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = Self::inner_ty();
@@ -246,33 +236,15 @@ impl expand::ExpandBasicRepresentation for CopyReprDefinition {
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = &self.0;
-        expand::impl_repr(
-            meta,
-            quote! {
-                const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME),  " = ", stringify!(<#inner_ty>::NAME));
-                const DATA_MODEL_KIND: Kind = <#inner_ty>::DATA_MODEL_KIND;
-                const SCHEMA_KIND: Kind = <#inner_ty>::SCHEMA_KIND;
-                const REPR_KIND: Kind = <#inner_ty>::REPR_KIND;
-                const IS_LINK: bool = <#inner_ty>::IS_LINK;
-                const HAS_LINKS: bool = <#inner_ty>::HAS_LINKS;
+        let schema = quote! {
+            const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME),  " = ", stringify!(<#inner_ty>::NAME));
 
-                fn name(&self) -> &'static str {
-                    self.0.name()
-                }
-                fn data_model_kind(&self) -> Kind {
-                    self.0.data_model_kind()
-                }
-                fn schema_kind(&self) -> Kind {
-                    self.0.schema_kind()
-                }
-                fn repr_kind(&self) -> Kind {
-                    self.0.repr_kind()
-                }
-                fn has_links(&self) -> bool {
-                    self.0.has_links()
-                }
-            },
-        )
+            #[inline]
+            fn name(&self) -> &'static str {
+                self.0.name()
+            }
+        };
+        derive_newtype!(@repr { schema } meta => inner_ty)
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = &self.0;

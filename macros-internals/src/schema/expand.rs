@@ -300,26 +300,53 @@ macro_rules! derive_newtype {
             #[serde(transparent)]
         }
     }};
-    (@repr $meta:ident => $inner_ty:ident) => {{
-        quote::quote! {
-            #[inline]
-            #[doc(hidden)]
-            fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer,
-            {
-                Representation::serialize::<C, _>(self.0, serializer)
-            }
+    (@repr { $tokens:tt } $meta:ident => $inner_ty:ident) => {{
+        $crate::dev::impl_repr(
+            $meta,
+            quote::quote! {
+                #$tokens
+                const DATA_MODEL_KIND: Kind = <#$inner_ty>::DATA_MODEL_KIND;
+                const SCHEMA_KIND: Kind = <#$inner_ty>::SCHEMA_KIND;
+                const REPR_KIND: Kind = <#$inner_ty>::REPR_KIND;
+                const IS_LINK: bool = <#$inner_ty>::IS_LINK;
+                const HAS_LINKS: bool = <#$inner_ty>::HAS_LINKS;
 
-            #[inline]
-            #[doc(hidden)]
-            fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                Ok(Self(Representation::deserialize::<C, _>(deserializer)?))
+                #[inline]
+                fn data_model_kind(&self) -> Kind {
+                    self.0.data_model_kind()
+                }
+                #[inline]
+                fn schema_kind(&self) -> Kind {
+                    self.0.schema_kind()
+                }
+                #[inline]
+                fn repr_kind(&self) -> Kind {
+                    self.0.repr_kind()
+                }
+                #[inline]
+                fn has_links(&self) -> bool {
+                    self.0.has_links()
+                }
+
+                #[inline]
+                #[doc(hidden)]
+                fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: Serializer,
+                {
+                    Representation::serialize::<C, _>(self.0, serializer)
+                }
+
+                #[inline]
+                #[doc(hidden)]
+                fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: Deserializer<'de>,
+                {
+                    Ok(Self(Representation::deserialize::<C, _>(deserializer)?))
+                }
             }
-        }
+        )
     }};
     (@select $meta:ident => $inner_ty:ident) => {{
         let lib = &$meta.lib;
@@ -338,13 +365,23 @@ macro_rules! derive_newtype {
         quote::quote! {
             impl From<#name> for SelectedNode {
                 fn from(t: #name) -> Self {
-                    Self::#$selected_node(t.0)
+                    Self::#$selected_node(t.0.into())
                 }
             }
 
             impl Into<Any> for #name {
                 fn into(self) -> Any {
-                    Any::#$dm_ty(self.0)
+                    Any::#$dm_ty(self.0.into())
+                }
+            }
+
+            impl TryFrom<Any> for #name {
+                type Error = Error;
+                fn try_from(any: Any) -> Result<Self, Self::Error> {
+                    match any {
+                        Any::#$dm_ty(inner) => Ok(Self(inner.into())),
+                        _ => Err(Error::MismatchedAny)
+                    }
                 }
             }
         }

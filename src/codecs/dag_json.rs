@@ -107,16 +107,12 @@ impl DagJson {
 
     pub(crate) fn read_with_seed<'de, S, R>(&mut self, seed: S, reader: R) -> Result<(), Error>
     where
-        // S: DeserializeSeed<'de, Value = ()>,
-        // BlockSelectorSeed<C, S>: DeserializeSeed<'de, Value = ()>,
         S: CodecDeserializeSeed<'de>,
         R: Read,
     {
         let mut de = JsonDeserializer::from_reader(reader);
-        // let seed = BlockSelectorSeed::<{ Self::CODE }, _>(seed);
         seed.deserialize::<{ Self::CODE }, _>(&mut de)
             .map_err(Error::decoder)
-        // unimplemented!()
     }
 }
 

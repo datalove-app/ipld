@@ -25,6 +25,59 @@ where
     fn has_links(&self) -> bool {
         self.iter().any(|(k, v)| k.has_links() || v.has_links())
     }
+
+    #[inline]
+    #[doc(hidden)]
+    fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use ser::SerializeMap;
+
+        // let mut seq = serializer.serialize_seq(Some(self.len()))?;
+        // for elem in self {
+        //     seq.serialize_element(&EncoderElem::<'_, C, _>(elem))?;
+        // }
+        // seq.end()
+        unimplemented!()
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // struct ListVisitor<const C: u64, T>(PhantomData<T>);
+        // impl<const C: u64, T> Default for ListVisitor<C, T> {
+        //     fn default() -> Self {
+        //         Self(PhantomData)
+        //     }
+        // }
+        // impl<'de, const C: u64, T: Representation> Visitor<'de> for ListVisitor<C, T> {
+        //     type Value = List<T>;
+        //     #[inline]
+        //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //         write!(f, "A list of `{}`", T::NAME)
+        //     }
+
+        //     #[inline]
+        //     fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        //     where
+        //         A: SeqAccess<'de>,
+        //     {
+        //         let mut list = List::with_capacity(seq.size_hint().unwrap_or(8));
+        //         while let Some(elem) = seq.next_element_seed(DecoderElem::<C, T>::default())? {
+        //             list.push(elem);
+        //         }
+        //         Ok(list)
+        //     }
+        // }
+
+        // deserializer.deserialize_seq(ListVisitor::<C, T>::default())
+
+        unimplemented!()
+    }
 }
 
 impl_selector_seed_serde! { @codec_seed_visitor

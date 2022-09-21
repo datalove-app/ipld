@@ -3,6 +3,7 @@ use macros::impl_selector_seed_serde;
 use std::{
     cell::RefCell,
     fmt,
+    marker::PhantomData,
     ops::{Bound, RangeBounds},
 };
 
@@ -19,6 +20,8 @@ impl<T: Representation> Representation for List<T> {
         self.iter().any(Representation::has_links)
     }
 
+    #[inline]
+    #[doc(hidden)]
     fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -32,11 +35,18 @@ impl<T: Representation> Representation for List<T> {
         seq.end()
     }
 
+    #[inline]
+    #[doc(hidden)]
     fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct ListVisitor<const C: u64, T>(DecoderElem<C, T>);
+        struct ListVisitor<const C: u64, T>(PhantomData<T>);
+        impl<const C: u64, T> Default for ListVisitor<C, T> {
+            fn default() -> Self {
+                Self(PhantomData)
+            }
+        }
         impl<'de, const C: u64, T: Representation> Visitor<'de> for ListVisitor<C, T> {
             type Value = List<T>;
             #[inline]
@@ -57,7 +67,7 @@ impl<T: Representation> Representation for List<T> {
             }
         }
 
-        deserializer.deserialize_seq(ListVisitor::<C, T>(Default::default()))
+        deserializer.deserialize_seq(ListVisitor::<C, T>::default())
     }
 }
 

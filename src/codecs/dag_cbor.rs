@@ -80,8 +80,6 @@ impl DagCbor {
 
     pub(crate) fn read_with_seed<'de, S, R>(&mut self, seed: S, reader: R) -> Result<(), Error>
     where
-        // S: DeserializeSeed<'de, Value = ()>,
-        // BlockSelectorSeed<C, S>: DeserializeSeed<'de, Value = ()>,
         S: CodecDeserializeSeed<'de>,
         R: Read,
     {

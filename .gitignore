@@ -1,2 +1,5 @@
-/target
+*.code-workspace
+.idea/
+**/.DS_Store
+**/target
 **/*.rs.bk

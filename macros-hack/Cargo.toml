@@ -1,0 +1,14 @@
+[package]
+name = "ipld-macros-hack"
+version = "0.0.1"
+authors = ["sunny-g <sunny.gonna@gmail.com>"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+ipld-macros-internals = { path = "../macros-internals" }
+proc-macro-hack = "0.5"
+quote = "1.0"
+syn = "1.0"

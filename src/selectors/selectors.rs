@@ -44,7 +44,7 @@ schema! {
         #[ipld_attr(wrapper = "Rc")]
         | ExploreRecursive "R"
 
-        #[ipld_attr(wrapper = "Rc")]
+        // #[ipld_attr(wrapper = "Rc")]
         | ExploreUnion "|"
 
         // #[ipld_attr(wrapper = "Rc")]
@@ -204,13 +204,9 @@ schema! {
     /// simultaneously continuing to explore deeper parts of the tree with
     /// another selector, for example.
     #[ipld_attr(internal)]
-    #[derive(
-        Clone,
-        Debug,
-        // From
-    )]
+    #[derive(Clone, Debug)]
     pub type ExploreUnion null;
-    // TODO: pub type ExploreUnion [Selector];
+    // pub type ExploreUnion [Selector];
 }
 
 schema! {
@@ -425,15 +421,15 @@ macro_rules! impl_variant {
             }
         }
     };
-    (@try_into $fn:ident -> $variant:ident $selector_ty:ty) => {
-        #[inline]
-        pub fn $fn(&self) -> Result<&$selector_ty, Error> {
-            match self {
-                Self::$variant(inner) => Ok(inner),
-                _ => Err(Error::SelectorAssertionFailure),
-            }
-        }
-    };
+    // (@try_into $fn:ident -> $variant:ident $selector_ty:ty) => {
+    //     #[inline]
+    //     pub fn $fn(&self) -> Result<&$selector_ty, Error> {
+    //         match self {
+    //             Self::$variant(inner) => Ok(inner),
+    //             _ => Err(Error::SelectorAssertionFailure),
+    //         }
+    //     }
+    // };
 }
 
 impl Selector {
@@ -529,10 +525,11 @@ impl Selector {
 
 impl Default for Selector {
     fn default() -> Self {
-        Self::default()
+        Self::DEFAULT
     }
 }
 
+// TODO
 impl fmt::Display for Selector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         Ok(())
@@ -571,113 +568,5 @@ impl From<Slice> for std::ops::Range<Int> {
 impl ExploreFields {
     pub fn contains_key(&self, key: &str) -> bool {
         unimplemented!()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-///
-#[derive(AsRef, AsMut, Debug, Default)]
-pub struct SelectionState {
-    // selector: Selector,
-    // mode: SelectionMode,
-    #[as_ref]
-    #[as_mut]
-    pub(crate) path: PathBuf,
-    // path: &'a mut PathBuf,
-    pub(crate) path_depth: usize,
-    pub(crate) link_depth: usize,
-    pub(crate) max_path_depth: Option<usize>,
-    pub(crate) max_link_depth: Option<usize>,
-    // sender: Option<SelectionSender>,
-    // params: SelectionParams<'a, C, T, U>,
-}
-
-// impl<'a> SelectorState<'a> {
-impl SelectionState {
-    #[inline]
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    #[inline]
-    pub(crate) const fn max_path_depth(&self) -> usize {
-        match self.max_path_depth {
-            Some(max) => max,
-            None => usize::MAX,
-        }
-    }
-
-    #[inline]
-    pub(crate) const fn max_link_depth(&self) -> usize {
-        match self.max_link_depth {
-            Some(max) => max,
-            None => usize::MAX,
-        }
-    }
-
-    // ///
-    // #[inline]
-    // pub(crate) const fn with_max_path_depth(mut self, max_path_depth: usize) -> Self {
-    //     self.max_path_depth = Some(max_path_depth);
-    //     self
-    // }
-    //
-    // ///
-    // #[inline]
-    // pub(crate) const fn with_max_link_depth(mut self, max_link_depth: usize) -> Self {
-    //     self.max_link_depth = Some(max_link_depth);
-    //     self
-    // }
-
-    #[inline]
-    pub(crate) fn descend<T: Representation>(
-        &mut self,
-        // next_selector: Selector,
-        next_path: Field<'_>,
-    ) -> Result<(), Error> {
-        if self.path_depth >= self.max_path_depth() {
-            return Err(Error::SelectorDepth(
-                "descending would exceed max path depth",
-                self.max_path_depth(),
-            ));
-        }
-        if self.link_depth >= self.max_link_depth() {
-            return Err(Error::SelectorDepth(
-                "descending would exceed max link depth",
-                self.max_link_depth(),
-            ));
-        }
-
-        next_path.append_to_path(&mut self.path);
-        self.path_depth += 1;
-        if T::IS_LINK {
-            self.link_depth += 1;
-        }
-
-        Ok(())
-    }
-
-    #[inline]
-    pub(crate) fn ascend<T: Representation>(
-        &mut self,
-        // previous_selector: Selector,
-    ) -> Result<(), Error> {
-        self.path.pop();
-        self.path_depth = self
-            .path_depth
-            .checked_sub(1)
-            .ok_or_else(|| Error::SelectorDepth("exceeds root path depth", self.path_depth))?;
-
-        if T::IS_LINK {
-            self.link_depth = self
-                .link_depth
-                .checked_sub(1)
-                .ok_or_else(|| Error::SelectorDepth("exceeds root link depth", self.link_depth))?;
-        }
-
-        // self.selector = previous_selector;
-        Ok(())
     }
 }

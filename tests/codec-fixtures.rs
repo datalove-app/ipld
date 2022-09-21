@@ -9,10 +9,42 @@ use std::{
 const DEFAULT_CID_VERSION: Version = Version::V1;
 const DEFAULT_MH: u64 = Multihash::SHA2_256;
 
+static CODEC_SKIPLIST: &[&str] = &[];
 static FIXTURE_SKIPLIST: &[(&str, &str)] = &[
+    // unfamiliar, or incorrectly/confusingly labeled
+    ("bytes-a1", "unsupported multibase"),
+    ("bytes-empty", "no support for empty bytes yet"),
+    ("bytes-long-8bit", "unsupported multibase"),
+    ("cid-arrayof", "its a list of cids, not a cid of a list"),
+    ("cid-mapof", "its a map of cids, not a cid of a map"),
+    (
+        "float-array_of_specials",
+        "its a list of types, not a float",
+    ),
+    // (
+    //     "cid-bahaacvrasyauh7rmlyrmyc7qzvktjv7x6q2h6ttvei6qon43tl3riaaaaaaa",
+    //     "CIDv0 cannot be specified in CIDv1 format",
+    // ),
+    // (
+    //     "cid-bafkreiebzrnroamgos2adnbpgw5apo3z4iishhbdx77gldnbk57d4zdio4",
+    //     "CIDv0 cannot be specified in CIDv1 format",
+    // ),
+    // (
+    //     "cid-bafyreiejkvsvdq4smz44yuwhfymcuvqzavveoj2at3utujwqlllspsqr6q",
+    //     "CIDv0 cannot be specified in CIDv1 format",
+    // ),
+    // (
+    //     "cid-QmRgutAxd8t7oGkSm4wmeuByG6M51wcTso6cubDdQtuEfL",
+    //     "CIDv0 cannot be specified in CIDv1 format",
+    // ),
+    // (
+    //     "cid-QmQg1v4o9xdT3Q14wh4S7dxZkDjyZ9ssFzFzyep1YrVJBY",
+    //     "CIDv0 cannot be specified in CIDv1 format",
+    // ),
+    ("int-11959030306112471731", "fails for i64s"),
+    ("int-18446744073709551615", "fails for i64s"),
     // skipped by libipld
-    // ("int--11959030306112471732", "integer out of int64 range"),
-    ("float-array_of_specials", "incorrect naming"),
+    ("int--11959030306112471732", "integer out of int64 range"),
     (
         "dagpb_11unnamedlinks+data",
         "DAG-PB isn't fully compatible yet",
@@ -110,7 +142,7 @@ struct Fixture {
     // cid of the block
     cid: Cid,
     // bytes of the block
-    bytes: Vec<u8>,
+    block: Vec<u8>,
 }
 
 impl Fixture {
@@ -118,8 +150,8 @@ impl Fixture {
         self.info.0
     }
 
-    /// Returns all fixtures from a test directory.
-    fn load_tests(dir: DirEntry) -> Vec<Self> {
+    /// Loads all blocks from a test directory as fixtures.
+    fn load_test_blocks(dir: DirEntry) -> Vec<Self> {
         let test_name = dir
             .file_name()
             .into_string()
@@ -157,105 +189,195 @@ impl Fixture {
                     .expect("Filename must be a valid Cid");
 
                 // block bytes
-                let bytes = fs::read(&path).expect("File must be able to be read");
+                let block = fs::read(&path).expect("File must be able to be read");
 
                 Some(Self {
                     info: info.clone(),
                     codec,
                     cid,
-                    bytes,
+                    block,
                 })
             })
             .collect()
     }
 
-    /// Returns true if a test fixture is on the skip list
+    /// Returns false if a fixture should be skipped.
     fn should_run_test(&self) -> bool {
-        FIXTURE_SKIPLIST.iter().all(|(name, reason)| {
-            if self.info.1.starts_with(name) {
-                eprintln!("Skipping fixture '{}': {}", name, reason);
-                false
-            } else {
-                true
-            }
-        })
+        CODEC_SKIPLIST.iter().all(|name| *name != self.codec.name())
+            && FIXTURE_SKIPLIST.iter().all(|(name, reason)| {
+                if self.info.1.starts_with(name) {
+                    eprintln!("Skipping fixture '{}': {}", name, reason);
+                    false
+                } else {
+                    true
+                }
+            })
     }
 
     /// Sets up a `MemoryContext` to provide the fixture's block.
-    fn setup(codec: &Multicodec, cid: &Cid, bytes: Vec<u8>) -> MemoryContext {
+    fn setup_ctx(&self) -> MemoryContext {
         let mut ctx = MemoryContext::default();
         let cid = ctx
-            .add_block(DEFAULT_CID_VERSION, codec.code(), DEFAULT_MH, bytes)
+            .add_block(
+                DEFAULT_CID_VERSION,
+                self.codec.code(),
+                DEFAULT_MH,
+                self.block.clone(),
+            )
             .expect("should not fail to add block");
 
-        assert_eq!(&cid, &cid, "generated Cid should equal fixture Cid");
+        assert_eq!(&self.cid, &cid, "generated Cid should equal fixture Cid");
         ctx
     }
 
-    fn run(self) {
-        match self.r#type() {
+    fn run(&mut self) {
+        let did_run = match self.r#type() {
             FixtureType::Null => self.run_for::<Null>(),
             FixtureType::Bool => self.run_for::<Bool>(),
             FixtureType::Int => self.run_for::<Int>(),
-            FixtureType::Float => self.run_for::<Float>(),
-            // FixtureType::Bytes => self.run_for::<Bytes>(),
-            FixtureType::String => self.run_for::<String>(),
-            // FixtureType::Array => {}
-            // FixtureType::Map => {}
-            // FixtureType::Cid => self.run_for::<Link<Null>>(),
+            // FixtureType::Float => self.run_for::<Float>(),
+            FixtureType::Bytes => self.run_for::<Bytes>(),
+            FixtureType::String => self.run_for::<IpldString>(),
+            // FixtureType::Array => self.run_for::<List<Any>>(),
+            // FixtureType::Map => self.run_for::<Map<IpldString, Any>>(),
+            // FixtureType::Cid => self.run_for::<Link<Any>>(),
             // FixtureType::DagPb => {}
             // FixtureType::Garbage => {}
-            _ => (),
+            _ => false,
+        };
+
+        if did_run {
+            // self.run_for::<Any>();
         }
     }
 
-    fn run_for<T: Select<MemoryContext>>(self) {
-        let Self {
-            codec,
-            cid,
-            bytes,
-            info,
-        } = self;
-        let mut ctx = Self::setup(&codec, &cid, bytes.clone());
-        let dag: T = SelectionParams::<'_, _, T>::new(cid)
-            .into_dag_iter(&mut ctx)
-            .expect(&format!(
-                "should not fail selection:\n\
-                    \ttest name: {}\n\
-                    \tcodec: {}\n\
-                    \tdag type: {}\n",
-                &info.1,
-                codec.name(),
-                T::NAME,
-            ))
-            .next()
-            .expect("should produce at least one dag")
-            .dag
-            .downcast()
-            .expect("should not fail to downcast");
+    fn run_for<T: Select<MemoryContext> + std::fmt::Debug + 'static>(&mut self) -> bool {
+        {
+            // first, decode the type directly using it's serde implementation
+            let dag: T = self.codec.decode(self.block.as_slice()).expect(
+                &self.format_err::<T>("should not fail to read dag directly from block bytes"),
+            );
+            // then, encode it to another codec
+            let block = self
+                .codec
+                .encode(&dag)
+                .expect(&self.format_err::<T>("should not fail to encode dag"));
+            let new_cid = self
+                .cid
+                .derive_new(block.as_ref())
+                .expect(&"should not fail to generate a Cid for a block of bytes");
+
+            if self.codec.name() == "dag-json" {
+                assert_eq!(
+                    &self.cid,
+                    &new_cid,
+                    "{}\n{:?}\noriginal block: `{}`\nnew block `{}`",
+                    &self.format_err::<T>(
+                        "block from encoded dag should produce same Cid as input block"
+                    ),
+                    &dag,
+                    std::str::from_utf8(self.block.as_slice()).unwrap(),
+                    std::str::from_utf8(block.as_slice()).unwrap(),
+                );
+            } else {
+                assert_eq!(
+                    &self.cid,
+                    &new_cid,
+                    "{}\n{:?}\noriginal block: `{:?}`\nnew block `{:?}`",
+                    &self.format_err::<T>(
+                        "block from encoded dag should produce same Cid as input block"
+                    ),
+                    &dag,
+                    self.block.as_slice(),
+                    block.as_slice(),
+                );
+            }
+        }
+
+        {
+            // next, decode the concrete type using the Matcher selector
+            let mut ctx = self.setup_ctx();
+            let matched_dag: T = Params::<'_, _, T>::new_select(self.cid)
+                .into_dag_iter(&mut ctx)
+                .expect(&self.format_err::<T>("should not fail selection"))
+                .next()
+                .expect("should produce at least one dag")
+                .dag
+                .downcast()
+                .expect("should not fail to downcast to dag:");
+            // then, encode it to another codec
+            let block = self
+                .codec
+                .encode(&matched_dag)
+                .expect(&self.format_err::<T>("should not fail to encode dag"));
+            let new_cid = self
+                .cid
+                .derive_new(block.as_ref())
+                .expect(&"should not fail to generate a Cid for a block of bytes");
+
+            if self.codec.name() == "dag-json" {
+                assert_eq!(
+                    &self.cid,
+                    &new_cid,
+                    "{}\noriginal block: `{}`\nnew block `{}`",
+                    &self.format_err::<T>(
+                        "block from encoded dag should produce same Cid as input block"
+                    ),
+                    std::str::from_utf8(self.block.as_slice()).unwrap(),
+                    std::str::from_utf8(block.as_slice()).unwrap(),
+                );
+            } else {
+                assert_eq!(
+                    &self.cid,
+                    &new_cid,
+                    "{}\noriginal block: `{:?}`\nnew block `{:?}`",
+                    &self.format_err::<T>(
+                        "block from encoded dag should produce same Cid as input block"
+                    ),
+                    self.block.as_slice(),
+                    block.as_slice(),
+                );
+            }
+        }
+
+        true
+    }
+
+    fn format_err<T: Representation>(&self, msg: &str) -> String {
+        format!(
+            "{}\n\
+                type: {}:\n\
+                test name: {}\n\
+                codec: {}\n\
+                block: {:?}\n",
+            msg,
+            T::NAME,
+            &self.info.1,
+            self.codec.name(),
+            &self.block,
+        )
     }
 }
 
 #[test]
 fn codec_fixtures() {
+    // todo: this fixture-loading logic only round-trips, doesnt transcode
     let fixtures = fixture_directories()
         .into_iter()
-        .map(Fixture::load_tests)
+        .map(Fixture::load_test_blocks)
         .flatten()
         .filter(Fixture::should_run_test)
         .collect::<Vec<Fixture>>();
     let fixture_count = fixtures.len();
 
     let mut actual_count = 0usize;
-    for test in fixtures.into_iter() {
+    for mut test in fixtures.into_iter() {
         test.run();
         actual_count += 1;
     }
 
-    assert_eq!(
-        fixture_count, actual_count,
-        "should have run at least one test"
-    );
+    assert!(actual_count > 0, "should have run at least one test");
+    assert_eq!(fixture_count, actual_count);
 
     /*
     for dir in fixture_directories() {
@@ -274,23 +396,8 @@ fn codec_fixtures() {
 
         println!("Testing fixture {}", fixture_name);
         let mut test_count: usize = 0;
-        let fixtures = load_tests(dir);
+        let fixtures = load_test(dir);
         for fixture in fixtures.into_iter() {
-            let mut ctx = setup_ctx(&fixture);
-
-            // let mut dag: Any::Null;
-            // let params = SelectionParams::new(fixture.cid);
-            // Any::select(params, ctx).expect("should not fail to select");
-
-            let dag: Null = SelectionParams::<'_, _, Null>::new(fixture.cid)
-                .into_dag_iter(&mut ctx)
-                .expect("should not fail selection")
-                .next()
-                .expect("should produce at least one dag")
-                .dag
-                .downcast()
-                .expect("should not fail to downcast");
-
             /*
             // Take a fixture of one codec and…
             let decoded: Ipld = match &from_fixture.codec[..] {

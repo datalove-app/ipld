@@ -102,7 +102,7 @@ impl ToTokens for SchemaDefinition {
             ReprDefinition::Float(def) => expand_basic!(meta, def),
             ReprDefinition::String(def) => expand_basic!(meta, def),
             ReprDefinition::Bytes(def) => expand_basic!(meta, def),
-            // ReprDefinition::List(def) => expand_basic_def!(meta, def),
+            ReprDefinition::List(def) => expand_basic!(meta, def),
             // ReprDefinition::Map(def) => expand_basic_def!(meta, def),
             ReprDefinition::Link(def) => expand_basic!(meta, def),
 
@@ -133,15 +133,13 @@ pub(crate) trait ExpandBasicRepresentation {
 
     /// Derive Serde impls for the defined type, as well as core-logic types like [`ipld::context::ContextSeed`].
     ///
-    /// Optional because many types can use `#[derive(Deserialize, Serialize)]`
-    /// directly.
+    /// Optional because many types can use `serde-derive`directly.
     fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
 
-    /// Derives `Select<ISelector>` for each `ISelector` the type supports.
+    /// Derives `Select` for the type.
     ///
-    /// Optional because many types only support the `Matcher` selector.
     /// TODO: support conditionals
     /// - `type ReprSelectorSeed = SelectorSeed<ReprVisitor>`
     ///     `impl Visitor for `ReprSelectorSeed`
@@ -151,17 +149,11 @@ pub(crate) trait ExpandBasicRepresentation {
     /// - `impl DeserializeSeed<'de, Value = Self> for Selector`
     ///     instantiates ReprSelectorSeed(selector, repr_visitor)
     ///     matches on selector, delegates to one deserializer method
-    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
-        // let name = &meta.name;
-        // quote!(impl_root_select!(#name => Matcher);)
-        TokenStream::default()
-    }
+    fn derive_select(&self, meta: &SchemaMeta) -> TokenStream;
 
     /// Derives conversions between the type and `Value`, as well as `ipfs::Ipld`
     /// (if `#[cfg(feature = "ipld/ipfs")]` is enabled)
-    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        TokenStream::default()
-    }
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream;
 }
 
 /// Helper trait for crates that want to provide auto-implementable
@@ -232,7 +224,7 @@ impl SchemaKind {
             match self {
                 Self::Null => "Null",
                 Self::Bool => "Bool",
-                Self::Int => "Int128",
+                Self::Int => "Int64",
                 Self::Int8 => "Int8",
                 Self::Int16 => "Int16",
                 Self::Int32 => "Int32",
@@ -262,6 +254,84 @@ impl SchemaKind {
 }
 
 // Helpers
+
+/// Helpers for newtype wrappers around types that already implement
+/// `Serialize`, `Deserialize`, `Representation` and `Select`.
+/// TODO: manually/macro implement serialize/deserialize for these types
+#[macro_export(local_inner_macros)]
+macro_rules! derive_newtype {
+    (@typedef $def:ident, $meta:ident => $inner_ty:ident $(#[$attr_ex:meta])*) => {{
+        let attrs = &$meta.attrs;
+        let vis = &$meta.vis;
+        let name = &$meta.name;
+        let generics = &$meta
+            .generics
+            .as_ref()
+            .map(|g| quote::quote!(#g))
+            .unwrap_or_default();
+
+        // let (try_from_typedef, try_from_serde_attr) = if let Some(try_from_name) = &$meta.try_from {
+        //     let ident = &$meta.try_from_name();
+        //     (
+        //         // creates an inner type that transparently (de)serializes itself
+        //         quote::quote! {
+        //             #[derive(_ipld::dev::Deserialize, _ipld::dev::Serialize)]
+        //             #[serde(transparent)]
+        //             struct #ident(#$inner_ty);
+        //         },
+        //         // tells serde to delegate to a user-defined TryFrom impl
+        //         quote::quote!(#[serde(try_from = #try_from_name)]),
+        //     )
+        // } else {
+        //     (TokenStream::default(), TokenStream::default())
+        // };
+
+        quote::quote! {
+            #(#attrs)*
+            #[repr(transparent)]
+            $(#[$attr_ex])*
+            #vis struct #name #generics (#$inner_ty);
+        }
+    }};
+    (@typedef_transparent $def:ident, $meta:ident => $inner_ty:ident) => {{
+        $crate::derive_newtype! { @typedef
+            $def, $meta => $inner_ty
+            #[derive(Deserialize, Serialize)]
+            #[serde(transparent)]
+        }
+    }};
+    (@repr $meta:ident => $inner_ty:ident) => {{
+
+    }};
+    (@select $meta:ident => $inner_ty:ident) => {{
+        let lib = &$meta.lib;
+        let name = &$meta.name;
+        quote::quote! {
+            #lib::dev::macros::impl_selector_seed_serde! { @selector_seed_codec_deseed_newtype {} {} #name as #$inner_ty
+            }
+            #lib::dev::macros::impl_selector_seed_serde! {
+                @selector_seed_select {} {} #name
+            }
+        }
+    }};
+    (@conv @has_constructor $def:ident, $meta:ident =>
+        $dm_ty:ident $selected_node:ident) => {{
+        let name = &$meta.name;
+        quote::quote! {
+            impl From<#name> for SelectedNode {
+                fn from(t: #name) -> Self {
+                    Self::#$selected_node(t.0)
+                }
+            }
+
+            impl Into<Any> for #name {
+                fn into(self) -> Any {
+                    Any::#$dm_ty(self.0)
+                }
+            }
+        }
+    }};
+}
 
 ///
 pub(crate) fn impl_serialize(meta: &SchemaMeta, body: TokenStream) -> TokenStream {
@@ -378,13 +448,12 @@ pub(crate) fn impl_deserialize(meta: &SchemaMeta, mut body: TokenStream) -> Toke
 pub(crate) fn impl_repr(meta: &SchemaMeta, consts_and_simple_methods: TokenStream) -> TokenStream {
     let lib = &meta.lib;
     let name = &meta.name;
-    // let typedef_str = &meta.typedef_str;
+    let typedef_str = &meta.typedef_str;
     let generics = meta.generics_tokens();
     quote! {
         #[automatically_derived]
         impl #generics #lib::dev::Representation for #name #generics {
             const NAME: &'static str = ::std::stringify!(#name);
-            // TODO:
             // const SCHEMA: &'static str = #typedef_str;
 
             #consts_and_simple_methods
@@ -392,6 +461,7 @@ pub(crate) fn impl_repr(meta: &SchemaMeta, consts_and_simple_methods: TokenStrea
     }
 }
 
+/*
 pub(crate) fn impl_context_seed_visitor(
     meta: &SchemaMeta,
     expecting: &'static str,
@@ -470,6 +540,8 @@ pub(crate) fn impl_select(
         }
     }
 }
+
+ */
 
 //
 // pub(crate) fn impl_de_seed_for(

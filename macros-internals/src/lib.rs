@@ -13,7 +13,7 @@ pub use selector::{RootSelectorDefinition, SelectorDefinition};
 
 pub mod dev {
     pub use crate::common::*;
-    pub use crate::define_newtype;
+    pub use crate::derive_newtype;
     pub use crate::impl_advanced_parse;
     pub use crate::parse_kwarg;
     pub use crate::schema::{expand::*, parse::*, *};

@@ -35,4 +35,7 @@ impl ExpandBasicRepresentation for StringjoinStructReprDefinition {
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        quote!()
+    }
 }

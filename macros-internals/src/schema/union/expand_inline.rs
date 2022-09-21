@@ -29,6 +29,9 @@ impl ExpandBasicRepresentation for InlineUnionReprDefinition {
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        quote!()
+    }
 }
 
 fn field_typedef(field: &UnionField<LitStr>) -> TokenStream {

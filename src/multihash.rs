@@ -6,6 +6,7 @@ macro_rules! impl_multihasher {
         $(#[$meta:meta])*
         $variant:ident ($const:ident: $code:expr) -> $ty:ty [$size:expr],
     )*) => {
+        /// A generic [multihash]()-er enum.
         #[derive(Debug)]
         pub enum Multihash {
             $(
@@ -21,7 +22,8 @@ macro_rules! impl_multihasher {
             )*
 
             ///
-            pub fn new<const C: u64>() -> Result<Self, Error> {
+            #[inline]
+            pub fn from_code<const C: u64>() -> Result<Self, Error> {
                 Ok(match C {
                     $($code => Ok(Self::$variant(<$ty>::default())),)*
                     code => Err(multihash::Error::UnsupportedCode(code))
@@ -29,6 +31,7 @@ macro_rules! impl_multihasher {
             }
 
             ///
+            #[inline]
             pub const fn code(&self) -> u64 {
                 match self {
                     $(Self::$variant(_) => $code,)*
@@ -36,10 +39,18 @@ macro_rules! impl_multihasher {
             }
 
             ///
+            #[inline]
             pub const fn size(&self) -> u8 {
                 match self {
                     $(Self::$variant(_) => $size,)*
                 }
+            }
+
+            ///
+            pub fn finalize(&mut self) -> Result<DefaultMultihash, Error> {
+                let mh = DefaultMultihash::wrap(self.code(), multihash::Hasher::finalize(self))?;
+                self.reset();
+                Ok(mh)
             }
         }
 
@@ -68,13 +79,6 @@ macro_rules! impl_multihasher {
                     $($code => Ok(Self::$variant(<$ty>::default())),)*
                     mh_code => Err(multihash::Error::UnsupportedCode(mh_code))
                 }?)
-            }
-        }
-
-        impl TryInto<DefaultMultihash> for Multihash {
-            type Error = Error;
-            fn try_into(mut self) -> Result<DefaultMultihash, Self::Error> {
-                Ok(DefaultMultihash::wrap(self.code(), self.finalize())?)
             }
         }
     };

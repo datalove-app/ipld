@@ -1,9 +1,17 @@
 use crate::dev::*;
-use macros::{derive_more::From, impl_ipld_serde};
+use macros::{derive_more::From, impl_selector_seed_serde};
 use std::fmt;
 
 ///
-#[derive(Clone, Debug, Eq, From, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    From,
+    // Hash, Ord,
+    PartialEq,
+    // PartialOrd
+)]
 pub enum Link<T: Representation = Any> {
     ///
     Cid(Cid),
@@ -43,8 +51,6 @@ impl<T: Representation> Representation for Link<T> {
     const NAME: &'static str = "Link";
     const SCHEMA: &'static str = concat!("type Link &", stringify!(T::NAME));
     const DATA_MODEL_KIND: Kind = Kind::Link;
-    const IS_LINK: bool = true;
-    const HAS_LINKS: bool = true;
 
     fn name(&self) -> &'static str {
         match self {
@@ -59,11 +65,32 @@ impl<T: Representation> Representation for Link<T> {
             Self::Inner { t, .. } => t.has_links(),
         }
     }
+
+    ///
+    /// TODO: dirty links?
+    #[inline]
+    fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Representation::serialize::<C, _>(self.cid(), serializer)
+    }
+
+    ///
+    #[inline]
+    fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(Self::Cid(Representation::deserialize::<C, _>(
+            deserializer,
+        )?))
+    }
 }
 
-impl_ipld_serde! { @context_seed_visitor
+impl_selector_seed_serde! { @codec_seed_visitor
     { T: Representation + 'static }
-    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>, }
+    { for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()>, }
     Link<T>
 {
     #[inline]
@@ -72,9 +99,9 @@ impl_ipld_serde! { @context_seed_visitor
     }
 }}
 
-impl_ipld_serde! { @context_seed_visitor_ext
+impl_selector_seed_serde! { @codec_seed_visitor_ext
     { T: Representation + 'static }
-    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>, }
+    { for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()>, }
     Link<T>
 {
     #[inline]
@@ -96,49 +123,73 @@ impl_ipld_serde! { @context_seed_visitor_ext
     }
 }}
 
-impl_ipld_serde! { @context_seed_deseed
+impl_selector_seed_serde! { @selector_seed_codec_deseed
     { T: Representation + 'static }
-    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
+    { for<'b> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de> }
     Link<T>
 {
     #[inline]
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_link(self)
+        // deserializer.deserialize_link(self)
+        // (&mut &mut &mut Decoder(deserializer)).deserialize_link(self)
+
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "dag-json")] {
+                if C == DagJson::CODE {
+                    return DagJson::deserialize_link(deserializer, CodecSeed::<C, _>(self));
+                }
+            }
+        }
+        cfg_if::cfg_if!{
+            if #[cfg(feature = "dag-cbor")] {
+                if C == DagCbor::CODE {
+                    return DagCbor::deserialize_link(deserializer, CodecSeed::<C, _>(self));
+                }
+            }
+        }
+
+        // TODO:
+        Deserialize::deserialize(deserializer)
     }
 }}
 
-impl_ipld_serde! { @context_seed_select
+impl_selector_seed_serde! { @selector_seed_select
     { T: Representation + 'static }
-    { for<'b, 'de> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
+    { for<'b, 'de> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de> }
     Link<T>
 }
 
-impl<'a, C, T> ContextSeed<'a, C, Link<T>>
+impl<'a, const C: u64, Ctx, T> CodecSeed<C, SelectorSeed<'a, Ctx, Link<T>>>
 where
-    C: Context,
+    Ctx: Context,
     T: Representation + 'static,
 {
     ///
     /// TODO: continue selection if the current selector is not a matcher
-    fn visit_link<E>(mut self, cid: Cid) -> Result<(), E>
+    fn visit_link<'de, E>(mut self, cid: Cid) -> Result<(), E>
     where
         E: de::Error,
+        for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()>,
     {
-        if let Some(matcher) = self.selector.as_matcher() {
-            return Ok(match self.mode() {
+        if let Some(matcher) = self.0.selector.as_matcher() {
+            match self.0.mode() {
                 SelectionMode::SelectNode => {
-                    self.select_matched_node(cid.into(), matcher.label.as_deref())
+                    self.0
+                        .select_matched_node(cid.into(), matcher.label.as_deref())
                         .map_err(E::custom)?;
                 }
                 SelectionMode::SelectDag => {
-                    self.select_matched_dag(Link::Cid(cid), matcher.label.as_deref())
+                    self.0
+                        .select_matched_dag(Link::Cid(cid), matcher.label.as_deref())
                         .map_err(E::custom)?;
                 }
                 _ => unimplemented!(),
-            });
+            };
+
+            return Ok(());
         }
 
         unimplemented!()
@@ -205,7 +256,7 @@ impl<T: Representation> Into<Cid> for Link<T> {
     }
 }
 
-// TODO dirty links?
+// TODO: dirty links?
 impl<T> Serialize for Link<T>
 where
     T: Representation,
@@ -214,7 +265,10 @@ where
     where
         S: Serializer,
     {
-        <S as Encoder>::serialize_link(serializer, self.cid())
+        // <S as Encoder>::serialize_link(serializer, self.cid())
+        // (&mut &mut &mut Encoder(serializer)).serialize_link(self.cid())
+        // self.cid().serialize(serializer)
+        Serialize::serialize(self.cid(), serializer)
     }
 }
 
@@ -226,7 +280,8 @@ where
     where
         D: Deserializer<'de>,
     {
-        Ok(Self::Cid(Cid::deserialize(deserializer)?))
+        // Ok(Self::Cid(Cid::deserialize(deserializer)?))
+        Ok(Self::Cid(Deserialize::deserialize(deserializer)?))
     }
 }
 

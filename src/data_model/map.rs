@@ -1,15 +1,15 @@
 use crate::dev::*;
-use macros::impl_ipld_serde;
+use macros::impl_selector_seed_serde;
 use std::{cell::RefCell, collections::BTreeMap, fmt};
 
 ///
+/// TODO: indexmap?
 pub type Map<K = IpldString, V = Any> = BTreeMap<K, V>;
-
-// TODO: write the 4 Select impls, then the latter 3 for BTreeMap<K, Link<V>>
 
 impl<K, V> Representation for Map<K, V>
 where
-    K: Representation + Ord,
+    // TODO: remove clone requirement by switching up callbacks
+    K: Representation + Clone + Ord + AsRef<str>,
     V: Representation,
 {
     const NAME: &'static str = "Map";
@@ -27,10 +27,11 @@ where
     }
 }
 
-impl_ipld_serde! { @context_seed_visitor
-    { K: Representation + Ord + 'static, V: Representation + 'static }
-    { for<'b> ContextSeed<'b, C, K>: DeserializeSeed<'de, Value = ()>,
-      for<'b> ContextSeed<'b, C, V>: DeserializeSeed<'de, Value = ()>, }
+impl_selector_seed_serde! { @codec_seed_visitor
+    { K: Representation + Clone + Ord + AsRef<str> + 'static,
+      V: Representation + 'static }
+    { for<'b> CodedSeed<'b, C, Ctx, K>: DeserializeSeed<'de, Value = ()>,
+      for<'b> CodedSeed<'b, C, Ctx, V>: DeserializeSeed<'de, Value = ()>, }
     Map<K, V>
 {
     #[inline]
@@ -43,147 +44,133 @@ impl_ipld_serde! { @context_seed_visitor
     where
         A: MapAccess<'de>,
     {
-        match self.selector {
+        match self.0.selector {
             Selector::Matcher(_) => self.match_map(map),
-            // Selector::ExploreFields(_) => self.explore_map_fields(map),
-            // Selector::ExploreAll(_) => self.explore_map_fields(map),
+            Selector::ExploreFields(_) => self.explore_map_fields(map),
+            Selector::ExploreAll(_) => self.explore_map_all(map),
             _ => Err(A::Error::custom(Error::unsupported_selector::<Map<K, V>>(
-                self.selector,
+                self.0.selector,
             ))),
         }
     }
 }}
 
-impl_ipld_serde! { @context_seed_visitor_ext
-    { K: Representation + Ord + 'static, V: Representation + 'static }
-    { for<'b> ContextSeed<'b, C, K>: DeserializeSeed<'de, Value = ()>,
-      for<'b> ContextSeed<'b, C, V>: DeserializeSeed<'de, Value = ()>, }
+impl_selector_seed_serde! { @codec_seed_visitor_ext
+    { K: Representation + Clone + Ord + AsRef<str> + 'static,
+      V: Representation + 'static }
+    { for<'b> CodedSeed<'b, C, Ctx, K>: DeserializeSeed<'de, Value = ()>,
+      for<'b> CodedSeed<'b, C, Ctx, V>: DeserializeSeed<'de, Value = ()>, }
     Map<K, V> {}
 }
 
-impl_ipld_serde! { @context_seed_deseed
-    { K: Representation + Ord + 'static, V: Representation + 'static }
-    { for<'b> ContextSeed<'b, C, K>: DeserializeSeed<'de, Value = ()>,
-      for<'b> ContextSeed<'b, C, V>: DeserializeSeed<'de, Value = ()>, }
+impl_selector_seed_serde! { @selector_seed_codec_deseed
+    { K: Representation + Clone + Ord + AsRef<str> + 'static,
+      V: Representation + 'static }
+    { for<'b> SelectorSeed<'b, Ctx, K>: CodecDeserializeSeed<'de>,
+      for<'b> SelectorSeed<'b, Ctx, V>: CodecDeserializeSeed<'de>, }
     Map<K, V>
 {
     #[inline]
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_map(self)
+        deserializer.deserialize_map(CodecSeed::<C, _>(self))
     }
 }}
 
-impl_ipld_serde! { @context_seed_select
-    { K: Representation + Ord + 'static, V: Representation + 'static }
-    { for<'b, 'de> ContextSeed<'b, C, K>: DeserializeSeed<'de, Value = ()>,
-      for<'b, 'de> ContextSeed<'b, C, V>: DeserializeSeed<'de, Value = ()>, }
+impl_selector_seed_serde! { @selector_seed_select
+    { K: Representation + Clone + Ord + AsRef<str> + 'static,
+      V: Representation + 'static }
+    { for<'b, 'de> SelectorSeed<'b, Ctx, K>: CodecDeserializeSeed<'de>,
+      for<'b, 'de> SelectorSeed<'b, Ctx, V>: CodecDeserializeSeed<'de>, }
     Map<K, V>
 }
 
-/*
-///
-/// ? should be explicitly implemented for each concrete Map<K, V>
-#[macro_export]
-macro_rules! impl_ipld_map {
-    ($inner_ty:ty) => {
-        $crate::dev::impl_ipld_map! {
-            @visit_map {} {}
-            $crate::dev::Map<K, Vinner_ty> [ $inner_ty ]
-        }
-    };
-
-    (@visit_map
-        { $($generics:tt)* } { $($bounds:tt)* }
-        $type:ty [ $inner_ty:ty ]
-    ) => {
-        impl<'a, 'de, C, T, $($generics)*> $crate::dev::Visitor<'de> for $crate::dev::ContextSeed<'a, C, $type, T>
-        where
-            T: $crate::dev::Representation + Send + Sync + 'static,
-            C: $crate::dev::Context,
-            for<'b> $crate::dev::ContextSeed<'b, C, $inner_ty, T>: $crate::dev::DeserializeSeed<'de, Value = Option<T>>,
-            $($bounds)*
-        {
-            type Value = Option<T>;
-
-            #[inline]
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(formatter, "{}", <$type>::NAME)
-            }
-
-            #[inline]
-            fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
-            where
-                A: $crate::dev::MapAccess<'de>,
-            {
-                match self.selector {
-                    s if type_eq::<$type, T>() && s.is_matcher() => {
-                        let dag = self.into::<$type, T>().visit_map(map)?;
-                        Ok(take_concrete_type::<_, T>(dag))
-                    }
-                    s if s.is_explore_fields() => self.into::<$type, T>().visit_map_fields(map),
-                    s if s.is_explore_all() => self.into::<$type, T>().visit_map_all(map),
-                    _ => Err(A::Error::custom($crate::Error::unsupported_selector::<$type, T>(self.selector))),
-                }
-            }
-        }
-    };
-}
- */
-
-impl<'a, C, K, V> ContextSeed<'a, C, Map<K, V>>
+impl<'a, const C: u64, Ctx, K, V> CodedSeed<'a, C, Ctx, Map<K, V>>
 where
-    C: Context,
-    K: Representation + Ord + 'static,
+    Ctx: Context,
+    K: Representation + Clone + Ord + AsRef<str> + 'static,
     V: Representation + 'static,
-    // W: Representation + Send + Sync + 'static,
 {
     ///
     pub(crate) fn match_map<'de, A>(mut self, mut map: A) -> Result<(), A::Error>
     where
         A: MapAccess<'de>,
-        for<'b> ContextSeed<'b, C, K>: DeserializeSeed<'de, Value = ()>,
-        for<'b> ContextSeed<'b, C, V>: DeserializeSeed<'de, Value = ()>,
+        for<'b> CodedSeed<'b, C, Ctx, K>: DeserializeSeed<'de, Value = ()>,
+        for<'b> CodedSeed<'b, C, Ctx, V>: DeserializeSeed<'de, Value = ()>,
     {
         let matcher = self
+            .0
             .selector
             .as_matcher()
             .expect("should know that this is a matcher");
 
-        let mode = self.mode();
-        let mut dag: RefCell<Map<K, V>> = Default::default();
+        let mode = self.0.mode();
+        let dag: RefCell<Map<K, V>> = Default::default();
 
         match mode {
             SelectionMode::SelectNode => {
-                self.select_matched_node(SelectedNode::Map, matcher.label.as_deref())
+                self.0
+                    .select_matched_node(SelectedNode::Map, matcher.label.as_deref())
                     .map_err(A::Error::custom)?;
             }
+            SelectionMode::SelectDag => (),
             _ => unimplemented!(),
         }
 
-        let (selector, state, mut params, ctx) = self.into_parts();
+        let (selector, state, mut params, ctx) = self.0.into_parts();
 
-        unimplemented!()
+        // select against each child
+        while let Some(key) = map.next_key::<K>()? {
+            SelectorSeed::field_select_seed::<V>(
+                selector,
+                state,
+                &mut params,
+                ctx,
+                key.as_ref().into(),
+                match mode {
+                    SelectionMode::SelectNode => None,
+                    SelectionMode::SelectDag => Some(Box::new(|child, _| {
+                        dag.borrow_mut().insert(key.clone(), child);
+                        Ok(())
+                    })),
+                    _ => unreachable!(),
+                },
+            )
+            .map_err(A::Error::custom)
+            .and_then(|seed| map.next_value_seed(CodecSeed::<C, _>(seed)))?;
+
+            state.ascend::<V>().map_err(A::Error::custom)?;
+        }
+
+        // finally, select the matched dag
+        if mode == SelectionMode::SelectDag {
+            let mut original_seed = SelectorSeed::from(selector, state, params, ctx);
+            original_seed
+                .select_matched_dag(dag.into_inner(), matcher.label.as_deref())
+                .map_err(A::Error::custom)?;
+        }
+
+        Ok(())
     }
 
     ///
-    pub(crate) fn visit_map_fields<'de, A>(self, mut map: A) -> Result<(), A::Error>
+    pub(crate) fn explore_map_fields<'de, A>(self, mut map: A) -> Result<(), A::Error>
     where
         A: MapAccess<'de>,
-        for<'b> ContextSeed<'b, C, K>: DeserializeSeed<'de, Value = ()>,
-        for<'b> ContextSeed<'b, C, V>: DeserializeSeed<'de, Value = ()>,
+        for<'b> CodedSeed<'b, C, Ctx, K>: DeserializeSeed<'de, Value = ()>,
+        for<'b> CodedSeed<'b, C, Ctx, V>: DeserializeSeed<'de, Value = ()>,
     {
         unimplemented!()
     }
 
     ///
-    pub(crate) fn visit_map_all<'de, A>(self, mut map: A) -> Result<(), A::Error>
+    pub(crate) fn explore_map_all<'de, A>(self, mut map: A) -> Result<(), A::Error>
     where
         A: MapAccess<'de>,
-        for<'b> ContextSeed<'b, C, K>: DeserializeSeed<'de, Value = ()>,
-        for<'b> ContextSeed<'b, C, V>: DeserializeSeed<'de, Value = ()>,
+        for<'b> CodedSeed<'b, C, Ctx, K>: DeserializeSeed<'de, Value = ()>,
+        for<'b> CodedSeed<'b, C, Ctx, V>: DeserializeSeed<'de, Value = ()>,
     {
         unimplemented!()
     }
@@ -198,7 +185,7 @@ where
 //     // ContextSeed<'a, C, Map<K, V>>: Visitor<'de, Value = ()>,
 // {
 //     type Value = ();
-
+//
 //     #[inline]
 //     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
 //     where
@@ -207,7 +194,7 @@ where
 //         deserializer.deserialize_map(self)
 //     }
 // }
-
+//
 // impl<'a, C, K, V> Select<C> for Map<K, V>
 // where
 //     C: Context,

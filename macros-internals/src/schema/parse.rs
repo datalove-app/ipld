@@ -258,6 +258,51 @@ pub(crate) fn parse_rest(input: ParseStream) -> ParseResult<TokenStream> {
     Ok(args.parse::<TokenStream>()?)
 }
 
+pub(crate) fn parse_stringpair_args(input: ParseStream) -> ParseResult<(LitStr, LitStr)> {
+    let args;
+    braced!(args in input);
+
+    let mut inner_delim = None;
+    let mut entry_delim = None;
+    try_parse_stringpair_args(&args, &mut inner_delim, &mut entry_delim)?;
+    try_parse_stringpair_args(&args, &mut inner_delim, &mut entry_delim)?;
+
+    let inner_delim = inner_delim.ok_or(
+        args.error("invalid IPLD map stringpairs representation definition: missing `innerDelim`"),
+    )?;
+    let entry_delim = entry_delim.ok_or(
+        args.error("invalid IPLD map stringpairs representation definition: missing `entryDelim`"),
+    )?;
+
+    Ok((inner_delim, entry_delim))
+}
+
+fn try_parse_stringpair_args(
+    input: ParseStream,
+    inner_delim: &mut Option<LitStr>,
+    entry_delim: &mut Option<LitStr>,
+) -> ParseResult<()> {
+    if input.peek(kw::innerDelim) {
+        if inner_delim.is_some() {
+            return Err(input.error(
+                "invalid IPLD stringpairs representation defintion: duplicate `innerDelim`",
+            ));
+        }
+        inner_delim.replace(parse_kwarg!(input, innerDelim => LitStr));
+        Ok(())
+    } else if input.peek(kw::entryDelim) {
+        if entry_delim.is_some() {
+            return Err(input.error(
+                "invalid IPLD stringpairs representation defintion: duplicate `entryDelim`",
+            ));
+        }
+        entry_delim.replace(parse_kwarg!(input, entryDelim => LitStr));
+        Ok(())
+    } else {
+        Ok(())
+    }
+}
+
 // impl Parse for super::Methods {
 //     fn parse(input: ParseStream) -> ParseResult<Self> {
 //         let mut vec = Vec::new();

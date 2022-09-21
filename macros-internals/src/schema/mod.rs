@@ -11,6 +11,8 @@ mod r#struct;
 mod union;
 
 pub use compound::*;
+pub use expand::*;
+pub use parse::*;
 pub use primitive::*;
 pub use r#enum::*;
 pub use r#struct::*;
@@ -57,7 +59,7 @@ impl SchemaMeta {
                     FoundCrate::Itself => parse_str::<Path>(attr::IPLD_CRATE_NAME),
                     FoundCrate::Name(name) => parse_str::<Path>(&name),
                 }
-                .expect("`ipld` is either not present in Cargo.toml")
+                .expect("`ipld` is not present in Cargo.toml")
             },
         );
 

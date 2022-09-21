@@ -66,6 +66,9 @@ impl ExpandBasicRepresentation for KeyedUnionReprDefinition {
         // quote!(impl_root_select!(#name => Matcher);)
         TokenStream::default()
     }
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        quote!()
+    }
 }
 
 impl UnionField<LitStr> {
@@ -141,10 +144,20 @@ impl ExpandBasicRepresentation for UnionReprDefinition {
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         match self {
             Self::Keyed(def) => def.derive_select(meta),
-            // Self::Envelope(def) => def.derive_selects(meta),
-            // Self::Inline(def) => def.derive_selects(meta),
-            // Self::BytePrefix(def) => def.derive_selects(meta),
+            // Self::Envelope(def) => def.derive_select(meta),
+            // Self::Inline(def) => def.derive_select(meta),
+            // Self::BytePrefix(def) => def.derive_select(meta),
             Self::Kinded(def) => def.derive_select(meta),
+            _ => unimplemented!(),
+        }
+    }
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        match self {
+            Self::Keyed(def) => def.derive_conv(meta),
+            // Self::Envelope(def) => def.derive_conv(meta),
+            // Self::Inline(def) => def.derive_conv(meta),
+            // Self::BytePrefix(def) => def.derive_conv(meta),
+            Self::Kinded(def) => def.derive_conv(meta),
             _ => unimplemented!(),
         }
     }

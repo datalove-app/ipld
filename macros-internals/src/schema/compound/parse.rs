@@ -2,6 +2,7 @@ use super::*;
 use crate::dev::{
     common, impl_advanced_parse, parse_kwarg,
     schema::{kw, parse},
+    *,
 };
 use syn::{
     braced, bracketed,
@@ -14,7 +15,8 @@ impl Parse for ListReprDefinition {
         // parse list typedef
         let mut nullable = false;
         let typedef_stream;
-        
+
+        // parse type, which may be nullable
         bracketed!(typedef_stream in input);
         if typedef_stream.peek(kw::nullable) {
             typedef_stream.parse::<kw::nullable>()?;
@@ -29,7 +31,7 @@ impl Parse for ListReprDefinition {
             return Ok(Self::Basic { elem, nullable });
         }
 
-        // parse list representation
+        // parse list advanced representation
         input.parse::<kw::representation>()?;
         let name = parse_kwarg!(input, advanced => Path);
         Ok(Self::Advanced(AdvancedListReprDefinition {
@@ -48,7 +50,9 @@ impl Parse for MapReprDefinition {
         let typedef_stream;
         braced!(typedef_stream in input);
 
+        // parse key
         let key = typedef_stream.parse::<Type>()?;
+        // parse value, which may be nullable
         typedef_stream.parse::<Token![:]>()?;
         if typedef_stream.peek(kw::nullable) {
             typedef_stream.parse::<kw::nullable>()?;
@@ -69,98 +73,50 @@ impl Parse for MapReprDefinition {
 
         // parse map representation
         input.parse::<kw::representation>()?;
-        let map_repr = match input {
+        match input {
             // basic
             _ if input.peek(kw::map) => {
                 input.parse::<kw::map>()?;
-                Self::Basic {
+                Ok(Self::Basic {
                     key,
                     value,
                     nullable,
-                }
+                })
             }
             // listpairs
             _ if input.peek(kw::listpairs) => {
                 input.parse::<kw::listpairs>()?;
-                Self::Listpairs {
+                Ok(Self::Listpairs {
                     key,
                     value,
                     nullable,
-                }
+                })
             }
             // stringpairs
             _ if input.peek(kw::stringpairs) => {
                 input.parse::<kw::stringpairs>()?;
                 let (inner_delim, entry_delim) = parse_stringpair_args(input)?;
-
-                Self::Stringpairs {
+                Ok(Self::Stringpairs {
                     key,
                     value,
                     nullable,
                     inner_delim,
                     entry_delim,
-                }
+                })
             }
             // advanced
             _ if input.peek(kw::advanced) => {
                 let name = parse_kwarg!(input, advanced => Path);
-                Self::Advanced(AdvancedMapReprDefinition {
+                Ok(Self::Advanced(AdvancedMapReprDefinition {
                     name,
                     key,
                     value,
                     nullable,
                     rest: parse::parse_rest(input)?,
-                })
+                }))
             }
-            _ => return Err(input.error("invalid IPLD map representation definition")),
-        };
-
-        Ok(map_repr)
-    }
-}
-
-pub(crate) fn parse_stringpair_args(input: ParseStream) -> ParseResult<(LitStr, LitStr)> {
-    let args;
-    braced!(args in input);
-
-    let mut inner_delim = None;
-    let mut entry_delim = None;
-    try_parse_stringpair_args(&args, &mut inner_delim, &mut entry_delim)?;
-    try_parse_stringpair_args(&args, &mut inner_delim, &mut entry_delim)?;
-
-    let inner_delim = inner_delim.ok_or(
-        args.error("invalid IPLD map stringpairs representation definition: missing `innerDelim`"),
-    )?;
-    let entry_delim = entry_delim.ok_or(
-        args.error("invalid IPLD map stringpairs representation definition: missing `entryDelim`"),
-    )?;
-
-    Ok((inner_delim, entry_delim))
-}
-
-fn try_parse_stringpair_args(
-    input: ParseStream,
-    inner_delim: &mut Option<LitStr>,
-    entry_delim: &mut Option<LitStr>,
-) -> ParseResult<()> {
-    if input.peek(kw::innerDelim) {
-        if inner_delim.is_some() {
-            return Err(input.error(
-                "invalid IPLD stringpairs representation defintion: duplicate `innerDelim`",
-            ));
+            _ => Err(input.error("invalid IPLD map representation definition")),
         }
-        inner_delim.replace(parse_kwarg!(input, innerDelim => LitStr));
-        Ok(())
-    } else if input.peek(kw::entryDelim) {
-        if entry_delim.is_some() {
-            return Err(input.error(
-                "invalid IPLD stringpairs representation defintion: duplicate `entryDelim`",
-            ));
-        }
-        entry_delim.replace(parse_kwarg!(input, entryDelim => LitStr));
-        Ok(())
-    } else {
-        Ok(())
     }
 }
 

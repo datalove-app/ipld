@@ -50,6 +50,9 @@ impl ExpandBasicRepresentation for EnumReprDefinition {
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        quote!()
+    }
 }
 
 impl ToTokens for EnumStrField {

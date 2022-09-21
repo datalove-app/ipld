@@ -18,7 +18,6 @@ impl ExpandBasicRepresentation for StructReprDefinition {
             Self::Advanced(_) => unreachable!(),
         }
     }
-
     fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
         match self {
             Self::Map(repr) => repr.derive_serde(meta),
@@ -29,7 +28,6 @@ impl ExpandBasicRepresentation for StructReprDefinition {
             Self::Advanced(_) => unreachable!(),
         }
     }
-
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         let name = &meta.name;
         // let lib = &meta.ipld_schema_lib;
@@ -52,7 +50,6 @@ impl ExpandBasicRepresentation for StructReprDefinition {
             // impl_root_select!(#name => Matcher);
         }
     }
-
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         match self {
             Self::Map(repr) => repr.derive_select(meta),
@@ -63,11 +60,15 @@ impl ExpandBasicRepresentation for StructReprDefinition {
             Self::Advanced(_) => unreachable!(),
         }
     }
-}
-
-impl ExpandAdvancedRepresentation for StructReprDefinition {
-    fn expand_struct(repr: AdvancedStructReprDefinition) -> TokenStream {
-        unimplemented!()
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        match self {
+            Self::Map(repr) => repr.derive_conv(meta),
+            Self::Listpairs(repr) => repr.derive_conv(meta),
+            Self::Tuple(repr) => repr.derive_conv(meta),
+            Self::Stringpairs(repr) => repr.derive_conv(meta),
+            Self::Stringjoin(repr) => repr.derive_conv(meta),
+            Self::Advanced(_) => unreachable!(),
+        }
     }
 }
 
@@ -91,14 +92,14 @@ impl ExpandBasicRepresentation for BasicStructReprDefinition {
             }
         }
     }
-    fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
-        TokenStream::default()
-    }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         impl_repr(self.iter(), meta, SchemaKind::Map.data_model_kind())
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
+    }
+    fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        quote!()
     }
 }
 
@@ -178,5 +179,11 @@ pub(super) fn field_value(field: &StructField) -> TokenStream {
         quote!(Option<#value>)
     } else {
         quote!(#value)
+    }
+}
+
+impl ExpandAdvancedRepresentation for StructReprDefinition {
+    fn expand_struct(repr: AdvancedStructReprDefinition) -> TokenStream {
+        unimplemented!()
     }
 }

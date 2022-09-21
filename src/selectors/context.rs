@@ -11,7 +11,7 @@ mod ipfs;
 
 use crate::dev::*;
 use std::{
-    collections::BTreeMap,
+    collections::HashMap,
     io::{Cursor, Read, Write},
 };
 
@@ -89,12 +89,6 @@ pub trait Context: Sized {
     // async fn resolve(&mut self);
 }
 
-// impl<'a, C: Context> AsMut<&'a mut C> for &'a mut C {
-//     fn as_mut(&mut self) -> &'a mut C {
-//         &mut self
-//     }
-// }
-
 impl<'a, C: Context + 'a> Context for &'a mut C {
     type Reader = C::Reader;
     type Writer = C::Writer;
@@ -105,15 +99,15 @@ impl<'a, C: Context + 'a> Context for &'a mut C {
     }
 }
 
+///
 #[derive(Clone, Debug, Default)]
 pub struct MemoryContext {
-    // pub root: PathBuf,
-    blocks: BTreeMap<Cid, Vec<u8>>,
+    blocks: HashMap<Cid, Vec<u8>>,
 }
 
 impl MemoryContext {
     ///
-    /// TODO replace args with BlockMeta
+    /// TODO? replace args with BlockMeta
     pub fn add_block(
         &mut self,
         version: Version,

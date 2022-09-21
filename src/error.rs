@@ -1,5 +1,6 @@
 use crate::dev::*;
 use cid::Error as CidError;
+use multibase::Error as MultibaseError;
 use multihash::Error as MultihashError;
 use serde::{de, ser};
 use std::{
@@ -16,6 +17,9 @@ pub enum Error {
     #[error("Multihash error: {0}")]
     Multihash(#[from] MultihashError),
 
+    #[error("Multibase error: {0}")]
+    Multibase(#[from] MultibaseError),
+
     //////////////////////////////////////////////////////////////////////
     // codec
     //////////////////////////////////////////////////////////////////////
@@ -26,10 +30,10 @@ pub enum Error {
     #[error("Unknown multicodec name: {0}")]
     UnknownMulticodecName(String),
 
-    #[error("IPLD format encoding error: {0}")]
+    #[error("IPLD codec encoding error: {0}")]
     Encoder(Box<dyn StdError + Send + Sync + 'static>),
 
-    #[error("IPLD format decoding error: {0}")]
+    #[error("IPLD codec decoding error: {0}")]
     Decoder(Box<dyn StdError + Send + Sync + 'static>),
 
     // #[error("Value error: {0}")]
@@ -42,6 +46,9 @@ pub enum Error {
     //////////////////////////////////////////////////////////////////////
     #[error("Selector Context error: {0}")]
     Context(#[from] anyhow::Error),
+
+    #[error("Invalid selection params: {0}")]
+    InvalidSelectionParams(&'static str),
 
     #[error(
         "Invalid selector: selector `{selector_name}` cannot be used to select against type `{type_name}`"
@@ -80,8 +87,8 @@ pub enum Error {
     //////////////////////////////////////////////////////////////////////
     // misc
     //////////////////////////////////////////////////////////////////////
-    #[error("Downcast failure")]
-    DowncastFailure(&'static str),
+    #[error("Downcast failure for type `{0}`: {1}")]
+    DowncastFailure(&'static str, &'static str),
 
     #[error("{0}")]
     Custom(anyhow::Error),
@@ -105,10 +112,22 @@ impl Error {
 
     pub(crate) fn explore_list_failure(selector: &Selector, current_index: usize) -> Self {
         match selector {
-            Selector::ExploreIndex(s) => Self::ExploreIndexFailure(current_index),
+            Selector::ExploreIndex(_) => Self::ExploreIndexFailure(current_index),
             Selector::ExploreRange(s) => Self::ExploreRangeFailure(current_index, s.start, s.end),
             _ => unreachable!(),
         }
+    }
+
+    pub(crate) fn explore_map_failure(selector: &Selector) -> Self {
+        match selector {
+            // Selector::ExploreIndex(s) => Self::ExploreIndexFailure(current_index),
+            // Selector::ExploreRange(s) => Self::ExploreRangeFailure(current_index, s.start, s.end),
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn downcast_failure<T: Representation>(msg: &'static str) -> Self {
+        Self::DowncastFailure(T::NAME, msg)
     }
 
     // pub(crate) fn invalid_type_selection<T, U>() -> Self

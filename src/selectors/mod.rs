@@ -7,18 +7,19 @@
 #![allow(non_camel_case_types)]
 
 // mod path;
-mod callback;
 mod context;
+#[macro_use]
 mod seed;
 mod selectors;
+mod state;
 
-pub use callback::*;
 pub use context::*;
 pub use field::*;
 pub use params::*;
 pub use seed::*;
 pub use selection::*;
 pub use selectors::*;
+pub use state::*;
 
 use crate::dev::*;
 use macros::derive_more::From;
@@ -30,29 +31,41 @@ use std::{
 };
 
 ///
-/// TODO:
+/// TODO: + 'static?
 ///     - Selectable?
-pub trait Select<C: Context>: Representation + 'static {
+pub trait Select<C: Context>: Representation {
     /// Produces a stream of [`Selection`]s of some type `T`.
     ///
-    /// General impl flow:
-    ///     - select is given a context that can provide blocks (and other utilities required by this type for selection)
-    ///     - grab the current block deserializer, use the seed
-    ///         - until reaching a link, everything is in serde
+    /// Under the hood, this serves as the entrypoint for deserialization of a
+    /// block via a typed `ContextSeed`: a type that implements
+    /// [`DeserializeSeed`] for each [`Select`]-able type, and uses the
+    /// contained [`Selector`], the type's [`Representation`] and the provided
+    /// [`Context`] to govern how to interpret the types found in blocks.
+    ///
     ///
     /// TODO: update this interface, since ContextSeed is doing the work and it should be refactored a bit (borrow state, )
-    fn select(
-        // selector: &Selector,
-        // state: &mut SelectorState,
-        // params: SelectionParams<'_, C, Self, S>,
-        // ctx: &mut C,
-        // seed: ContextSeed<'_, C, Self>,
-        params: SelectionParams<'_, C, Self>,
-        ctx: &mut C,
-    ) -> Result<(), Error>;
+    fn select(params: Params<'_, C, Self>, ctx: &mut C) -> Result<(), Error>;
 
-    /// Produces a stream of selections of some type `T` from within an in-memory dag.
-    fn select_in<T>(&self, params: SelectionParams<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
+    /// Selects against the dag, loading more blocks from `C` if required.
+    ///
+    /// TODO
+    fn select_in<T>(&self, params: Params<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
+        unimplemented!()
+    }
+
+    /// Patches the dag according to the selector, loading more blocks from `C`
+    /// if required.
+    ///
+    /// TODO
+    fn patch_in<T>(&mut self, params: Params<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
+        unimplemented!()
+    }
+
+    /// Flushes the dag according to the selector, writing blocks to `C` if
+    /// flushing linked dags.
+    ///
+    /// TODO
+    fn flush(&mut self, params: Params<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
         unimplemented!()
     }
 
@@ -84,7 +97,7 @@ pub trait Select<C: Context>: Representation + 'static {
 //     for<'a, 'de> ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
 // {
 //     let default_selector = Selector::DEFAULT;
-
+//
 //     let SelectionParams {
 //         cid,
 //         selector,
@@ -103,7 +116,7 @@ pub trait Select<C: Context>: Representation + 'static {
 //         callback,
 //         ctx: &mut ctx,
 //     };
-
+//
 //     Ok(seed.read(&cid)?)
 // }
 
@@ -112,32 +125,51 @@ mod params {
 
     ///
     #[derive(Debug)]
-    pub struct SelectionParams<'a, C, T = Any>
+    pub struct Params<'a, C, T = Any>
     where
         C: Context,
         T: Representation,
     {
-        pub(crate) cid: Cid,
+        pub(crate) cid: Option<Cid>,
         pub(crate) selector: Option<&'a Selector>,
         pub(crate) max_path_depth: Option<usize>,
         pub(crate) max_link_depth: Option<usize>,
-        pub(crate) callback: SelectionCallback<'a, C, T>,
+        pub(crate) callback: Callback<'a, C, T>,
     }
 
-    impl<'a, C, T> SelectionParams<'a, C, T>
+    impl<'a, C, T> Default for Params<'a, C, T>
     where
         C: Context,
         T: Representation,
     {
-        ///
-        pub fn new(cid: Cid) -> Self {
+        fn default() -> Self {
             Self {
-                cid,
+                cid: None,
                 selector: None,
                 max_path_depth: None,
                 max_link_depth: None,
                 callback: Default::default(),
             }
+        }
+    }
+
+    impl<'a, C, T> Params<'a, C, T>
+    where
+        C: Context,
+        T: Representation,
+    {
+        ///
+        pub fn new_select(cid: Cid) -> Self {
+            Self {
+                cid: Some(cid),
+                ..Self::default()
+            }
+        }
+
+        ///
+        pub fn with_root(mut self, cid: Cid) -> Self {
+            self.cid.replace(cid);
+            self
         }
 
         ///
@@ -168,8 +200,8 @@ mod params {
             T: Select<C>,
         {
             let vec = RefCell::new(Vec::new());
-            let params = SelectionParams {
-                callback: SelectionCallback::SelectNode {
+            let params = Params {
+                callback: Callback::SelectNode {
                     only_matched,
                     cb: Box::new(|node, _| {
                         vec.borrow_mut().push(node);
@@ -184,13 +216,14 @@ mod params {
         }
 
         ///
+        /// TODO: make this more like an actual iterator, that can pause across links
         pub fn into_dag_iter(self, ctx: &mut C) -> Result<IntoIter<DagSelection>, Error>
         where
             T: Select<C>,
         {
             let vec = RefCell::new(Vec::new());
-            let params = SelectionParams {
-                callback: SelectionCallback::SelectDag {
+            let params = Params {
+                callback: Callback::SelectDag {
                     cb: Box::new(|node, _| {
                         vec.borrow_mut().push(node);
                         Ok(())
@@ -232,10 +265,14 @@ mod selection {
     ///
     #[derive(Clone, Debug, Deserialize, Serialize)]
     pub struct NodeSelection {
+        ///
         pub path: PathBuf,
+        ///
         pub node: SelectedNode,
+        ///
         pub matched: bool,
-        pub label: Option<std::string::String>,
+        ///
+        pub label: Option<String>,
     }
 
     impl NodeSelection {
@@ -428,6 +465,12 @@ mod selection {
         }
     }
 
+    impl<'a> From<&'a [u8]> for SelectedNode {
+        fn from(bytes: &'a [u8]) -> Self {
+            Self::Bytes(Bytes::copy_from_slice(bytes))
+        }
+    }
+
     impl<T: Representation> From<List<T>> for SelectedNode {
         fn from(_: List<T>) -> Self {
             Self::List
@@ -463,7 +506,7 @@ mod selection {
             match val {
                 Any::Null(_) => Self::Null,
                 Any::Bool(inner) => Self::Bool(inner),
-                Any::Int(inner) => Self::Int128(inner),
+                Any::Int(inner) => Self::Int64(inner),
                 Any::Float(inner) => Self::Float64(inner),
                 Any::String(inner) => Self::String(inner),
                 Any::Bytes(inner) => Self::Bytes(inner),
@@ -481,6 +524,7 @@ mod field {
     /// Wrapper type for types that can be used as dag keys or indices.
     pub(crate) enum Field<'a> {
         Key(&'a str),
+        // CidKey(&'a Cid),
         Index(usize),
     }
 
@@ -488,6 +532,7 @@ mod field {
         pub fn append_to_path(&self, path: &mut PathBuf) {
             match self {
                 Self::Key(s) => path.push(s),
+                // Self::CidKey(c) => path.push(c.to_string()),
                 Self::Index(idx) => path.push(idx.to_string()),
             }
         }
@@ -511,15 +556,15 @@ mod field {
         }
     }
 
-    impl<'a> Into<Field<'a>> for &'a str {
-        fn into(self) -> Field<'a> {
-            Field::Key(self)
+    impl<'a> From<&'a str> for Field<'a> {
+        fn from(inner: &'a str) -> Self {
+            Self::Key(inner)
         }
     }
 
-    impl<'a> Into<Field<'a>> for usize {
-        fn into(self) -> Field<'a> {
-            Field::Index(self)
+    impl<'a> From<usize> for Field<'a> {
+        fn from(inner: usize) -> Self {
+            Self::Index(inner)
         }
     }
 }

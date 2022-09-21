@@ -1,5 +1,5 @@
 use crate::dev::*;
-use macros::impl_ipld_serde;
+use macros::impl_selector_seed_serde;
 use std::{
     cell::RefCell,
     fmt,
@@ -16,13 +16,54 @@ impl<T: Representation> Representation for List<T> {
     const HAS_LINKS: bool = T::HAS_LINKS;
 
     fn has_links(&self) -> bool {
-        self.iter().any(|e| e.has_links())
+        self.iter().any(Representation::has_links)
+    }
+
+    fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use ser::SerializeSeq;
+
+        let mut seq = serializer.serialize_seq(Some(self.len()))?;
+        for elem in self {
+            seq.serialize_element(&EncoderElem::<'_, C, _>(elem))?;
+        }
+        seq.end()
+    }
+
+    fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ListVisitor<const C: u64, T>(DecoderElem<C, T>);
+        impl<'de, const C: u64, T: Representation> Visitor<'de> for ListVisitor<C, T> {
+            type Value = List<T>;
+            #[inline]
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "A list of `{}`", T::NAME)
+            }
+
+            #[inline]
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut list = List::with_capacity(seq.size_hint().unwrap_or(8));
+                while let Some(elem) = seq.next_element_seed(DecoderElem::<C, T>::default())? {
+                    list.push(elem);
+                }
+                Ok(list)
+            }
+        }
+
+        deserializer.deserialize_seq(ListVisitor::<C, T>(Default::default()))
     }
 }
 
-impl_ipld_serde! { @context_seed_visitor
+impl_selector_seed_serde! { @codec_seed_visitor
     { T: Representation + 'static }
-    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
+    { for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()> }
     List<T>
 {
     #[inline]
@@ -35,50 +76,50 @@ impl_ipld_serde! { @context_seed_visitor
     where
         A: SeqAccess<'de>,
     {
-        match self.selector {
+        match self.0.selector {
             Selector::Matcher(_) => self.match_list(seq),
             Selector::ExploreIndex(s) => self.explore_list_range(s.index as usize..s.index as usize, seq),
             Selector::ExploreRange(s) => self.explore_list_range(s.start as usize..s.end as usize, seq),
             Selector::ExploreAll(_) => self.explore_list_range(0.., seq),
             _ => Err(A::Error::custom(Error::unsupported_selector::<List<T>>(
-                self.selector,
+                self.0.selector,
             ))),
         }
     }
 }}
 
-impl_ipld_serde! { @context_seed_visitor_ext
+impl_selector_seed_serde! { @codec_seed_visitor_ext
     { T: Representation + 'static }
-    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
+    { for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()> }
     List<T> {}
 }
 
-impl_ipld_serde! { @context_seed_deseed
+impl_selector_seed_serde! { @selector_seed_codec_deseed
     { T: Representation + 'static }
-    { for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
+    { for<'b> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de> }
     List<T>
 {
     #[inline]
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_seq(self)
+        deserializer.deserialize_seq(CodecSeed::<C, _>(self))
     }
 }}
 
-impl_ipld_serde! { @context_seed_select
+impl_selector_seed_serde! { @selector_seed_select
     { T: Representation + 'static }
-    { for<'b, 'de> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()> }
+    { for<'b, 'de> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de> }
     List<T>
 }
 
 /*
-impl<'a, 'de, C, T> Visitor<'de> for ContextSeed<'a, C, List<T>>
+impl<'a, 'de, Ctx, T> Visitor<'de> for ContextSeed<'a, C, List<T>>
 where
     C: Context,
     T: Representation + 'static,
-    for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+    for<'b> ContextSeed<'b, Ctx, T>: DeserializeSeed<'de, Value = ()>,
 {
     type Value = ();
 
@@ -104,11 +145,11 @@ where
     }
 }
 
-impl<'a, 'de, C, T> DeserializeSeed<'de> for ContextSeed<'a, C, List<T>>
+impl<'a, 'de, Ctx, T> DeserializeSeed<'de> for ContextSeed<'a, C, List<T>>
 where
     C: Context,
     T: Representation + 'static,
-    for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+    for<'b> ContextSeed<'b, Ctx, T>: DeserializeSeed<'de, Value = ()>,
 {
     type Value = ();
 
@@ -121,8 +162,8 @@ where
     }
 }
 
-// TODO replace with impl_ipld_serde
-impl<'a, C, T> Select<C> for List<T>
+// TODO replace with impl_selector_seed_serde
+impl<'a, Ctx, T> Select<C> for List<T>
 where
     C: Context,
     T: Representation + Send + Sync + 'static,
@@ -134,29 +175,31 @@ where
  */
 
 // match impl
-impl<'a, C, T> ContextSeed<'a, C, List<T>>
+impl<'a, const C: u64, Ctx, T> CodecSeed<C, SelectorSeed<'a, Ctx, List<T>>>
 where
-    C: Context,
+    Ctx: Context,
     T: Representation + 'static,
 {
     /// match
     fn match_list<'de, A>(mut self, mut seq: A) -> Result<(), A::Error>
     where
         A: SeqAccess<'de>,
-        for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+        for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()>,
     {
         let matcher = self
+            .0
             .selector
             .as_matcher()
             .expect("should know that this is a matcher");
 
         // select list node, or set up list
-        let mode = self.mode();
+        let mode = self.0.mode();
         let mut dag: RefCell<List<T>> = Default::default();
 
         match mode {
             SelectionMode::SelectNode => {
-                self.select_matched_node(SelectedNode::List, matcher.label.as_deref())
+                self.0
+                    .select_matched_node(SelectedNode::List, matcher.label.as_deref())
                     .map_err(A::Error::custom)?;
             }
             SelectionMode::SelectDag => {
@@ -166,11 +209,11 @@ where
             _ => unimplemented!(),
         }
 
-        let (selector, state, mut params, ctx) = self.into_parts();
+        let (selector, state, mut params, ctx) = self.0.into_parts();
 
         // select against each child
         for index in 0usize.. {
-            let is_empty = Self::field_select_seed::<T>(
+            let is_empty = SelectorSeed::field_select_seed::<T>(
                 selector,
                 state,
                 &mut params,
@@ -185,7 +228,7 @@ where
                 },
             )
             .map_err(A::Error::custom)
-            .and_then(|seed| Ok(seq.next_element_seed(seed)?.is_none()))?;
+            .and_then(|seed| Ok(seq.next_element_seed(CodecSeed(seed))?.is_none()))?;
             state.ascend::<T>().map_err(A::Error::custom)?;
 
             if is_empty {
@@ -195,7 +238,7 @@ where
 
         // finally, select the matched dag
         if mode == SelectionMode::SelectDag {
-            let mut original_seed = Self::from(selector, state, params, ctx);
+            let mut original_seed = SelectorSeed::from(selector, state, params, ctx);
             original_seed
                 .select_matched_dag(dag.into_inner(), matcher.label.as_deref())
                 .map_err(A::Error::custom)?;
@@ -209,11 +252,12 @@ where
     where
         A: SeqAccess<'de>,
         R: RangeBounds<usize> + Iterator<Item = usize>,
-        for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+        for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()>,
     {
         // select the list node
-        if self.is_node() {
-            self.select_node(SelectedNode::List)
+        if self.0.is_node() {
+            self.0
+                .select_node(SelectedNode::List)
                 .map_err(A::Error::custom)?;
         }
 
@@ -225,7 +269,7 @@ where
 
         // ignore everything before the start (unless 0)
         // if empty, return an err
-        let (selector, state, mut params, ctx) = self.into_parts();
+        let (selector, state, mut params, ctx) = self.0.into_parts();
         if start > 0 {
             for index in 0usize..start {
                 if seq.next_element::<IgnoredAny>()?.is_none() {
@@ -238,7 +282,7 @@ where
 
         // explore any/all indices in the range
         for index in range {
-            let is_empty = Self::field_select_seed::<T>(
+            let is_empty = SelectorSeed::field_select_seed::<T>(
                 &selector,
                 state,
                 &mut params,
@@ -247,7 +291,7 @@ where
                 None,
             )
             .map_err(A::Error::custom)
-            .and_then(|seed| Ok(seq.next_element_seed(seed)?.is_none()))?;
+            .and_then(|seed| Ok(seq.next_element_seed(CodecSeed(seed))?.is_none()))?;
             state.ascend::<T>().map_err(A::Error::custom)?;
 
             // if unbounded and empty, then we're done exploring
@@ -273,7 +317,7 @@ where
 }
 
 /*
-impl<'a, C, T> ContextSeed<'a, C, List<T>>
+impl<'a, Ctx, T> ContextSeed<'a, C, List<T>>
 where
     C: Context,
     T: Representation + Send + Sync + 'static,
@@ -286,7 +330,7 @@ where
     ) -> Result<(), A::Error>
     where
         A: SeqAccess<'de>,
-        for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+        for<'b> ContextSeed<'b, Ctx, T>: DeserializeSeed<'de, Value = ()>,
     {
         // select the list node
         if self.params.is_node() {
@@ -329,7 +373,7 @@ where
     ) -> Result<(), A::Error>
     where
         A: SeqAccess<'de>,
-        for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+        for<'b> ContextSeed<'b, Ctx, T>: DeserializeSeed<'de, Value = ()>,
     {
         // select the list node
         if self.params.is_node() {
@@ -376,7 +420,7 @@ where
     ) -> Result<(), A::Error>
     where
         A: SeqAccess<'de>,
-        for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
+        for<'b> ContextSeed<'b, Ctx, T>: DeserializeSeed<'de, Value = ()>,
     {
         // select the list node
         if self.params.is_node() {

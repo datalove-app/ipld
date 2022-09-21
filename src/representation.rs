@@ -13,58 +13,97 @@ use crate::dev::*;
 use downcast_rs::{impl_downcast, Downcast};
 use std::{rc::Rc, sync::Arc};
 
-/// Enum of possible [Data Model]() and [Schema]() kinds.
-///
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub enum Kind {
-    ///
-    Null,
-    ///
-    Bool,
+pub use kind::Kind;
+
+mod kind {
+    use bitflags::bitflags;
+
+    bitflags! {
+        /// Enum of possible [Data Model](), [Schema]() and [Representation]() kinds.
+        ///
+        pub struct Kind: u16 {
+            // data model kinds
+
+            ///
+            const Null = 0b0000_0000_0000_0001;
+            ///
+            const Bool = 0b0000_0000_0000_0010;
+            ///
+            const Int = 0b0000_0000_0000_0100;
+            ///
+            const Float = 0b0000_0000_0000_1000;
+            ///
+            const String = 0b0000_0000_0001_0000;
+            ///
+            const Bytes = 0b0000_0000_0010_0000;
+            ///
+            const List = 0b0000_0000_0100_0000;
+            ///
+            const Map = 0b0000_0000_1000_0000;
+            ///
+            const Link = 0b0000_0001_0000_0000;
+
+            // schema kinds
+
+            ///
+            const Struct = 0b0000_0010_0000_0000;
+            ///
+            const Enum = 0b0000_0100_0000_0000;
+            ///
+            const Union = 0b0000_1000_0000_0000;
+
+            // any
+
+            ///
+            const Any = Self::Null.bits
+                | Self::Bool.bits
+                | Self::Int.bits
+                | Self::Float.bits
+                | Self::String.bits
+                | Self::Bytes.bits
+                | Self::List.bits
+                | Self::Map.bits
+                | Self::Link.bits;
+        }
+    }
+
+    impl Kind {
+        /// Const function for determining equality between [`Kind`]s.
+        pub const fn eq(&self, other: &Self) -> bool {
+            match (*self, *other) {
+                (Self::Null, Self::Null)
+                | (Self::Bool, Self::Bool)
+                | (Self::Int, Self::Int)
+                | (Self::Float, Self::Float)
+                | (Self::String, Self::String)
+                | (Self::Bytes, Self::Bytes)
+                | (Self::List, Self::List)
+                | (Self::Map, Self::Map)
+                | (Self::Link, Self::Link)
+                | (Self::Struct, Self::Struct)
+                | (Self::Enum, Self::Enum)
+                | (Self::Union, Self::Union) => true,
+                _ => false,
+            }
+        }
+    }
+
     // ///
-    // Int8,
-    // ///
-    // Int16,
-    ///
-    Int,
-    // ///
-    // Int64,
-    // ///
-    // Int128,
-    // ///
-    // Uint8,
-    // ///
-    // Uint16,
-    // ///
-    // Uint32,
-    // ///
-    // Uint64,
-    // ///
-    // Uint128,
-    // ///
-    // Float32,
-    ///
-    Float,
-    ///
-    String,
-    ///
-    Bytes,
-    ///
-    List,
-    ///
-    Map,
-    ///
-    Link,
-    ///
-    Struct,
-    ///
-    Enum,
-    ///
-    Union,
-    ///
-    Copy,
-    ///
-    Any,
+    // #[derive(Copy, Clone, Debug)]
+    // pub enum SchemaKind {
+    //     Null = Kind::Null.bits as isize,
+    //     Bool = Kind::Bool.bits as isize,
+    //     Int = Kind::Int.bits as isize,
+    //     Float = Kind::Float.bits as isize,
+    //     String = Kind::String.bits as isize,
+    //     Bytes = Kind::Bytes.bits as isize,
+    //     List = Kind::List.bits as isize,
+    //     Map = Kind::Map.bits as isize,
+    //     Link = Kind::Link.bits as isize,
+    //     Struct = Kind::Struct.bits as isize,
+    //     Enum = Kind::Enum.bits as isize,
+    //     Union = Kind::Union.bits as isize,
+    // }
 }
 
 // ///
@@ -154,17 +193,18 @@ pub enum Kind {
 ///         - TODO: ? Representation::visitor(selector: &Selector)
 pub trait Representation
 where
-    Self: Serialize + DeserializeOwned,
+    Self: Serialize + for<'de> Deserialize<'de>,
 {
     /// The stringified name of the IPLD type.
     const NAME: &'static str;
 
     /// The stringified IPLD type definition (or equivalent, if a native type
     /// not defined by IPLD).
+    /// TODO: we cant concat generic consts, only concrete ones - so refactor this to a function
     const SCHEMA: &'static str = unimplemented!();
 
     /// The IPLD [Data Model Kind](https://ipld.io/docs/data-model/kinds/) of
-    /// the type.
+    /// the type, which would inform a user of its access patterns.
     const DATA_MODEL_KIND: Kind;
 
     /// The IPLD [Schema
@@ -172,11 +212,11 @@ where
     /// the type.
     const SCHEMA_KIND: Kind = Self::DATA_MODEL_KIND;
 
-    /// The IPLD [Representation Kind]() of the type.
+    /// The IPLD [Representation Kind]() of the type, which would inform a user of how the type is represented when encoded.
     const REPR_KIND: Kind = Self::DATA_MODEL_KIND;
 
     ///
-    const IS_LINK: bool = false;
+    const IS_LINK: bool = Self::DATA_MODEL_KIND.eq(&Kind::Link);
 
     ///
     const HAS_LINKS: bool = Self::IS_LINK;
@@ -209,6 +249,49 @@ where
     fn has_links(&self) -> bool {
         Self::HAS_LINKS
     }
+
+    /// Replacement method for [`serde::Serialize::serialize`] that allows us
+    /// switch serialization behaviour based on the provided [`CodecExt`].
+    ///
+    /// Defaults to the type's underlying [`serde::Serialize::serialize`]
+    /// implementation.
+    /// TODO: remove the default impl, then remove the trait bounds
+    #[inline]
+    #[doc(hidden)]
+    fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        <Self as Serialize>::serialize(self, serializer)
+    }
+
+    /// Replacement method for [`serde::Deserialize::deserialize`] that allows
+    /// us switch deserialization behaviour based on the provided [`CodecExt`].
+    ///
+    /// Defaults to the type's underlying [`serde::Deserialize::deserialize`]
+    /// implementation.
+    /// TODO: remove the default impl, then remove the trait bounds
+    #[inline]
+    #[doc(hidden)]
+    fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        <Self as Deserialize<'de>>::deserialize(deserializer)
+    }
+
+    // ///
+    // #[inline]
+    // fn deserialize_seed<'de, const C: u64, D, S>(
+    //     deserializer: D,
+    //     seed: S,
+    // ) -> Result<S::Value, D::Error>
+    // where
+    //     D: Deserializer<'de> + CodecExt<C>,
+    //     S: DeserializeSeed<'de>,
+    // {
+    //     seed.deserialize(deserializer)
+    // }
 
     // fn r#match<'de, 'a, C, D>(
     //     seed: ContextSeed<'a, C, Self, Self>,
@@ -258,9 +341,10 @@ impl<T> Representation for Option<T>
 where
     T: Representation,
 {
-    const NAME: &'static str = "Option";
-    const SCHEMA: &'static str = concat!("nullable ", stringify!(T::NAME));
+    const NAME: &'static str = concat!("Optional", stringify!(T::NAME));
     // TODO
+    const SCHEMA: &'static str = unimplemented!();
+    // const SCHEMA: &'static str = concat!("type ", stringify!(T::NAME), " nullable");
     const DATA_MODEL_KIND: Kind = T::DATA_MODEL_KIND;
     const SCHEMA_KIND: Kind = T::DATA_MODEL_KIND;
     const HAS_LINKS: bool = T::HAS_LINKS;
@@ -299,12 +383,22 @@ macro_rules! impl_wrapper {
             const SCHEMA_KIND: Kind = T::SCHEMA_KIND;
             const REPR_KIND: Kind = T::REPR_KIND;
 
-            #[inline]
             fn name(&self) -> &'static str {
                 self.as_ref().name()
             }
 
-            #[inline]
+            fn data_model_kind(&self) -> Kind {
+                self.as_ref().data_model_kind()
+            }
+
+            fn schema_kind(&self) -> Kind {
+                self.as_ref().schema_kind()
+            }
+
+            fn repr_kind(&self) -> Kind {
+                self.as_ref().repr_kind()
+            }
+
             fn has_links(&self) -> bool {
                 self.as_ref().has_links()
             }
@@ -323,7 +417,18 @@ macro_rules! impl_wrapper {
                 self.as_ref().name()
             }
 
-            #[inline]
+            fn data_model_kind(&self) -> Kind {
+                self.as_ref().data_model_kind()
+            }
+
+            fn schema_kind(&self) -> Kind {
+                self.as_ref().schema_kind()
+            }
+
+            fn repr_kind(&self) -> Kind {
+                self.as_ref().repr_kind()
+            }
+
             fn has_links(&self) -> bool {
                 self.as_ref().has_links()
             }
@@ -352,6 +457,9 @@ pub(crate) trait ErasedRepresentation: Downcast {
 
     ///
     fn repr_kind(&self) -> Kind;
+
+    ///
+    fn has_links(&self) -> bool;
 }
 
 // impl_downcast!(sync ErasedRepresentation assoc Representation
@@ -377,11 +485,18 @@ where
     fn repr_kind(&self) -> Kind {
         T::REPR_KIND
     }
+
+    fn has_links(&self) -> bool {
+        T::HAS_LINKS
+    }
 }
 
 ///
 // #[derive(Debug)]
-pub struct AnyRepresentation(Box<dyn ErasedRepresentation>);
+pub struct AnyRepresentation {
+    erased: Box<dyn ErasedRepresentation>,
+    // is_partial: bool,
+}
 
 impl AnyRepresentation {
     ///
@@ -390,7 +505,7 @@ impl AnyRepresentation {
     where
         T: Representation + 'static,
     {
-        (*self.0).as_any().is::<T>()
+        (*self.erased).as_any().is::<T>()
     }
 
     ///
@@ -399,7 +514,7 @@ impl AnyRepresentation {
     where
         T: Representation + 'static,
     {
-        (*self.0).as_any().downcast_ref()
+        (*self.erased).as_any().downcast_ref()
     }
 
     ///
@@ -408,11 +523,17 @@ impl AnyRepresentation {
     where
         T: Representation + 'static,
     {
+        // if self.is_partial {
+        //     Err(Error::downcast_failure::<T>(
+        //         "cannot downcast a partially-loaded dag",
+        //     ))
+        // } else {
         let dag = self
-            .0
+            .erased
             .downcast()
-            .map_err(|_| Error::DowncastFailure(T::NAME))?;
+            .map_err(|_| Error::downcast_failure::<T>("incorrect type"))?;
         Ok(*dag)
+        // }
     }
 
     // ///
@@ -429,22 +550,25 @@ impl AnyRepresentation {
 
 impl<T: Representation + 'static> From<T> for AnyRepresentation {
     fn from(dag: T) -> Self {
-        Self(Box::new(dag))
+        Self {
+            erased: Box::new(dag),
+            // is_partial: false,
+        }
     }
 }
 
-mod type_eq {
-    #[doc(hidden)]
-    ///
-    pub trait TypeEq<const EQ: bool, U: ?Sized> {}
-    // Default implementation.
-    default impl<T: ?Sized, U: ?Sized> TypeEq<false, U> for T {}
-    impl<T: ?Sized> TypeEq<true, T> for T {}
+// mod type_eq {
+//     #[doc(hidden)]
+//     ///
+//     pub trait TypeEq<const EQ: bool, U: ?Sized> {}
+//     // Default implementation.
+//     default impl<T: ?Sized, U: ?Sized> TypeEq<false, U> for T {}
+//     impl<T: ?Sized> TypeEq<true, T> for T {}
 
-    pub const fn cmp<const EQ: bool, T: ?Sized, U: ?Sized>() -> bool {
-        EQ
-    }
-}
+//     pub const fn cmp<const EQ: bool, T: ?Sized, U: ?Sized>() -> bool {
+//         EQ
+//     }
+// }
 
 // impl<T: Representation + 'static> TryFrom<AnyRepresentation> for T {
 //     type Error = Error;

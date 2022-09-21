@@ -1,7 +1,5 @@
 pub extern crate derive_more;
 // #[macro_use]
-// pub extern crate impls;
-// #[macro_use]
 // pub extern crate static_assertions;
 
 pub mod common;
@@ -21,7 +19,6 @@ pub mod dev {
     pub use crate::*;
 
     pub use derive_more;
-    // pub use impls;
     // pub use static_assertions;
     // pub use tylift;
 }

@@ -301,7 +301,25 @@ macro_rules! derive_newtype {
         }
     }};
     (@repr $meta:ident => $inner_ty:ident) => {{
+        quote::quote! {
+            #[inline]
+            #[doc(hidden)]
+            fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                Representation::serialize::<C, _>(self.0, serializer)
+            }
 
+            #[inline]
+            #[doc(hidden)]
+            fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                Ok(Self(Representation::deserialize::<C, _>(deserializer)?))
+            }
+        }
     }};
     (@select $meta:ident => $inner_ty:ident) => {{
         let lib = &$meta.lib;

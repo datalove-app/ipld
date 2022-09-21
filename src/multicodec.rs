@@ -11,7 +11,7 @@ pub use multicodec::Multicodec;
 /// [Codec](https://github.com/ipld/specs/blob/master/block-layer/codecs/README.dsmd)s,
 /// providing methods for reading and writing blocks.
 pub trait Codec: TryFrom<u64, Error = Error> {
-    /// Given a dag, serialize it to a vector of bytes.
+    /// Given a dag, serialize it to a `Vec<u8>`.
     fn encode<T>(&mut self, dag: &T) -> Result<Vec<u8>, Error>
     where
         T: Representation,
@@ -115,6 +115,7 @@ mod multicodec {
 
             ///
             /// Given a `Read`, deserialize a dag using a `SelectorSeed` as a guide.
+            #[doc(hidden)]
             pub fn read_with_seed<'de, S, R>(&mut self, seed: S, reader: R) -> Result<(), Error>
             where
                 // S: DeserializeSeed<'de, Value = ()>,

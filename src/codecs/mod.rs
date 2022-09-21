@@ -6,8 +6,6 @@ pub mod dag_cbor;
 pub mod dag_json;
 // #[cfg(feature = "dag-pb")]
 // pub mod dag_pb;
-#[path = "serde.rs"]
-mod _serde;
 
 use crate::dev::*;
 use serde::{de, ser};

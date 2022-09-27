@@ -38,7 +38,7 @@ macro_rules! impl_multihasher {
                 }
             }
 
-            ///
+            /// The underlying size of the digest.
             #[inline]
             pub const fn size(&self) -> u8 {
                 match self {

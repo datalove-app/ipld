@@ -81,10 +81,11 @@ where
 }
 
 impl_selector_seed_serde! { @codec_seed_visitor
-    { K: Representation + Clone + Ord + AsRef<str> + 'static,
-      V: Representation + 'static }
-    { for<'b> CodedSeed<'b, C, Ctx, K>: DeserializeSeed<'de, Value = ()>,
-      for<'b> CodedSeed<'b, C, Ctx, V>: DeserializeSeed<'de, Value = ()>, }
+    { K: Select<Ctx> + Clone + Ord + AsRef<str> + 'static,
+      V: Select<Ctx> + 'static }
+    // { for<'b> CodedSelectorSeed<'b, _C, _D, Ctx, K>: DeserializeSeed<'de, Value = ()>,
+    //   for<'b> CodedSelectorSeed<'b, _C, _D, Ctx, V>: DeserializeSeed<'de, Value = ()>, }
+    { }
     Map<K, V>
 {
     #[inline]
@@ -109,49 +110,59 @@ impl_selector_seed_serde! { @codec_seed_visitor
 }}
 
 impl_selector_seed_serde! { @codec_seed_visitor_ext
-    { K: Representation + Clone + Ord + AsRef<str> + 'static,
-      V: Representation + 'static }
-    { for<'b> CodedSeed<'b, C, Ctx, K>: DeserializeSeed<'de, Value = ()>,
-      for<'b> CodedSeed<'b, C, Ctx, V>: DeserializeSeed<'de, Value = ()>, }
+    { K: Select<Ctx> + Clone + Ord + AsRef<str> + 'static,
+      V: Select<Ctx> + 'static }
+    // { for<'b> CodedSelectorSeed<'b, _C, _D, Ctx, K>: DeserializeSeed<'de, Value = ()>,
+    //   for<'b> CodedSelectorSeed<'b, _C, _D, Ctx, V>: DeserializeSeed<'de, Value = ()>, }
+    { }
     Map<K, V> {}
 }
 
 impl_selector_seed_serde! { @selector_seed_codec_deseed
-    { K: Representation + Clone + Ord + AsRef<str> + 'static,
-      V: Representation + 'static }
-    { for<'b> SelectorSeed<'b, Ctx, K>: CodecDeserializeSeed<'de>,
-      for<'b> SelectorSeed<'b, Ctx, V>: CodecDeserializeSeed<'de>, }
+    { K: Select<Ctx> + Clone + Ord + AsRef<str> + 'static,
+      V: Select<Ctx> + 'static }
+    // { for<'b> SelectorSeed<'b, Ctx, K>: CodecDeserializeSeed<'de, Value = ()>,
+    //   for<'b> SelectorSeed<'b, Ctx, V>: CodecDeserializeSeed<'de, Value = ()>, }
+    { }
     Map<K, V>
 {
+    // #[inline]
+    // fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
+    // where
+    //     D: Deserializer<'de>,
+    // {
+    //     deserializer.deserialize_map(CodecSeed::<C, false, _>(self))
+    // }
     #[inline]
-    fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
+    fn deserialize<D>(self, deserializer: D) -> Result<(), D::Error>
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_map(CodecSeed::<C, _>(self))
+        deserializer.deserialize_map(self)
     }
 }}
 
 impl_selector_seed_serde! { @selector_seed_select
-    { K: Representation + Clone + Ord + AsRef<str> + 'static,
-      V: Representation + 'static }
-    { for<'b, 'de> SelectorSeed<'b, Ctx, K>: CodecDeserializeSeed<'de>,
-      for<'b, 'de> SelectorSeed<'b, Ctx, V>: CodecDeserializeSeed<'de>, }
+    { K: Select<Ctx> + Clone + Ord + AsRef<str> + 'static,
+      V: Select<Ctx> + 'static }
+    // { for<'b, 'de> SelectorSeed<'b, Ctx, K>: CodecDeserializeSeed<'de, Value = ()>,
+    //   for<'b, 'de> SelectorSeed<'b, Ctx, V>: CodecDeserializeSeed<'de, Value = ()>, }
+    { }
     Map<K, V>
 }
 
-impl<'a, const C: u64, Ctx, K, V> CodedSeed<'a, C, Ctx, Map<K, V>>
+impl<'a, const C: u64, const D: bool, Ctx, K, V> CodedSelectorSeed<'a, C, D, Ctx, Map<K, V>>
 where
     Ctx: Context,
-    K: Representation + Clone + Ord + AsRef<str> + 'static,
-    V: Representation + 'static,
+    K: Select<Ctx> + Clone + Ord + AsRef<str> + 'static,
+    V: Select<Ctx> + 'static,
 {
     ///
     pub(crate) fn match_map<'de, A>(mut self, mut map: A) -> Result<(), A::Error>
     where
         A: MapAccess<'de>,
-        for<'b> CodedSeed<'b, C, Ctx, K>: DeserializeSeed<'de, Value = ()>,
-        for<'b> CodedSeed<'b, C, Ctx, V>: DeserializeSeed<'de, Value = ()>,
+        // for<'b> CodedSelectorSeed<'b, C, D, Ctx, K>: DeserializeSeed<'de, Value = ()>,
+        // for<'b> CodedSelectorSeed<'b, C, D, Ctx, V>: DeserializeSeed<'de, Value = ()>,
     {
         let matcher = self
             .0
@@ -175,8 +186,8 @@ where
         let (selector, state, mut params, ctx) = self.0.into_parts();
 
         // select against each child
-        while let Some(key) = map.next_key::<K>()? {
-            SelectorSeed::field_select_seed::<V>(
+        while let Some(key) = map.next_key_seed(DeserializeWrapper::<C, K>::default())? {
+            let seed = SelectorSeed::field_select_seed::<V>(
                 selector,
                 state,
                 &mut params,
@@ -191,15 +202,16 @@ where
                     _ => unreachable!(),
                 },
             )
-            .map_err(A::Error::custom)
-            .and_then(|seed| map.next_value_seed(CodecSeed::<C, _>(seed)))?;
+            .map_err(A::Error::custom)?;
+
+            V::__select_from_map::<C, _>(seed, &mut map, false)?;
 
             state.ascend::<V>().map_err(A::Error::custom)?;
         }
 
         // finally, select the matched dag
         if mode == SelectionMode::SelectDag {
-            let mut original_seed = SelectorSeed::from(selector, state, params, ctx);
+            let mut original_seed = SelectorSeed::from_parts(selector, state, params, ctx);
             original_seed
                 .select_matched_dag(dag.into_inner(), matcher.label.as_deref())
                 .map_err(A::Error::custom)?;
@@ -212,8 +224,8 @@ where
     pub(crate) fn explore_map_fields<'de, A>(self, mut map: A) -> Result<(), A::Error>
     where
         A: MapAccess<'de>,
-        for<'b> CodedSeed<'b, C, Ctx, K>: DeserializeSeed<'de, Value = ()>,
-        for<'b> CodedSeed<'b, C, Ctx, V>: DeserializeSeed<'de, Value = ()>,
+        // for<'b> CodedSelectorSeed<'b, C, D, Ctx, K>: DeserializeSeed<'de, Value = ()>,
+        // for<'b> CodedSelectorSeed<'b, C, D, Ctx, V>: DeserializeSeed<'de, Value = ()>,
     {
         unimplemented!()
     }
@@ -222,8 +234,8 @@ where
     pub(crate) fn explore_map_all<'de, A>(self, mut map: A) -> Result<(), A::Error>
     where
         A: MapAccess<'de>,
-        for<'b> CodedSeed<'b, C, Ctx, K>: DeserializeSeed<'de, Value = ()>,
-        for<'b> CodedSeed<'b, C, Ctx, V>: DeserializeSeed<'de, Value = ()>,
+        // for<'b> CodedSelectorSeed<'b, C, D, Ctx, K>: DeserializeSeed<'de, Value = ()>,
+        // for<'b> CodedSelectorSeed<'b, C, D, Ctx, V>: DeserializeSeed<'de, Value = ()>,
     {
         unimplemented!()
     }

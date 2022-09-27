@@ -6,7 +6,6 @@ use crate::dev::{
     schema::{kw, SchemaKind},
     OuterAttributes,
 };
-use std::collections::HashSet;
 use syn::{
     braced,
     parse::{Parse, ParseStream, Result as ParseResult},
@@ -23,13 +22,13 @@ impl Parse for UnionReprDefinition {
             // keyed
             _ if input.peek(kw::keyed) => {
                 input.parse::<kw::keyed>()?;
-                let fields = field_input.parse::<UnionStrFields>()?;
+                let fields = field_input.parse()?;
                 Self::Keyed(KeyedUnionReprDefinition { fields })
             }
             // envelope
             _ if input.peek(kw::envelope) => {
                 input.parse::<kw::envelope>()?;
-                let fields = field_input.parse::<UnionStrFields>()?;
+                let fields = field_input.parse()?;
                 let args;
                 braced!(args in input);
 
@@ -37,10 +36,12 @@ impl Parse for UnionReprDefinition {
                 let mut content_key = None;
                 try_parse_envelope_args(&args, &mut discriminant_key, &mut content_key)?;
                 try_parse_envelope_args(&args, &mut discriminant_key, &mut content_key)?;
-                let discriminant_key = discriminant_key.ok_or(args.error("invalid IPLD union envelope representation definition: missing `discriminantKey`"))?;
-                let content_key = content_key.ok_or(args.error(
-                    "invalid IPLD union envelope representation definition: missing `contentKey`",
+                let discriminant_key = discriminant_key.ok_or(args.error(
+                    "invalid IPLD union envelope representation: missing `discriminantKey`",
                 ))?;
+                let content_key = content_key.ok_or(
+                    args.error("invalid IPLD union envelope representation: missing `contentKey`"),
+                )?;
                 Self::Envelope(EnvelopeUnionReprDefinition {
                     fields,
                     discriminant_key,
@@ -50,7 +51,7 @@ impl Parse for UnionReprDefinition {
             // inline
             _ if input.peek(kw::inline) => {
                 input.parse::<kw::inline>()?;
-                let fields = field_input.parse::<UnionStrFields>()?;
+                let fields = field_input.parse()?;
                 let args;
                 braced!(args in input);
                 let discriminant_key = parse_kwarg!(args, discriminantKey => LitStr);
@@ -62,28 +63,32 @@ impl Parse for UnionReprDefinition {
             // byteprefix
             _ if input.peek(kw::byteprefix) => {
                 input.parse::<kw::byteprefix>()?;
-                let fields = field_input.parse::<UnionIntFields>()?;
+                let fields = field_input.parse()?;
                 Self::BytePrefix(BytePrefixUnionReprDefinition { fields })
             }
             // kinded
             _ if input.peek(kw::kinded) => {
                 input.parse::<kw::kinded>()?;
                 let fields = field_input.parse::<UnionKindedFields>()?;
-                let all_unique_kinds = {
-                    let set = &fields
-                        .iter()
-                        .map(|field| &field.key)
-                        .collect::<HashSet<&SchemaKind>>();
-                    fields.len() == set.len()
-                };
-                if !all_unique_kinds {
+
+                // validate that all the kinds are of the data model and unique
+                let all = &fields
+                    .iter()
+                    .map(|fs| fs.key)
+                    .fold(SchemaKind::empty(), SchemaKind::union);
+                if !SchemaKind::Any.contains(*all) {
                     return Err(input.error(
-                        "invalid IPLD union kinded representation defintion: duplicate kinds",
+                        "invalid IPLD union kinded representation: schema contains non-data model types",
                     ));
                 }
+                if fields.len() != all.bits.count_ones() as usize {
+                    return Err(input
+                        .error("invalid IPLD union kinded representation: schema contains duplicate type fields"));
+                }
+
                 Self::Kinded(KindedUnionReprDefinition { fields })
             }
-            _ => return Err(input.error("invalid IPLD union representation definition")),
+            _ => return Err(input.error("invalid IPLD union representation")),
         };
 
         Ok(union_repr)
@@ -126,23 +131,20 @@ pub(crate) fn try_parse_envelope_args(
 ) -> ParseResult<()> {
     if input.peek(kw::discriminantKey) {
         if discriminant_key.is_some() {
-            return Err(input.error(
-                "invalid IPLD union envelope representation defintion: duplicate `discriminantKey`",
-            ));
+            return Err(input
+                .error("invalid IPLD union envelope representation: duplicate `discriminantKey`"));
         }
-        *discriminant_key = Some(parse_kwarg!(input, discriminantKey => LitStr));
-        Ok(())
+        discriminant_key.replace(parse_kwarg!(input, discriminantKey => LitStr));
     } else if input.peek(kw::contentKey) {
         if content_key.is_some() {
-            return Err(input.error(
-                "invalid IPLD union envelope representation defintion: duplicate `contentKey`",
-            ));
+            return Err(
+                input.error("invalid IPLD union envelope representation: duplicate `contentKey`")
+            );
         }
-        *content_key = Some(parse_kwarg!(input, contentKey => LitStr));
-        Ok(())
-    } else {
-        Ok(())
+        content_key.replace(parse_kwarg!(input, contentKey => LitStr));
     }
+
+    Ok(())
 }
 
 // #[cfg(test)]

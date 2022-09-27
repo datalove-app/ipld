@@ -6,10 +6,10 @@ use std::{
     path::PathBuf,
 };
 
-const DEFAULT_CID_VERSION: Version = Version::V1;
-const DEFAULT_MH: u64 = Multihash::SHA2_256;
-
-static CODEC_SKIPLIST: &[&str] = &[];
+static CODEC_SKIPLIST: &[&str] = &[
+    // "dag-cbor",
+    // "dag-json",
+];
 static FIXTURE_SKIPLIST: &[(&str, &str)] = &[
     // unfamiliar, or incorrectly/confusingly labeled
     ("bytes-a1", "unsupported multibase"),
@@ -216,6 +216,9 @@ impl Fixture {
 
     /// Sets up a `MemoryContext` to provide the fixture's block.
     fn setup_ctx(&self) -> MemoryContext {
+        const DEFAULT_CID_VERSION: Version = Version::V1;
+        const DEFAULT_MH: u64 = Multihash::SHA2_256;
+
         let mut ctx = MemoryContext::default();
         let cid = ctx
             .add_block(
@@ -235,8 +238,8 @@ impl Fixture {
             FixtureType::Null => self.run_for::<Null>(),
             FixtureType::Bool => self.run_for::<Bool>(),
             FixtureType::Int => self.run_for::<Int>(),
-            // FixtureType::Float => self.run_for::<Float>(),
-            // FixtureType::Bytes => self.run_for::<Bytes>(), // none of the fixtures have the right multibase...
+            // FixtureType::Float => self.run_for::<Float>(), // floats arent round-tripping with dag-cbor correctly...
+            // FixtureType::Bytes => self.run_for::<Bytes>(), // none of the fixtures match the multibase...
             FixtureType::String => self.run_for::<IpldString>(),
             // FixtureType::Array => self.run_for::<List<Any>>(),
             // FixtureType::Map => self.run_for::<Map<IpldString, Any>>(),
@@ -294,6 +297,7 @@ impl Fixture {
             }
         }
 
+        /*
         {
             // next, decode the concrete type using the Matcher selector
             let mut ctx = self.setup_ctx();
@@ -339,7 +343,7 @@ impl Fixture {
                 );
             }
         }
-
+         */
         true
     }
 

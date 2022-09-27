@@ -22,7 +22,7 @@ use crate::{common::*, dev::*};
 use proc_macro2::{Span, TokenStream};
 use proc_macro_crate::{crate_name, FoundCrate};
 use quote::quote;
-use std::ops::Deref;
+use std::ops::{BitOr, Deref};
 use syn::{parse_str, Attribute, Generics, Ident, LitStr, Path, Type, Visibility};
 
 ///
@@ -135,34 +135,85 @@ impl ReprDefinition {
     }
 }
 
-///
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub enum SchemaKind {
-    Null,
-    Bool,
-    Int, // same as Int128
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Int128,
-    Uint8,
-    Uint16,
-    Uint32,
-    Uint64,
-    Uint128,
-    Float, // same as Float64
-    Float32,
-    Float64,
-    Bytes,
-    String,
-    List,
-    Map,
-    Link,
-    Struct,
-    Enum,
-    Union,
-    Copy,
+// ///
+// #[derive(Debug, PartialEq, Eq, Hash)]
+// pub enum SchemaKind {
+//     Null,
+//     Bool,
+//     Int, // same as Int128
+//     Int8,
+//     Int16,
+//     Int32,
+//     Int64,
+//     Int128,
+//     Uint8,
+//     Uint16,
+//     Uint32,
+//     Uint64,
+//     Uint128,
+//     Float, // same as Float64
+//     Float32,
+//     Float64,
+//     Bytes,
+//     String,
+//     List,
+//     Map,
+//     Link,
+//     Struct,
+//     Enum,
+//     Union,
+//     Copy,
+// }
+bitflags::bitflags! {
+    /// Enum of possible [Data Model](), [Schema]() and [Representation]() kinds.
+    ///
+    pub struct SchemaKind: u32 {
+        // data model kinds
+
+        const Null = 0b0000_0000_0000_0001;
+        const Bool = 0b0000_0000_0000_0010;
+        const Int = 0b0000_0000_0000_0100;
+
+        const Float = 0b0000_0000_0000_1000;
+        const String = 0b0000_0000_0001_0000;
+        const Bytes = 0b0000_0000_0010_0000;
+        const List = 0b0000_0000_0100_0000;
+        const Map = 0b0000_0000_1000_0000;
+        const Link = 0b0000_0001_0000_0000;
+
+        // schema kinds
+
+        const Struct = 0b0000_0010_0000_0000;
+        const Enum = 0b0000_0100_0000_0000;
+        const Union = 0b0000_1000_0000_0000;
+        const Copy = 0b0001_0000_0000_0000;
+
+        // any
+
+        const Any = Self::Null.bits
+            | Self::Bool.bits
+            | Self::Int.bits
+            | Self::Float.bits
+            | Self::String.bits
+            | Self::Bytes.bits
+            | Self::List.bits
+            | Self::Map.bits
+            | Self::Link.bits;
+
+        const Typed = 0b0010_0000_0000_0000;
+        const Int8 = 0b0100_0000_0000_0000;
+        const Int16 = 0b1000_0000_0000_0000;
+        const Int32 = 0b0000_0001_0000_0000_0000_0000;
+        const Int64 = 0b0000_0010_0000_0000_0000_0000;
+        const Int128 = 0b0000_0100_0000_0000_0000_0000;
+        const Uint8 = 0b0000_1000_0000_0000_0000_0000;
+        const Uint16 = 0b0001_0000_0000_0000_0000_0000;
+        const Uint32 = 0b0010_0000_0000_0000_0000_0000;
+        const Uint64 = 0b0100_0000_0000_0000_0000_0000;
+        const Uint128 = 0b1000_0000_0000_0000_0000_0000;
+        const Float32 = 0b0000_0001_0000_0000_0000_0000_0000_0000;
+        const Float64 = 0b0000_0010_0000_0000_0000_0000_0000_0000;
+    }
 }
 
 // #[derive(Debug)]

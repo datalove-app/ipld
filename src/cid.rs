@@ -171,14 +171,14 @@ impl Representation for Cid {
         cfg_if::cfg_if! {
             if #[cfg(feature = "dag-json")] {
                 if C == DagJson::CODE {
-                    return DagJson::serialize_link(self, serializer);
+                    return DagJson::serialize_cid(self, serializer);
                 }
             }
         }
         cfg_if::cfg_if! {
             if #[cfg(feature = "dag-cbor")] {
                 if C == DagCbor::CODE {
-                    return DagCbor::serialize_link(self, serializer);
+                    return DagCbor::serialize_cid(self, serializer);
                 }
             }
         }
@@ -195,14 +195,14 @@ impl Representation for Cid {
         cfg_if::cfg_if! {
             if #[cfg(feature = "dag-json")] {
                 if C == DagJson::CODE {
-                    return DagJson::deserialize_link(deserializer, CidVisitor);
+                    return DagJson::deserialize_cid(deserializer, CidVisitor);
                 }
             }
         }
         cfg_if::cfg_if! {
             if #[cfg(feature = "dag-cbor")] {
                 if C == DagCbor::CODE {
-                    return DagCbor::deserialize_link(deserializer, CidVisitor);
+                    return DagCbor::deserialize_cid(deserializer, CidVisitor);
                 }
             }
         }
@@ -365,35 +365,14 @@ impl<'de> Visitor<'de> for CidVisitor {
             Cid::SIZE
         )
     }
-    // #[inline]
-    // fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-    // where
-    //     E: de::Error,
-    // {
-    //     self.visit_link_str(s)
-    // }
-    // #[inline]
-    // fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
-    // where
-    //     E: de::Error,
-    // {
-    //     self.visit_link_bytes(bytes)
-    // }
 }
 impl<'de> IpldVisitorExt<'de> for CidVisitor {
     #[inline]
-    fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
+    fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
-        Self::Value::try_from(cid_str).map_err(E::custom)
-    }
-    #[inline]
-    fn visit_link_bytes<E>(self, cid_bytes: &[u8]) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Self::Value::try_from(cid_bytes).map_err(E::custom)
+        Ok(cid)
     }
 }
 
@@ -402,41 +381,6 @@ impl<'de> Deserialize<'de> for Cid {
     where
         D: Deserializer<'de>,
     {
-        // struct CidVisitor;
-        // impl<'de> Visitor<'de> for CidVisitor {
-        //     type Value = Cid;
-        //     #[inline]
-        //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        //         write!(f, "a Cid of a multihash no longer than {} bytes", Cid::SIZE)
-        //     }
-        // }
-        // impl<'de> IpldVisitorExt<'de> for CidVisitor {
-        //     #[inline]
-        //     fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
-        //     where
-        //         E: de::Error,
-        //     {
-        //         Self::Value::try_from(cid_str).map_err(E::custom)
-        //     }
-        //     #[inline]
-        //     fn visit_link_bytes<E>(self, cid_bytes: &[u8]) -> Result<Self::Value, E>
-        //     where
-        //         E: de::Error,
-        //     {
-        //         Self::Value::try_from(cid_bytes).map_err(E::custom)
-        //     }
-        // }
-
-        // cfg_if::cfg_if! {
-        //     if #[cfg(feature = "serde-codec")] {
-        //         (&mut &mut &mut Decoder(deserializer)).deserialize_link(CidVisitor)
-        //     } else {
-        //         Ok(Self::from(DefaultCid::deserialize(deserializer)?))
-        //     }
-        // }
-
-        // deserializer.deserialize_link(CidVisitor)
-
         Ok(Self::from(DefaultCid::deserialize(deserializer)?))
     }
 }

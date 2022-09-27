@@ -86,7 +86,7 @@ impl ExpandBasicRepresentation for BasicStructReprDefinition {
 
         quote! {
             #(#attrs)*
-            #[derive(Deserialize, Serialize)]
+            // #[derive(Deserialize, Serialize)]
             #vis struct #ident #generics {
                 #(#fields,)*
             }
@@ -110,22 +110,18 @@ pub(super) fn impl_repr<'a>(
 ) -> TokenStream {
     let lib = &meta.lib;
     let name = &meta.name;
-    let fields: Vec<TokenStream> = iter
-        .map(
-            |StructField {
-                 key, value, rename, ..
-             }| {
-                let key = key.to_string();
-                let rename = rename
-                    .as_ref()
-                    .map(|s| s.value())
-                    .unwrap_or_else(|| key.clone());
-                quote! {
-                    (#key, Field::new::<#value>(#rename))
-                }
-            },
-        )
-        .collect();
+    // let fields = iter.map(|f| {
+    //     let key = f.key.to_string();
+    //     let val = &f.value;
+    //     let rename = f
+    //         .rename
+    //         .as_ref()
+    //         .map(|s| s.value())
+    //         .unwrap_or_else(|| key.clone());
+    //     quote! {
+    //         (#key, Field::new::<#val>(#rename))
+    //     }
+    // });
 
     let repr_body = expand::impl_repr(
         meta,
@@ -144,11 +140,12 @@ pub(crate) fn default_field_def(field: &StructField) -> TokenStream {
     let attrs = &field.attrs;
     let vis = &field.vis;
     let key = &field.key;
-    let value = super::expand::field_value(field);
+    let value = field_value(field);
+    let generics = &field.generics;
 
     quote! {
         #(#attrs)*
-        #vis #key: #value
+        #vis #key: #value #generics
     }
 }
 
@@ -157,7 +154,7 @@ fn field_def(field: &StructField) -> TokenStream {
     let vis = &field.vis;
     let key = &field.key;
     let value = field_value(field);
-    let generics = field.generics.as_ref().map(|g| quote!(#g));
+    let generics = &field.generics;
 
     let implicit_attr = field.implicit.as_ref().map(|_| quote!(#[serde(default)]));
     let rename_attr = field
@@ -167,8 +164,8 @@ fn field_def(field: &StructField) -> TokenStream {
 
     quote! {
         #(#attrs)*
-        #implicit_attr
-        #rename_attr
+        // #implicit_attr
+        // #rename_attr
         #vis #key: #value #generics
     }
 }

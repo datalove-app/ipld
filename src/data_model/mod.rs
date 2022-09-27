@@ -1,8 +1,10 @@
 //! A general `Value` type, representing all IPLD data model kinds.
 
 use crate::dev::*;
+use macros::derive_more::From;
 
 mod any;
+mod compat;
 // pub mod borrowed;
 // mod canon;
 mod link;
@@ -20,9 +22,12 @@ pub use primitive::*;
 /// Wrapper type to connect [`serde::Serialize`] to the underlying type's
 /// [`Representation::serialize`] codec-specific implementation.
 #[doc(hidden)]
-#[derive(Debug)]
-pub struct EncoderElem<'a, const C: u64, T>(pub &'a T);
-impl<'a, const C: u64, T: Representation> Serialize for EncoderElem<'a, C, T> {
+#[derive(Debug, From)]
+pub struct SerializeWrapper<'a, const C: u64, T>(pub &'a T);
+impl<'a, const C: u64, T> Serialize for SerializeWrapper<'a, C, T>
+where
+    T: Representation,
+{
     #[inline(always)]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -36,13 +41,16 @@ impl<'a, const C: u64, T: Representation> Serialize for EncoderElem<'a, C, T> {
 /// [`Representation::deserialize`] codec-specific implementation.
 #[doc(hidden)]
 #[derive(Debug)]
-pub struct DecoderElem<const C: u64, T>(std::marker::PhantomData<T>);
-impl<const C: u64, T> Default for DecoderElem<C, T> {
+pub struct DeserializeWrapper<const C: u64, T>(std::marker::PhantomData<T>);
+impl<const C: u64, T> Default for DeserializeWrapper<C, T> {
     fn default() -> Self {
         Self(std::marker::PhantomData)
     }
 }
-impl<'de, const C: u64, T: Representation> DeserializeSeed<'de> for DecoderElem<C, T> {
+impl<'de, const C: u64, T> DeserializeSeed<'de> for DeserializeWrapper<C, T>
+where
+    T: Representation,
+{
     type Value = T;
     #[inline(always)]
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>

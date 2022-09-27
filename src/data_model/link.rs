@@ -89,8 +89,9 @@ impl<T: Representation> Representation for Link<T> {
 }
 
 impl_selector_seed_serde! { @codec_seed_visitor
-    { T: Representation + 'static }
-    { for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()>, }
+    { T: Select<Ctx> + 'static }
+    // { for<'b> CodedSelectorSeed<'b, _C, _D, Ctx, T>: DeserializeSeed<'de, Value = ()>, }
+    { }
     Link<T>
 {
     #[inline]
@@ -100,79 +101,88 @@ impl_selector_seed_serde! { @codec_seed_visitor
 }}
 
 impl_selector_seed_serde! { @codec_seed_visitor_ext
-    { T: Representation + 'static }
-    { for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()>, }
+    { T: Select<Ctx> + 'static }
+    // { for<'b> CodedSelectorSeed<'b, _C, _D, Ctx, T>: DeserializeSeed<'de, Value = ()>, }
+    { }
     Link<T>
 {
     #[inline]
-    fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
+    fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
     where
         E: serde::de::Error,
     {
-        let cid = Cid::try_from(cid_str).map_err(E::custom)?;
-        self.visit_link(cid)
-    }
-
-    #[inline]
-    fn visit_link_bytes<E>(self, cid_bytes: &[u8]) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        let cid = Cid::try_from(cid_bytes).map_err(E::custom)?;
         self.visit_link(cid)
     }
 }}
 
 impl_selector_seed_serde! { @selector_seed_codec_deseed
-    { T: Representation + 'static }
-    { for<'b> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de> }
+    { T: Select<Ctx> + 'static }
+    // { for<'b> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de, Value = ()> }
+    { }
     Link<T>
 {
+    // #[inline]
+    // fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
+    // where
+    //     D: Deserializer<'de>,
+    // {
+    //     cfg_if::cfg_if! {
+    //         if #[cfg(feature = "dag-json")] {
+    //             if C == DagJson::CODE {
+    //                 return DagJson::deserialize_cid::<'de, D, _>(deserializer, CodecSeed::<C, false, _>(self));
+    //             }
+    //         }
+    //     }
+    //     cfg_if::cfg_if!{
+    //         if #[cfg(feature = "dag-cbor")] {
+    //             if C == DagCbor::CODE {
+    //                 return DagCbor::deserialize_cid::<'de, D, _>(deserializer, CodecSeed::<C, false, _>(self));
+    //             }
+    //         }
+    //     }
+
+    //     Deserialize::deserialize(deserializer)
+    // }
     #[inline]
-    fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
+    fn deserialize<D>(self, deserializer: D) -> Result<(), D::Error>
     where
         D: Deserializer<'de>,
     {
-        // deserializer.deserialize_link(self)
-        // (&mut &mut &mut Decoder(deserializer)).deserialize_link(self)
-
         cfg_if::cfg_if! {
             if #[cfg(feature = "dag-json")] {
-                if C == DagJson::CODE {
-                    return DagJson::deserialize_link(deserializer, CodecSeed::<C, _>(self));
+                if _C == DagJson::CODE {
+                    return DagJson::deserialize_cid(deserializer, self);
                 }
             }
         }
         cfg_if::cfg_if!{
             if #[cfg(feature = "dag-cbor")] {
-                if C == DagCbor::CODE {
-                    return DagCbor::deserialize_link(deserializer, CodecSeed::<C, _>(self));
+                if _C == DagCbor::CODE {
+                    return DagCbor::deserialize_cid(deserializer, self);
                 }
             }
         }
 
-        // TODO:
         Deserialize::deserialize(deserializer)
     }
 }}
 
 impl_selector_seed_serde! { @selector_seed_select
-    { T: Representation + 'static }
-    { for<'b, 'de> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de> }
+    { T: Select<Ctx> + 'static }
+    // { for<'b, 'de> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de, Value = ()> }
+    { }
     Link<T>
 }
 
-impl<'a, const C: u64, Ctx, T> CodecSeed<C, SelectorSeed<'a, Ctx, Link<T>>>
+impl<'a, const C: u64, const D: bool, Ctx, T> CodedSelectorSeed<'a, C, D, Ctx, Link<T>>
 where
     Ctx: Context,
-    T: Representation + 'static,
+    T: Select<Ctx> + 'static,
 {
-    ///
-    /// TODO: continue selection if the current selector is not a matcher
     fn visit_link<'de, E>(mut self, cid: Cid) -> Result<(), E>
     where
         E: de::Error,
-        for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()>,
+        // for<'b> CodedSelectorSeed<'b, C, D, Ctx, T>: DeserializeSeed<'de, Value = ()>,
     {
         if let Some(matcher) = self.0.selector.as_matcher() {
             match self.0.mode() {
@@ -192,6 +202,7 @@ where
             return Ok(());
         }
 
+        /// TODO: continue selection if the current selector is not a matcher
         unimplemented!()
     }
 }

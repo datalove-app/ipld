@@ -36,17 +36,18 @@ use std::{
 ///
 /// Should be implemented by any types representing IPLD links and maps.
 pub trait IpldVisitorExt<'de>: Visitor<'de> {
-    /// The input contains the string of a `Cid`.
+    /// The input contains the string of a [`Cid`].
     ///
     /// The default implementation fails with a type error.
     fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
-        Err(E::invalid_type(de::Unexpected::Other("Cid"), &self))
+        let cid = Cid::try_from(cid_str).map_err(E::custom)?;
+        self.visit_cid(cid)
     }
 
-    /// The input contains the string of a `Cid`.
+    /// The input contains the string of a [`Cid`].
     ///
     /// The default implementation delegates to [`visit_link_str`].
     #[inline]
@@ -57,24 +58,35 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
         self.visit_link_str(cid_str)
     }
 
-    /// The input contains a string representation of a `Cid`.
+    /// The input contains a string representation of a [`Cid`].
     ///
     /// The default implementation fails with a type error.
+    #[inline]
     fn visit_link_bytes<E>(self, cid_bytes: &[u8]) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
-        Err(E::invalid_type(de::Unexpected::Other("Cid"), &self))
+        let cid = Cid::try_from(cid_bytes).map_err(E::custom)?;
+        self.visit_cid(cid)
     }
 
-    /// The input contains a string representation of a `Cid`.
+    /// The input contains a string representation of a [`Cid`].
     ///
     /// The default implementation delegates to [`visit_link_bytes`].
+    #[inline]
     fn visit_link_borrowed_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
         self.visit_link_bytes(cid_bytes)
+    }
+
+    /// The input contains an already parsed [`Cid`].
+    fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Err(E::invalid_type(de::Unexpected::Other("Cid"), &self))
     }
 }
 

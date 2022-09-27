@@ -11,7 +11,6 @@
 
 use crate::dev::*;
 use downcast_rs::{impl_downcast, Downcast};
-use std::{rc::Rc, sync::Arc};
 
 pub use kind::Kind;
 
@@ -191,10 +190,10 @@ mod kind {
 ///         - TODO: ? stateful visitor derived from selector + type?
 ///         - TODO: ? impl DeserializeSeed for selector?
 ///         - TODO: ? Representation::visitor(selector: &Selector)
-pub trait Representation
-where
-    Self: Serialize + for<'de> Deserialize<'de>,
-{
+pub trait Representation: Sized {
+    // TODO: use this seed in Representation::deserialize by default
+    // type Seed<'de, const C: u64>: Default + DeserializeSeed<'de, Value = Self>;
+
     /// The stringified name of the IPLD type.
     const NAME: &'static str;
 
@@ -263,7 +262,8 @@ where
     where
         S: Serializer,
     {
-        <Self as Serialize>::serialize(self, serializer)
+        // <Self as Serialize>::serialize(self, serializer)
+        unimplemented!()
     }
 
     /// Replacement method for [`serde::Deserialize::deserialize`] that allows
@@ -278,8 +278,44 @@ where
     where
         D: Deserializer<'de>,
     {
-        <Self as Deserialize<'de>>::deserialize(deserializer)
+        // <Self as Deserialize<'de>>::deserialize(deserializer)
+        unimplemented!()
     }
+
+    // ///
+    // #[inline]
+    // #[doc(hidden)]
+    // fn deserialize_seed<'de, const C: u64, S, D>(
+    //     seed: S,
+    //     deserializer: D,
+    // ) -> Result<S::Value, D::Error>
+    // where
+    //     S: CodecDeserializeSeed<'de>,
+    //     D: Deserializer<'de>,
+    // {
+    //     seed.deserialize(deserializer)
+    // }
+
+    // ///
+    // #[inline]
+    // #[doc(hidden)]
+    // fn deserialize_with_visitor<'de, const C: u64, D, V>(
+    //     deserializer: D,
+    //     visitor: V,
+    // ) -> Result<V::Value, D::Error>
+    // where
+    //     D: Deserializer<'de>,
+    //     V: Visitor<'de>;
+
+    // #[inline]
+    // #[doc(hidden)]
+    // fn deserialize<'de, const C: u64, D, V>(
+    //     deserializer: D,
+    //     visitor: V,
+    // ) -> Result<V::Value, D::Error>
+    // where
+    //     D: Deserializer<'de>,
+    //     V: Visitor<'de>;
 
     // ///
     // #[inline]
@@ -337,109 +373,6 @@ where
 
     // fn links<R: Read + Seek>(c: Codec, reader: &mut R, )
 }
-
-impl<T> Representation for Option<T>
-where
-    T: Representation,
-{
-    const NAME: &'static str = concat!("Optional", stringify!(T::NAME));
-    // TODO
-    const SCHEMA: &'static str = unimplemented!();
-    // const SCHEMA: &'static str = concat!("type ", stringify!(T::NAME), " nullable");
-    const DATA_MODEL_KIND: Kind = T::DATA_MODEL_KIND;
-    const SCHEMA_KIND: Kind = T::DATA_MODEL_KIND;
-    const HAS_LINKS: bool = T::HAS_LINKS;
-
-    fn name(&self) -> &'static str {
-        match self {
-            Self::None => Null::NAME,
-            Self::Some(t) => t.name(),
-        }
-    }
-
-    // fn kind(&self) -> Kind {
-    //     match self {
-    //         Self::None => Null::KIND,
-    //         Self::Some(t) => t.kind(),
-    //     }
-    // }
-
-    fn has_links(&self) -> bool {
-        match self {
-            Self::None => false,
-            Self::Some(t) => t.has_links(),
-        }
-    }
-}
-
-macro_rules! impl_wrapper {
-    ($wrapper:ident) => {
-        impl<T> Representation for $wrapper<T>
-        where
-            T: Representation,
-        {
-            const NAME: &'static str = T::NAME;
-            const SCHEMA: &'static str = T::SCHEMA;
-            const DATA_MODEL_KIND: Kind = T::DATA_MODEL_KIND;
-            const SCHEMA_KIND: Kind = T::SCHEMA_KIND;
-            const REPR_KIND: Kind = T::REPR_KIND;
-
-            fn name(&self) -> &'static str {
-                self.as_ref().name()
-            }
-
-            fn data_model_kind(&self) -> Kind {
-                self.as_ref().data_model_kind()
-            }
-
-            fn schema_kind(&self) -> Kind {
-                self.as_ref().schema_kind()
-            }
-
-            fn repr_kind(&self) -> Kind {
-                self.as_ref().repr_kind()
-            }
-
-            fn has_links(&self) -> bool {
-                self.as_ref().has_links()
-            }
-        }
-    };
-    (@dyn $wrapper:ident) => {
-        impl Representation for $wrapper<dyn ErasedRepresentation> {
-            const NAME: &'static str = T::NAME;
-            const SCHEMA: &'static str = T::SCHEMA;
-            const DATA_MODEL_KIND: Kind = T::DATA_MODEL_KIND;
-            const SCHEMA_KIND: Kind = T::SCHEMA_KIND;
-            const REPR_KIND: Kind = T::REPR_KIND;
-
-            #[inline]
-            fn name(&self) -> &'static str {
-                self.as_ref().name()
-            }
-
-            fn data_model_kind(&self) -> Kind {
-                self.as_ref().data_model_kind()
-            }
-
-            fn schema_kind(&self) -> Kind {
-                self.as_ref().schema_kind()
-            }
-
-            fn repr_kind(&self) -> Kind {
-                self.as_ref().repr_kind()
-            }
-
-            fn has_links(&self) -> bool {
-                self.as_ref().has_links()
-            }
-        }
-    };
-}
-
-impl_wrapper!(Box);
-impl_wrapper!(Rc);
-impl_wrapper!(Arc);
 
 ///
 /// TODO: possibly look at erased-serde to complete this "hack"

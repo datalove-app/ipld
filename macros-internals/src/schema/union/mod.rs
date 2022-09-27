@@ -64,9 +64,12 @@ deref! {
     Kinded, SchemaKind => KindedUnionReprDefinition,
 }
 
-pub type UnionStrFields = Fields<UnionField<LitStr>>;
-pub type UnionIntFields = Fields<UnionField<LitInt>>;
-pub type UnionKindedFields = Fields<UnionField<SchemaKind>>;
+pub type UnionStrField = UnionField<LitStr>;
+pub type UnionIntField = UnionField<LitInt>;
+pub type UnionKindedField = UnionField<SchemaKind>;
+pub type UnionStrFields = Fields<UnionStrField>;
+pub type UnionIntFields = Fields<UnionIntField>;
+pub type UnionKindedFields = Fields<UnionKindedField>;
 
 #[derive(Debug)]
 pub struct UnionField<T: Parse> {

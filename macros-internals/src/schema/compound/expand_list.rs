@@ -10,7 +10,7 @@ use syn::{
 impl ExpandBasicRepresentation for ListReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = self.inner_ty();
-        derive_newtype!(@typedef_transparent self, meta => inner_ty)
+        derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         let child_ty = self.child_ty();

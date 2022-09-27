@@ -33,16 +33,13 @@ mod specs {
     use super::*;
 
     // codecs
-    pub use crate::multicodec::Codec;
-
     #[cfg(feature = "dag-cbor")]
     pub use crate::codecs_::dag_cbor::DagCbor;
     #[cfg(feature = "dag-json")]
     pub use crate::codecs_::dag_json::DagJson;
     // #[cfg(feature = "dag-pb")]
     // pub use crate::codecs_::dag_pb::DagPb;
-    #[cfg(feature = "multicodec")]
-    pub use crate::multicodec::Multicodec;
+    pub use crate::multicodec::{Codec, Multicodec};
 
     // multiformats
     pub use multibase::Base as Multibase;

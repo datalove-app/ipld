@@ -378,30 +378,30 @@ where
     //     }
     // }
 
-    ///
-    pub const fn mode(&self) -> SelectionMode {
-        match self {
-            Self::SelectNode { .. } => SelectionMode::SelectNode,
-            Self::SelectDag { .. } | Self::MatchDag { .. } => SelectionMode::SelectDag,
-            // Self::Patch { .. } => SelectionMode::Patch,
-        }
-    }
+    // ///
+    // pub const fn mode(&self) -> SelectionMode {
+    //     match self {
+    //         Self::SelectNode { .. } => SelectionMode::SelectNode,
+    //         Self::SelectDag { .. } | Self::MatchDag { .. } => SelectionMode::SelectDag,
+    //         // Self::Patch { .. } => SelectionMode::Patch,
+    //     }
+    // }
 
-    ///
-    pub const fn is_node(&self) -> bool {
-        match self {
-            Self::SelectNode { .. } => true,
-            _ => false,
-        }
-    }
+    // ///
+    // pub const fn is_node(&self) -> bool {
+    //     match self {
+    //         Self::SelectNode { .. } => true,
+    //         _ => false,
+    //     }
+    // }
 
-    ///
-    pub const fn is_dag(&self) -> bool {
-        match self {
-            Self::SelectDag { .. } | Self::MatchDag { .. } => true,
-            _ => false,
-        }
-    }
+    // ///
+    // pub const fn is_dag(&self) -> bool {
+    //     match self {
+    //         Self::SelectDag { .. } | Self::MatchDag { .. } => true,
+    //         _ => false,
+    //     }
+    // }
 
     pub(super) fn select_node(
         &mut self,

@@ -86,7 +86,7 @@ impl NullReprDefinition {
 impl expand::ExpandBasicRepresentation for NullReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = Self::inner_ty();
-        derive_newtype!(@typedef_transparent self, meta => inner_ty)
+        derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = Self::inner_ty();
@@ -128,7 +128,7 @@ impl BoolReprDefinition {
 impl expand::ExpandBasicRepresentation for BoolReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = Self::inner_ty();
-        derive_newtype!(@typedef_transparent self, meta => inner_ty)
+        derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = Self::inner_ty();
@@ -152,7 +152,7 @@ impl expand::ExpandBasicRepresentation for BoolReprDefinition {
 impl expand::ExpandBasicRepresentation for IntReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = &self.0;
-        derive_newtype!(@typedef_transparent self, meta => inner_ty)
+        derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = &self.0;
@@ -177,7 +177,7 @@ impl expand::ExpandBasicRepresentation for IntReprDefinition {
 impl expand::ExpandBasicRepresentation for FloatReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = &self.0;
-        derive_newtype!(@typedef_transparent self, meta => inner_ty)
+        derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = &self.0;
@@ -208,7 +208,7 @@ impl StringReprDefinition {
 impl expand::ExpandBasicRepresentation for StringReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = Self::inner_ty();
-        derive_newtype!(@typedef_transparent self, meta => inner_ty)
+        derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = Self::inner_ty();
@@ -232,7 +232,7 @@ impl expand::ExpandBasicRepresentation for StringReprDefinition {
 impl expand::ExpandBasicRepresentation for CopyReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = &self.0;
-        derive_newtype!(@typedef_transparent self, meta => inner_ty)
+        derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = &self.0;

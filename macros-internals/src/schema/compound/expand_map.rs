@@ -12,7 +12,7 @@ impl ExpandBasicRepresentation for MapReprDefinition {
         let inner_ty = self.inner_ty();
 
         match self {
-            Self::Basic { .. } => derive_newtype!(@typedef_transparent self, meta => inner_ty),
+            Self::Basic { .. } => derive_newtype!(@typedef self, meta => inner_ty),
             Self::Stringpairs { .. } => unimplemented!(),
             Self::Listpairs { .. } => unimplemented!(),
             Self::Advanced(..) => unimplemented!(),

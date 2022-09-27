@@ -20,7 +20,7 @@ impl LinkReprDefinition {
 impl expand::ExpandBasicRepresentation for LinkReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_type = self.inner_ty();
-        derive_newtype!(@typedef_transparent self, meta => inner_type)
+        derive_newtype!(@typedef self, meta => inner_type)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         expand::impl_repr(

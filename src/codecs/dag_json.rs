@@ -1,14 +1,10 @@
 //! IPLD DagJson codec.
 
-use crate::dev::{macros::derive_more::Unwrap, *};
+use crate::dev::*;
 use delegate::delegate;
 use serde::{de, ser};
-use serde_json::de::IoRead;
 #[cfg(not(feature = "simd"))]
-use serde_json::{
-    de::Read as JsonRead, from_reader, from_slice, to_writer, Deserializer as JsonDeserializer,
-    Error as JsonError, Serializer as JsonSerializer,
-};
+use serde_json::{de::IoRead, Deserializer as JsonDeserializer, Serializer as JsonSerializer};
 // #[cfg(feature = "simd")]
 // use simd_json::{Serializer as JsonSerializer, Deserializer as JsonDeserializer, Error as JsonError};
 use std::{
@@ -57,7 +53,7 @@ impl DagJson {
 
     /// Serializes links as a newtype variant, e.g.  `{ "/": "Qm..." }`.
     #[inline]
-    pub(crate) fn serialize_link<S: Serializer>(
+    pub(crate) fn serialize_cid<S: Serializer>(
         cid: &Cid,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
@@ -94,7 +90,7 @@ impl DagJson {
 
     ///
     #[inline]
-    pub(crate) fn deserialize_link<'de, D, V>(
+    pub(crate) fn deserialize_cid<'de, D, V>(
         deserializer: D,
         visitor: V,
     ) -> Result<V::Value, D::Error>
@@ -105,14 +101,16 @@ impl DagJson {
         deserializer.deserialize_map(visitor::DagJsonVisitor::<'l', _>(visitor))
     }
 
-    pub(crate) fn read_with_seed<'de, S, R>(&mut self, seed: S, reader: R) -> Result<(), Error>
+    #[doc(hidden)]
+    #[inline]
+    pub fn read_from_seed<Ctx, T, R>(seed: SelectorSeed<'_, Ctx, T>, reader: R) -> Result<(), Error>
     where
-        S: CodecDeserializeSeed<'de>,
+        Ctx: Context,
+        T: Select<Ctx>,
         R: Read,
     {
         let mut de = JsonDeserializer::from_reader(reader);
-        seed.deserialize::<{ Self::CODE }, _>(&mut de)
-            .map_err(Error::decoder)
+        T::__select_from_deserializer::<{ Self::CODE }, _>(seed, &mut de).map_err(Error::decoder)
     }
 }
 
@@ -158,7 +156,7 @@ mod visitor {
     use super::*;
 
     #[derive(Debug)]
-    pub(crate) struct DagJsonVisitor<const C: char, V>(pub(crate) V);
+    pub(crate) struct DagJsonVisitor<const T: char, V>(pub(crate) V);
 
     // visitor for any
     impl<'de, V: IpldVisitorExt<'de>> Visitor<'de> for DagJsonVisitor<'a', V> {
@@ -345,8 +343,8 @@ mod visitor {
                     A::Error::custom("DagJSON bytes key must be the string \"bytes\"")
                 })?;
 
-            // TODO: empty string
-            let byte_str = map.next_value::<String>()?;
+            let byte_str = map
+                .next_value_seed(DeserializeWrapper::<{ DagJson::CODE }, IpldString>::default())?;
             match multibase::decode(byte_str) {
                 Ok((DagJson::DEFAULT_MULTIBASE, bytes)) => Ok(MapLikeVisitor::Bytes(bytes)),
                 // Ok((mb, _)) => Err(de::Error::custom(format!(
@@ -400,44 +398,49 @@ mod tests {
 
     #[test]
     fn test_null() {
-        let tests = &[(Null, "null")];
-        roundtrip_str_codec::<Null>(DagJson::CODE, tests);
-        let tests = &[(None as Option<Int>, "null")];
-        roundtrip_str_codec::<Option<Int>>(DagJson::CODE, tests);
+        let cases = &[(Null, "null")];
+        roundtrip_str_codec::<Null>(DagJson::CODE, cases);
+        let cases = &[(None as Option<Int>, "null")];
+        roundtrip_str_codec::<Option<Int>>(DagJson::CODE, cases);
     }
 
     #[test]
     fn test_bool() {
-        let tests = &[(true, "true"), (false, "false")];
-        roundtrip_str_codec::<Bool>(DagJson::CODE, tests);
+        let cases = &[(true, "true"), (false, "false")];
+        roundtrip_str_codec::<Bool>(DagJson::CODE, cases);
     }
 
     #[test]
     fn test_number() {
-        let tests = &[(123, "123"), (65535, "65535")];
-        roundtrip_str_codec::<Int>(DagJson::CODE, tests);
-        let tests = &[(123.123, "123.123")];
-        roundtrip_str_codec::<Float>(DagJson::CODE, tests);
+        // ints
+        let cases = &[(123, "123"), (65535, "65535")];
+        roundtrip_str_codec::<Int>(DagJson::CODE, cases);
+
+        // floats
+        let cases = &[(123.123, "123.123")];
+        roundtrip_str_codec::<Float>(DagJson::CODE, cases);
     }
 
     #[test]
     fn test_string() {
-        let tests = &[
+        let cases = &[
             // standard string
             (IpldString::from("hello world"), "\"hello world\""),
+            // empty string TODO:
+            // (IpldString::default(), "\"\""),
             // non-standard UTF-8 string TODO:
             // (IpldString::from("ÅΩ"), "\"ÅΩ\""),
         ];
-        roundtrip_str_codec::<_>(DagJson::CODE, tests);
+        roundtrip_str_codec::<_>(DagJson::CODE, cases);
     }
 
     #[test]
     fn test_bytes() {
-        let tests = &[(
+        let cases = &[(
             Bytes::from(vec![0x01, 0x02, 0x03]),
             r#"{"/":{"bytes":"mAQID"}}"#,
         )];
-        roundtrip_str_codec::<Bytes>(DagJson::CODE, tests);
+        roundtrip_str_codec::<Bytes>(DagJson::CODE, cases);
     }
 
     #[test]
@@ -447,16 +450,16 @@ mod tests {
         let s = String::from("QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n");
         let json = format!("{{\"/\":\"{}\"}}", s);
 
-        let tests = &[(
+        let cases = &[(
             TestLink::from(Cid::try_from(s.as_str()).unwrap()),
             json.as_str(),
         )];
-        roundtrip_str_codec::<TestLink>(DagJson::CODE, tests);
+        roundtrip_str_codec::<TestLink>(DagJson::CODE, cases);
     }
 
     #[test]
     fn test_seq() {
-        let tests = &[
+        let cases = &[
             // (vec![], "[]"),
             // (vec![Any::Int(1), Any::Int(2)], "[1,2]"),
             // // (
@@ -464,12 +467,12 @@ mod tests {
             // //     "[{\"/\": }]",
             // // ),
         ];
-        roundtrip_str_codec::<List>(DagJson::CODE, tests);
+        roundtrip_str_codec::<List>(DagJson::CODE, cases);
     }
 
     #[test]
     fn test_map() {
-        let tests = &[];
-        roundtrip_str_codec::<Map>(DagJson::CODE, tests);
+        let cases = &[];
+        roundtrip_str_codec::<Map>(DagJson::CODE, cases);
     }
 }

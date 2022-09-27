@@ -3,7 +3,6 @@ use macros::{
     derive_more::{AsMut, AsRef, Deref, DerefMut, From, Index, IndexMut, Into, IntoIterator},
     impl_selector_seed_serde,
 };
-use serde::de::IntoDeserializer;
 use std::{borrow::Cow, fmt, ops::RangeBounds, str::FromStr};
 
 pub use self::bool::Bool;
@@ -28,6 +27,24 @@ mod null {
         const NAME: &'static str = "Null";
         const SCHEMA: &'static str = "type Null null";
         const DATA_MODEL_KIND: Kind = Kind::Null;
+
+        #[doc(hidden)]
+        fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            // TODO: none or unit?
+            serializer.serialize_none()
+        }
+
+        #[doc(hidden)]
+        fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            <()>::deserialize(deserializer)?;
+            Ok(Self)
+        }
     }
 
     impl_selector_seed_serde! { @codec_seed_visitor {} {} Null {
@@ -57,11 +74,11 @@ mod null {
 
     impl_selector_seed_serde! { @selector_seed_codec_deseed {} {} Null {
         #[inline]
-        fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
         where
             D: Deserializer<'de>,
         {
-            deserializer.deserialize_unit(CodecSeed::<C, _>(self))
+            deserializer.deserialize_unit(self)
         }
     }}
 
@@ -78,6 +95,22 @@ mod bool {
         const NAME: &'static str = "Bool";
         const SCHEMA: &'static str = "type Bool bool";
         const DATA_MODEL_KIND: Kind = Kind::Bool;
+
+        #[doc(hidden)]
+        fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            Serialize::serialize(self, serializer)
+        }
+
+        #[doc(hidden)]
+        fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            Deserialize::deserialize(deserializer)
+        }
     }
 
     impl_selector_seed_serde! { @codec_seed_visitor {} {} Bool {
@@ -99,11 +132,11 @@ mod bool {
 
     impl_selector_seed_serde! { @selector_seed_codec_deseed {} {} Bool {
         #[inline]
-        fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
         where
             D: Deserializer<'de>,
         {
-            deserializer.deserialize_bool(CodecSeed::<C, _>(self))
+            deserializer.deserialize_bool(self)
         }
     }}
 
@@ -130,6 +163,22 @@ mod num {
                 const SCHEMA: &'static str =
                     concat!("type ", stringify!($name), " ", stringify!($ipld_type));
                 const DATA_MODEL_KIND: Kind = Kind::$kind;
+
+                #[doc(hidden)]
+                fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: Serializer,
+                {
+                    Serialize::serialize(self, serializer)
+                }
+
+                #[doc(hidden)]
+                fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: Deserializer<'de>,
+                {
+                    Deserialize::deserialize(deserializer)
+                }
             }
 
             impl_selector_seed_serde! { @codec_seed_visitor {} {} $ty {
@@ -162,11 +211,11 @@ mod num {
 
             impl_selector_seed_serde! { @selector_seed_codec_deseed {} {} $ty {
                 #[inline]
-                fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
+                fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
                 where
                     D: Deserializer<'de>,
                 {
-                    deserializer.$deserialize_fn(CodecSeed::<C, _>(self))
+                    deserializer.$deserialize_fn(self)
                 }
             }}
 
@@ -176,7 +225,7 @@ mod num {
 
     impl_ipld_num! (
         "A fixed-length number type represented as a int8";
-        i8 : Int8 Int int {
+        i8 : Int8 Int int8 {
             deserialize_i8
             visit_i8
             @conv {
@@ -187,7 +236,7 @@ mod num {
     );
     impl_ipld_num! (
         "A fixed-length number type represented as a int16" ;
-        i16 : Int16 Int int {
+        i16 : Int16 Int int16 {
             deserialize_i16
             visit_i16
             @conv {
@@ -198,7 +247,7 @@ mod num {
     );
     impl_ipld_num! (
         "A fixed-length number type represented as a int32" ;
-        i32 : Int32 Int int {
+        i32 : Int32 Int int32 {
             deserialize_i32
             visit_i32
             @conv {
@@ -209,7 +258,7 @@ mod num {
     );
     impl_ipld_num! (
         "A fixed-length number type represented as a int64" ;
-        i64 : Int64 Int int {
+        i64 : Int64 Int int64 {
             deserialize_i64
             visit_i64
             @conv {
@@ -220,7 +269,7 @@ mod num {
     );
     impl_ipld_num! (
         "A fixed-length number type represented as a int128" ;
-        i128 : Int128 Int int {
+        i128 : Int128 Int int128 {
             deserialize_i128
             visit_i128
             @conv {
@@ -231,7 +280,7 @@ mod num {
     );
     impl_ipld_num! (
         "A fixed-length number type represented as a uint8" ;
-        u8 : Uint8 Int int {
+        u8 : Uint8 Int uint8 {
             deserialize_u8
             visit_u8
             @conv {
@@ -242,7 +291,7 @@ mod num {
     );
     impl_ipld_num! (
         "A fixed-length number type represented as a uint16" ;
-        u16 : Uint16 Int int {
+        u16 : Uint16 Int uint16 {
             deserialize_u16
             visit_u16
             @conv {
@@ -253,7 +302,7 @@ mod num {
     );
     impl_ipld_num! (
         "A fixed-length number type represented as a uint32" ;
-        u32 : Uint32 Int int {
+        u32 : Uint32 Int uint32 {
             deserialize_u32
             visit_u32
             @conv {
@@ -264,7 +313,7 @@ mod num {
     );
     impl_ipld_num! (
         "A fixed-length number type represented as a uint64" ;
-        u64 : Uint64 Int int {
+        u64 : Uint64 Int uint64 {
             deserialize_u64
             visit_u64
             @conv {
@@ -275,7 +324,7 @@ mod num {
     );
     impl_ipld_num! (
         "A fixed-length number type represented as a uint128" ;
-        u128 : Uint128 Int int {
+        u128 : Uint128 Int uint128 {
             deserialize_u128
             visit_u128
             @conv {
@@ -286,7 +335,7 @@ mod num {
     );
     impl_ipld_num! (
         "A fixed-length number type represented as a float32" ;
-        f32 : Float32 Float float {
+        f32 : Float32 Float float32 {
             deserialize_f32
             visit_f32
             @conv { f64:visit_f64 }
@@ -294,7 +343,7 @@ mod num {
     );
     impl_ipld_num! (
         "A fixed-length number type represented as a float64" ;
-        f64 : Float64 Float float {
+        f64 : Float64 Float float64 {
             deserialize_f64
             visit_f64
             @conv { f32:visit_f32 }
@@ -342,6 +391,22 @@ mod string {
         const NAME: &'static str = "String";
         const SCHEMA: &'static str = "type String string";
         const DATA_MODEL_KIND: Kind = Kind::String;
+
+        #[doc(hidden)]
+        fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            Serialize::serialize(&self.0, serializer)
+        }
+
+        #[doc(hidden)]
+        fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            Ok(Self::from(<Cow<'_, str>>::deserialize(deserializer)?))
+        }
     }
 
     // TODO:
@@ -356,7 +421,11 @@ mod string {
         where
             E: de::Error,
         {
-            self.match_primitive(IpldString::from(s))
+            if Self::is_select() {
+                self.match_primitive(IpldString::from(s))
+            } else {
+                unimplemented!()
+            }
         }
 
         // TODO:
@@ -365,7 +434,11 @@ mod string {
         where
             E: de::Error,
         {
-            self.match_primitive(IpldString::from(s))
+            if Self::is_select() {
+                self.match_primitive(IpldString::from(s))
+            } else {
+                unimplemented!()
+            }
         }
     }}
 
@@ -373,11 +446,11 @@ mod string {
 
     impl_selector_seed_serde! { @selector_seed_codec_deseed {} {} IpldString {
         #[inline]
-        fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
         where
             D: Deserializer<'de>,
         {
-            deserializer.deserialize_string(CodecSeed::<C, _>(self))
+            deserializer.deserialize_string(self)
         }
     }}
 
@@ -420,40 +493,6 @@ mod string {
     impl fmt::Display for IpldString {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "{}", self.as_str())
-        }
-    }
-
-    // TODO:
-    impl Serialize for IpldString {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            serializer.collect_str(&self.0.nfc())
-        }
-    }
-
-    // TODO:
-    impl<'de> Deserialize<'de> for IpldString {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            // struct IpldStringVisitor;
-            // impl<'de> Visitor<'de> for IpldStringVisitor {
-            //     type Value = IpldString;
-            //     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            //         write!(f, "A string or sequence of chars")
-            //     }
-            //     fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
-            //         where
-            //             A: SeqAccess<'de>, {
-            //         let iter = SeqAccessDeserializer::new(seq);
-
-            //     }
-            // }
-
-            Ok(Self::from(String::deserialize(deserializer)?))
         }
     }
 }
@@ -525,8 +564,7 @@ mod bytes {
         const SCHEMA: &'static str = "type Bytes bytes";
         const DATA_MODEL_KIND: Kind = Kind::Bytes;
 
-        ///
-        #[inline]
+        #[doc(hidden)]
         fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -542,12 +580,34 @@ mod bytes {
             Serialize::serialize(self.as_ref(), serializer)
         }
 
-        ///
-        #[inline]
+        #[doc(hidden)]
         fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {
+            struct BytesVisitor;
+            impl<'de> Visitor<'de> for BytesVisitor {
+                type Value = Bytes;
+                #[inline]
+                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    write!(formatter, "A slice of bytes")
+                }
+                #[inline]
+                fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    Ok(Self::Value::copy_from_slice(bytes))
+                }
+                #[inline]
+                fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    Ok(Self::Value::from(bytes.into_boxed_slice()))
+                }
+            }
+
             cfg_if::cfg_if! {
                 if #[cfg(feature = "dag-json")] {
                     if C == DagJson::CODE {
@@ -556,7 +616,7 @@ mod bytes {
                 }
             }
 
-            Deserialize::deserialize(deserializer)
+            Ok(Self::from(Box::<[u8]>::deserialize(deserializer)?))
         }
     }
 
@@ -571,7 +631,12 @@ mod bytes {
         where
             E: de::Error,
         {
-            self.select_bytes(bytes)
+            if Self::is_select() {
+                self.select_bytes(bytes)
+            } else {
+                // Ok(Self::Value::from(bytes))
+                unimplemented!()
+            }
         }
 
         #[inline]
@@ -579,7 +644,12 @@ mod bytes {
         where
             E: de::Error,
         {
-            self.select_bytes(&bytes)
+            if Self::is_select() {
+                self.select_bytes(&bytes)
+            } else {
+                // Ok(Self::Value::from(bytes))
+                unimplemented!()
+            }
         }
     }}
 
@@ -587,28 +657,25 @@ mod bytes {
 
     impl_selector_seed_serde! { @selector_seed_codec_deseed {} {} Bytes {
         #[inline]
-        fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
         where
             D: Deserializer<'de>,
         {
-            // <D as Decoder>::deserialize_bytes(deserializer, self)
-            // (&mut &mut &mut Decoder(deserializer)).deserialize_bytes(self)
-
             cfg_if::cfg_if! {
                 if #[cfg(feature = "dag-json")] {
-                    if C == DagJson::CODE {
-                        return DagJson::deserialize_bytes(deserializer, CodecSeed::<C, _>(self));
+                    if _C == DagJson::CODE {
+                        return DagJson::deserialize_bytes(deserializer, self);
                     }
                 }
             }
 
-            deserializer.deserialize_bytes(CodecSeed::<C, _>(self))
+            deserializer.deserialize_bytes(self)
         }
     }}
 
     impl_selector_seed_serde! { @selector_seed_select {} {} Bytes }
 
-    impl<'a, const C: u64, Ctx> CodecSeed<C, SelectorSeed<'a, Ctx, Bytes>>
+    impl<'a, const C: u64, const D: bool, Ctx> CodedSelectorSeed<'a, C, D, Ctx, Bytes>
     where
         Ctx: Context,
     {
@@ -660,50 +727,50 @@ mod bytes {
         }
     }
 
-    impl Serialize for Bytes {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            serializer.serialize_bytes(self.as_ref())
-        }
-    }
+    // impl Serialize for Bytes {
+    //     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    //     where
+    //         S: Serializer,
+    //     {
+    //         serializer.serialize_bytes(self.as_ref())
+    //     }
+    // }
 
-    struct BytesVisitor;
-    // impl<'de> IpldVisitorExt<'de> for BytesVisitor {}
-    impl<'de> Visitor<'de> for BytesVisitor {
-        type Value = Bytes;
-        #[inline]
-        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(formatter, "A slice of bytes")
-        }
-        #[inline]
-        fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(Self::Value::copy_from_slice(bytes))
-        }
-        #[inline]
-        fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(Self::Value::from(bytes.into_boxed_slice()))
-        }
-    }
+    // struct BytesVisitor;
+    // // impl<'de> IpldVisitorExt<'de> for BytesVisitor {}
+    // impl<'de> Visitor<'de> for BytesVisitor {
+    //     type Value = Bytes;
+    //     #[inline]
+    //     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    //         write!(formatter, "A slice of bytes")
+    //     }
+    //     #[inline]
+    //     fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
+    //     where
+    //         E: de::Error,
+    //     {
+    //         Ok(Self::Value::copy_from_slice(bytes))
+    //     }
+    //     #[inline]
+    //     fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
+    //     where
+    //         E: de::Error,
+    //     {
+    //         Ok(Self::Value::from(bytes.into_boxed_slice()))
+    //     }
+    // }
 
-    impl<'de> Deserialize<'de> for Bytes {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            deserializer.deserialize_bytes(BytesVisitor)
-        }
-    }
+    // impl<'de> Deserialize<'de> for Bytes {
+    //     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    //     where
+    //         D: Deserializer<'de>,
+    //     {
+    //         deserializer.deserialize_bytes(BytesVisitor)
+    //     }
+    // }
 }
 
-impl<'a, const C: u64, Ctx, T> CodecSeed<C, SelectorSeed<'a, Ctx, T>>
+impl<'a, const C: u64, const D: bool, Ctx, T> CodedSelectorSeed<'a, C, D, Ctx, T>
 where
     Ctx: Context,
     T: Representation + 'static,

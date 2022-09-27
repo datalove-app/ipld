@@ -14,14 +14,14 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
         let attrs = &meta.attrs;
         let vis = &meta.vis;
         let name = &meta.name;
-        let fields = self.iter().map(UnionField::<SchemaKind>::typedef);
+        let fields = self.iter().map(UnionKindedField::typedef);
 
         // TODO: assert that all nested REPR_KINDs are unique and are DM kinds
 
         quote! {
             #(#attrs)*
-            #[derive(Deserialize, Serialize)]
-            #[serde(untagged)]
+            // #[derive(Deserialize, Serialize)]
+            // #[serde(untagged)]
             #vis enum #name {
                 #(#fields,)*
             }
@@ -31,8 +31,10 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         let dm_kind = self.dm_kind();
         let repr_kind = self.repr_kind();
-        let name_branches = self.iter().map(UnionField::<SchemaKind>::name_branch);
+        let name_branches = self.iter().map(UnionKindedField::name_branch);
         // let kind_branches: Vec<TokenStream> = self.iter().map(|f| f.kind_branch(&lib)).collect();
+        let serialize_branches = self.iter().map(UnionKindedField::serialize_branch);
+        // let deserialize_branches = self.iter().map(UnionKindedField::deserialize_branch);
 
         expand::impl_repr(
             meta,
@@ -55,6 +57,24 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
                 //         #(#kind_branches,)*
                 //     }
                 // }
+
+                #[doc(hidden)]
+                fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: Serializer,
+                {
+                    match self {
+                        #(#serialize_branches,)*
+                    }
+                }
+
+                #[doc(hidden)]
+                fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: Deserializer<'de>,
+                {
+                    unimplemented!()
+                }
             },
         )
     }
@@ -145,46 +165,11 @@ impl KindedUnionReprDefinition {
     }
 }
 
-impl UnionField<SchemaKind> {
-    const NULL: &'static str = "Null";
-    const BOOL: &'static str = "Bool";
-    const INT: &'static str = "Int";
-    // const INT8: &'static str = "Int8";
-    // const INT16: &'static str = "Int16";
-    // const INT32: &'static str = "In32t";
-    // const INT64: &'static str = "Int64";
-    // const INT128: &'static str = "Int128";
-    // const UINT8: &'static str = "Uint8";
-    // const UINT16: &'static str = "Uint16";
-    // const UINT32: &'static str = "Uint32";
-    // const UINT64: &'static str = "Uint64";
-    // const UINT128: &'static str = "Uint128";
-    const FLOAT: &'static str = "Float";
-    // const FLOAT32: &'static str = "Float32";
-    // const FLOAT64: &'static str = "Float64";
-    const BYTES: &'static str = "Bytes";
-    const STRING: &'static str = "String";
-    const LIST: &'static str = "List";
-    const MAP: &'static str = "Map";
-    const LINK: &'static str = "Link";
-
+impl UnionKindedField {
     /// Outputs the kinded enum variant name.
     /// TODO: this is wrong, let users define the name and just check the repr_kind
-    fn name(&self) -> Ident {
-        let name = match self.key {
-            SchemaKind::Null => Self::NULL,
-            SchemaKind::Bool => Self::BOOL,
-            SchemaKind::Int => Self::INT,
-            SchemaKind::Float => Self::FLOAT,
-            SchemaKind::Bytes => Self::BYTES,
-            SchemaKind::String => Self::STRING,
-            SchemaKind::List => Self::LIST,
-            SchemaKind::Map => Self::MAP,
-            SchemaKind::Link => Self::LINK,
-            _ => unreachable!(),
-        };
-
-        Ident::new(name, Span::call_site())
+    fn name(&self) -> &Ident {
+        &self.value
     }
 
     fn dm_kind(&self) -> TokenStream {
@@ -262,11 +247,17 @@ impl UnionField<SchemaKind> {
         let name = self.name();
         quote!(Self::#name(ty) => Representation::repr_kind(ty))
     }
+
+    fn serialize_branch(&self) -> TokenStream {
+        let name = self.name();
+        // let ty = &self.value;
+        quote!(Self::#name(ty) => Representation::serialize::<C, _>(ty, serializer))
+    }
 }
 
-impl UnionField<SchemaKind> {
+impl UnionKindedField {
     fn visit_params(&self) -> Vec<(TokenStream, TokenStream)> {
-        match &self.key {
+        match self.key {
             SchemaKind::Null => vec![
                 (quote!(visit_unit), quote!()),
                 (quote!(visit_none), quote!()),
@@ -299,8 +290,9 @@ impl UnionField<SchemaKind> {
             SchemaKind::List => vec![(quote!(visit_seq), quote!(v: A))],
             SchemaKind::Map => vec![(quote!(visit_map), quote!(v: A))],
             SchemaKind::Link => vec![
-                (quote!(visit_link_bytes), quote!(v: &[u8])),
-                (quote!(visit_link_str), quote!(v: &str)),
+                // (quote!(visit_link_bytes), quote!(v: &[u8])),
+                // (quote!(visit_link_str), quote!(v: &str)),
+                (quote!(visit_cid), quote!(v: Cid)),
             ],
             _ => unreachable!(),
         }
@@ -312,7 +304,7 @@ impl UnionField<SchemaKind> {
         let field_name = self.name();
         let ty = self.ty(false);
         let visit_impl = {
-            let deserializer = match &self.key {
+            let deserializer = match self.key {
                 SchemaKind::Null => quote!(().into_deserializer()),
                 SchemaKind::Bytes => quote!(serde::de::value::BytesDeserializer::new(&v)),
                 SchemaKind::List => quote!(serde::de::value::SeqAccessDeserializer::<A>::new(v)),

@@ -33,7 +33,11 @@ use std::{
 ///
 /// TODO: + 'static?
 ///     - Selectable?
-pub trait Select<C: Context>: Representation {
+pub trait Select<Ctx: Context>: Representation {
+    // ///
+    // #[doc(hidden)]
+    // type Seed<'a, 'de, const C: u64>: From<SelectorSeed<'a, Ctx, Self>> + DeserializeSeed<'de> = CodedSelectorSeed<'a, C, false, Ctx, Self>;
+
     /// Produces a stream of [`Selection`]s of some type `T`.
     ///
     /// Under the hood, this serves as the entrypoint for deserialization of a
@@ -43,29 +47,79 @@ pub trait Select<C: Context>: Representation {
     /// [`Context`] to govern how to interpret the types found in blocks.
     ///
     ///
-    /// TODO: update this interface, since ContextSeed is doing the work and it should be refactored a bit (borrow state, )
-    fn select(params: Params<'_, C, Self>, ctx: &mut C) -> Result<(), Error>;
+    /// TODO: update this interface, since SelectorSeed is doing the work and it should be refactored a bit (borrow state, )
+    fn select(params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<(), Error>;
 
-    /// Selects against the dag, loading more blocks from `C` if required.
+    #[doc(hidden)]
+    fn __select_from_deserializer<'a, 'de, const C: u64, D>(
+        seed: SelectorSeed<'a, Ctx, Self>,
+        deserializer: D,
+    ) -> Result<(), D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Err(D::Error::custom("unimplemented"))
+        // TODO: default impl should use GAT for CodedSeed
+        // Self::Seed::<'a, 'de, C>::from(seed).deserialize(deserializer)
+    }
+
+    #[doc(hidden)]
+    fn __select_from_seq<'a, 'de, const C: u64, A>(
+        seed: SelectorSeed<'a, Ctx, Self>,
+        mut seq: A,
+    ) -> Result<Option<()>, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        // seq.next_element_seed(CodecSeed::from(seed))
+        Err(A::Error::custom("unimplemented"))
+        // TODO: default impl should use GAT for CodedSeed
+        // seq.next_element_seed(Self::Seed::<'a, 'de, C>::from(seed))
+    }
+
+    #[doc(hidden)]
+    fn __select_from_map<'a, 'de, const C: u64, A>(
+        seed: SelectorSeed<'a, Ctx, Self>,
+        mut map: A,
+        is_key: bool,
+    ) -> Result<Option<()>, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        Err(A::Error::custom("unimplemented"))
+        // TODO: default impl should use GAT for CodedSeed
+        // let seed = Self::Seed::<'a, 'de, C>::from(seed);
+        // if is_key {
+        //     map.next_key_seed(seed)
+        // } else {
+        //     Ok(Some(map.next_value_seed(seed)?))
+        // }
+    }
+
+    /// Selects against the dag, loading more blocks from `Ctx` if required.
     ///
     /// TODO
-    fn select_in<T>(&self, params: Params<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
+    #[doc(hidden)]
+    fn select_in<T>(&self, params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<(), Error> {
         unimplemented!()
     }
 
-    /// Patches the dag according to the selector, loading more blocks from `C`
-    /// if required.
+    /// Patches the dag according to the selector, loading more blocks from
+    /// `Ctx` if required. Returns `true` it a patch was performed somewhere
+    /// within the dag.
     ///
     /// TODO
-    fn patch_in<T>(&mut self, params: Params<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
+    #[doc(hidden)]
+    fn patch_in<T>(&mut self, params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<bool, Error> {
         unimplemented!()
     }
 
-    /// Flushes the dag according to the selector, writing blocks to `C` if
+    /// Flushes the dag according to the selector, writing blocks to `Ctx` if
     /// flushing linked dags.
     ///
     /// TODO
-    fn flush(&mut self, params: Params<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
+    #[doc(hidden)]
+    fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Error> {
         unimplemented!()
     }
 
@@ -405,10 +459,12 @@ mod selection {
         Float64(Float64),
 
         ///
+        #[serde(skip)] // TODO
         #[serde(rename = "string")]
         String(IpldString),
 
         ///
+        #[serde(skip)] // TODO
         #[serde(rename = "bytes")]
         Bytes(Bytes),
 

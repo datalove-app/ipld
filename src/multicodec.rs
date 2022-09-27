@@ -4,7 +4,6 @@ use std::{
     io::{Read, Write},
 };
 
-#[cfg(feature = "multicodec")]
 pub use multicodec::Multicodec;
 
 /// An unified trait for all IPLD
@@ -42,20 +41,21 @@ pub trait Codec: TryFrom<u64, Error = Error> {
         R: Read;
 }
 
-// TODO: this feature flag isn't right; we should enable/disable variants and panic if none are enabled
-#[cfg(feature = "multicodec")]
 mod multicodec {
     use super::*;
 
     macro_rules! impl_multicodec {
     ($(
+        #[cfg(feature = $feature:expr)]
         $(#[$meta:meta])*
         $variant:ident -> $ty:ty as $name:expr,
     )*) => {
         /// A generic [multicodec]() enum.
         #[derive(Clone, Debug)]
+        #[non_exhaustive]
         pub enum Multicodec {
             $(
+                #[cfg(feature = $feature)]
                 $(#[$meta])*
                 $variant($ty),
             )*
@@ -66,7 +66,11 @@ mod multicodec {
             #[inline]
             pub const fn name(&self) -> &'static str {
                 match self {
-                    $(Self::$variant(_) => $name,)*
+                    $(
+                        #[cfg(feature = $feature)]
+                        Self::$variant(_) => $name,
+                    )*
+                    // _ => unimplemented!()
                 }
             }
 
@@ -74,7 +78,11 @@ mod multicodec {
             #[inline]
             pub const fn code(&self) -> u64 {
                 match self {
-                    $(Self::$variant(_) => <$ty>::CODE,)*
+                    $(
+                        #[cfg(feature = $feature)]
+                        Self::$variant(_) => <$ty>::CODE,
+                    )*
+                    // _ => unimplemented!()
                 }
             }
 
@@ -82,7 +90,10 @@ mod multicodec {
             #[inline]
             pub fn from_name(name: &str) -> Result<Self, Error> {
                 match name {
-                    $($name => Ok(Self::$variant(<$ty>::new())),)*
+                    $(
+                        #[cfg(feature = $feature)]
+                        $name => Ok(Self::$variant(<$ty>::new())),
+                    )*
                     name => Err(Error::UnknownMulticodecName(name.to_string()))
                 }
             }
@@ -91,23 +102,30 @@ mod multicodec {
             #[inline]
             pub const fn from_code<const C: u64>() -> Result<Self, Error> {
                 match C {
-                    $(<$ty>::CODE => Ok(Self::$variant(<$ty>::new())),)*
+                    $(
+                        #[cfg(feature = $feature)]
+                        <$ty>::CODE => Ok(Self::$variant(<$ty>::new())),
+                    )*
                     code => Err(Error::UnknownMulticodecCode(code))
                 }
             }
 
-            ///
-            /// Given a `Read`, deserialize a dag using a `SelectorSeed` as a guide.
             #[doc(hidden)]
-            pub fn read_with_seed<'de, S, R>(&mut self, seed: S, reader: R) -> Result<(), Error>
+            pub fn read_from_seed<Ctx, T, R>(
+                &mut self,
+                seed: SelectorSeed<'_, Ctx, T>,
+                reader: R,
+            ) -> Result<(), Error>
             where
-                // S: DeserializeSeed<'de, Value = ()>,
-                // BlockSelectorSeed<C, S>: DeserializeSeed<'de, Value = ()>,
-                S: CodecDeserializeSeed<'de>,
+                Ctx: Context,
+                T: Select<Ctx>,
                 R: Read,
             {
                 match self {
-                    $(Self::$variant(inner) => inner.read_with_seed(seed, reader),)*
+                    $(
+                        #[cfg(feature = $feature)]
+                        Self::$variant(_) => <$ty>::read_from_seed(seed, reader),
+                    )*
                 }
             }
         }
@@ -117,7 +135,10 @@ mod multicodec {
             #[inline]
             fn try_from(code: u64) -> Result<Self, Self::Error> {
                 match code {
-                    $(<$ty>::CODE => Ok(Self::$variant(<$ty>::default())),)*
+                    $(
+                        #[cfg(feature = $feature)]
+                        <$ty>::CODE => Ok(Self::$variant(<$ty>::new())),
+                    )*
                     _ => Err(Error::UnknownMulticodecCode(code)),
                 }
             }
@@ -128,7 +149,10 @@ mod multicodec {
             #[inline]
             fn try_from(s: &'a str) -> Result<Self, Self::Error> {
                 match s {
-                    $($name => Ok(Self::$variant(<$ty>::default())),)*
+                    $(
+                        #[cfg(feature = $feature)]
+                        $name => Ok(Self::$variant(<$ty>::new())),
+                    )*
                     _ => Err(Error::UnknownMulticodecName(s.into())),
                 }
             }
@@ -141,7 +165,11 @@ mod multicodec {
                 W: Write,
             {
                 match self {
-                    $(Self::$variant(inner) => inner.write(dag, writer),)*
+                    $(
+                        #[cfg(feature = $feature)]
+                        Self::$variant(inner) => inner.write(dag, writer),
+                    )*
+                    // _ => unimplemented!()
                 }
             }
 
@@ -150,7 +178,11 @@ mod multicodec {
                 T: Representation,
             {
                 match self {
-                    $(Self::$variant(inner) => inner.decode(bytes),)*
+                    $(
+                        #[cfg(feature = $feature)]
+                        Self::$variant(inner) => inner.decode(bytes),
+                    )*
+                    // _ => unimplemented!()
                 }
             }
 
@@ -160,7 +192,11 @@ mod multicodec {
                 R: Read,
             {
                 match self {
-                    $(Self::$variant(inner) => inner.read(reader),)*
+                    $(
+                        #[cfg(feature = $feature)]
+                        Self::$variant(inner) => inner.read(reader),
+                    )*
+                    // _ => unimplemented!()
                 }
             }
         }
@@ -168,11 +204,14 @@ mod multicodec {
 
     impl_multicodec! {
         // Raw -> Raw as "raw",
-        DagJson -> DagJson as "dag-json",
+        #[cfg(feature = "dag-cbor")]
+        ///
         DagCbor -> DagCbor as "dag-cbor",
+        #[cfg(feature = "dag-json")]
+        ///
+        DagJson -> DagJson as "dag-json",
         // DagJose -> DagJose as "dag-jose",
         // DagBipf -> DagBipf as "dag-bipf",
-        // VerkleDagCbor -> VerkleDagCbor as "verkle-dag-cbor",
         // Custom(Box<dyn Codec>),
     }
 

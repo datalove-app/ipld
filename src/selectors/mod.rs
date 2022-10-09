@@ -22,11 +22,11 @@ pub use selectors::*;
 pub use state::*;
 
 use crate::dev::*;
-use macros::derive_more::From;
-use serde::de::DeserializeSeed;
+use macros::derive_more::{Display, From};
 use std::{
     cell::RefCell,
     path::{Path, PathBuf},
+    str::FromStr,
     vec::IntoIter,
 };
 
@@ -48,10 +48,28 @@ pub trait Select<Ctx: Context>: Representation {
     ///
     ///
     /// TODO: update this interface, since SelectorSeed is doing the work and it should be refactored a bit (borrow state, )
-    fn select(params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<(), Error>;
+    fn select(params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<(), Error> {
+        let Params {
+            selector,
+            mut state,
+            callback,
+        } = params;
+
+        let default_selector = Selector::DEFAULT;
+        let seed = SelectorSeed::from_parts(
+            &selector.unwrap_or(&default_selector),
+            &mut state,
+            callback,
+            ctx,
+        );
+
+        let cid = &seed.state.current_block;
+        let block = seed.ctx.block_reader(cid)?;
+        cid.multicodec()?.read_with_seed(seed, block)
+    }
 
     #[doc(hidden)]
-    fn __select_from_deserializer<'a, 'de, const C: u64, D>(
+    fn __select_de<'a, 'de, const C: u64, D>(
         seed: SelectorSeed<'a, Ctx, Self>,
         deserializer: D,
     ) -> Result<(), D::Error>
@@ -64,9 +82,9 @@ pub trait Select<Ctx: Context>: Representation {
     }
 
     #[doc(hidden)]
-    fn __select_from_seq<'a, 'de, const C: u64, A>(
+    fn __select_seq<'a, 'de, const C: u64, A>(
         seed: SelectorSeed<'a, Ctx, Self>,
-        mut seq: A,
+        mut seq: A, // should be ListIterator<T>
     ) -> Result<Option<()>, A::Error>
     where
         A: SeqAccess<'de>,
@@ -78,9 +96,9 @@ pub trait Select<Ctx: Context>: Representation {
     }
 
     #[doc(hidden)]
-    fn __select_from_map<'a, 'de, const C: u64, A>(
+    fn __select_map<'a, 'de, const C: u64, A>(
         seed: SelectorSeed<'a, Ctx, Self>,
-        mut map: A,
+        mut map: A, // should be MapIterator<K, v>,
         is_key: bool,
     ) -> Result<Option<()>, A::Error>
     where
@@ -96,11 +114,72 @@ pub trait Select<Ctx: Context>: Representation {
         // }
     }
 
+    // #[doc(hidden)]
+    // fn __select_list<'a, 'de, const C: u64, I, T>(
+    //     seed: SelectorSeed<'a, Ctx, Self>,
+    //     // mut seq: A, // should be ListIterator<T>
+    //     mut iter: I,
+    // ) -> Result<Option<()>, Error>
+    // where
+    //     // A: SeqAccess<'de>,
+    //     I: ListIterator<T>,
+    //     T: Select<Ctx>,
+    // {
+    //     unimplemented!()
+    //     // seq.next_element_seed(CodecSeed::from(seed))
+    //     // Err(Error::Custom("unimplemented"))
+    //     // TODO: default impl should use GAT for CodedSeed
+    //     // seq.next_element_seed(Self::Seed::<'a, 'de, C>::from(seed))
+    // }
+
+    // #[doc(hidden)]
+    // fn __select_map<'a, 'de, const C: u64, I, K, V>(
+    //     seed: SelectorSeed<'a, Ctx, Self>,
+    //     // mut map: A, // should be MapIterator<K, v>,
+    //     // is_key: bool,
+    //     mut iter: I,
+    // ) -> Result<Option<()>, Error>
+    // where
+    //     // A: MapAccess<'de>,
+    //     I: MapIterator<K, V>,
+    //     K: StringRepresentation,
+    //     V: Representation,
+    // {
+    //     unimplemented!()
+    //     // Err(Error::Custom("unimplemented"))
+    //     // TODO: default impl should use GAT for CodedSeed
+    //     // let seed = Self::Seed::<'a, 'de, C>::from(seed);
+    //     // if is_key {
+    //     //     map.next_key_seed(seed)
+    //     // } else {
+    //     //     Ok(Some(map.next_value_seed(seed)?))
+    //     // }
+    // }
+
     /// Selects against the dag, loading more blocks from `Ctx` if required.
     ///
     /// TODO
     #[doc(hidden)]
-    fn select_in<T>(&self, params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<(), Error> {
+    fn select_in(&self, params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<(), Error> {
+        let Params {
+            selector,
+            mut state,
+            callback,
+        } = params;
+
+        let default_selector = Selector::DEFAULT;
+        let seed = SelectorSeed::from_parts(
+            &selector.unwrap_or(&default_selector),
+            &mut state,
+            callback,
+            ctx,
+        );
+
+        self.__select_in(seed)
+    }
+
+    #[doc(hidden)]
+    fn __select_in<'a>(&self, seed: SelectorSeed<'a, Ctx, Self>) -> Result<(), Error> {
         unimplemented!()
     }
 
@@ -184,28 +263,28 @@ mod params {
         C: Context,
         T: Representation,
     {
-        pub(crate) cid: Option<Cid>,
         pub(crate) selector: Option<&'a Selector>,
-        pub(crate) max_path_depth: Option<usize>,
-        pub(crate) max_link_depth: Option<usize>,
+        pub(crate) state: State,
+        // pub(crate) max_path_depth: Option<usize>,
+        // pub(crate) max_link_depth: Option<usize>,
         pub(crate) callback: Callback<'a, C, T>,
     }
 
-    impl<'a, C, T> Default for Params<'a, C, T>
-    where
-        C: Context,
-        T: Representation,
-    {
-        fn default() -> Self {
-            Self {
-                cid: None,
-                selector: None,
-                max_path_depth: None,
-                max_link_depth: None,
-                callback: Default::default(),
-            }
-        }
-    }
+    // impl<'a, C, T> Default for Params<'a, C, T>
+    // where
+    //     C: Context,
+    //     T: Representation,
+    // {
+    //     fn default() -> Self {
+    //         Self {
+    //             selector: None,
+    //             state: Default::default(),
+    //             // max_path_depth: None,
+    //             // max_link_depth: None,
+    //             callback: Default::default(),
+    //         }
+    //     }
+    // }
 
     impl<'a, C, T> Params<'a, C, T>
     where
@@ -215,16 +294,20 @@ mod params {
         ///
         pub fn new_select(cid: Cid) -> Self {
             Self {
-                cid: Some(cid),
-                ..Self::default()
+                selector: None,
+                state: State {
+                    current_block: cid,
+                    ..Default::default()
+                },
+                callback: Default::default(),
             }
         }
 
-        ///
-        pub fn with_root(mut self, cid: Cid) -> Self {
-            self.cid.replace(cid);
-            self
-        }
+        // ///
+        // pub fn with_root(mut self, cid: Cid) -> Self {
+        //     self.state.current_block = cid;
+        //     self
+        // }
 
         ///
         pub fn with_selector(mut self, selector: &'a Selector) -> Self {
@@ -234,20 +317,20 @@ mod params {
 
         ///
         pub fn with_max_path_depth(mut self, max_path_depth: usize) -> Self {
-            self.max_path_depth.replace(max_path_depth);
+            self.state.max_path_depth.replace(max_path_depth);
             self
         }
 
         ///
         pub fn with_max_link_depth(mut self, max_link_depth: usize) -> Self {
-            self.max_link_depth.replace(max_link_depth);
+            self.state.max_link_depth.replace(max_link_depth);
             self
         }
 
         ///
         pub fn into_node_iter(
             self,
-            only_matched: bool,
+            only_results: bool,
             ctx: &mut C,
         ) -> Result<IntoIter<NodeSelection>, Error>
         where
@@ -256,7 +339,7 @@ mod params {
             let vec = RefCell::new(Vec::new());
             let params = Params {
                 callback: Callback::SelectNode {
-                    only_matched,
+                    only_results,
                     cb: Box::new(|node, _| {
                         vec.borrow_mut().push(node);
                         Ok(())
@@ -331,7 +414,7 @@ mod selection {
 
     impl NodeSelection {
         ///
-        pub fn new<T>(path: &Path, node: T) -> Self
+        pub fn covered<T>(path: &Path, node: T) -> Self
         where
             T: Into<SelectedNode>,
         {
@@ -344,7 +427,7 @@ mod selection {
         }
 
         ///
-        pub fn new_match<T>(path: &Path, node: T, label: Option<&str>) -> Self
+        pub fn result<T>(path: &Path, node: T, label: Option<&str>) -> Self
         where
             T: Into<SelectedNode>,
         {
@@ -362,6 +445,20 @@ mod selection {
         pub path: PathBuf,
         pub dag: AnyRepresentation,
         pub label: Option<std::string::String>,
+    }
+
+    impl<P, T> From<(P, T, Option<&str>)> for DagSelection
+    where
+        P: Into<PathBuf>,
+        T: Representation + 'static,
+    {
+        fn from((path, dag, label): (P, T, Option<&str>)) -> Self {
+            Self {
+                path: path.into(),
+                dag: dag.into(),
+                label: label.map(|s| s.to_string()),
+            }
+        }
     }
 
     impl DagSelection {
@@ -527,6 +624,7 @@ mod selection {
         }
     }
 
+    // TODO: Vec<u8>?
     impl<T: Representation> From<List<T>> for SelectedNode {
         fn from(_: List<T>) -> Self {
             Self::List
@@ -557,29 +655,33 @@ mod selection {
         }
     }
 
-    impl From<Any> for SelectedNode {
-        fn from(val: Any) -> Self {
-            match val {
-                Any::Null(_) => Self::Null,
-                Any::Bool(inner) => Self::Bool(inner),
-                Any::Int(inner) => Self::Int64(inner),
-                Any::Float(inner) => Self::Float64(inner),
-                Any::String(inner) => Self::String(inner),
-                Any::Bytes(inner) => Self::Bytes(inner),
-                Any::List(_) => Self::List,
-                Any::Map(_) => Self::Map,
-                Any::Link(link) => Self::Link(*link.as_ref().cid()),
-            }
-        }
-    }
+    // impl From<Any> for SelectedNode {
+    //     fn from(val: Any) -> Self {
+    //         match val {
+    //             Any::Null(_) => Self::Null,
+    //             Any::Bool(inner) => Self::Bool(inner),
+    //             Any::Int(inner) => Self::Int64(inner),
+    //             Any::Float(inner) => Self::Float64(inner),
+    //             Any::String(inner) => Self::String(inner),
+    //             Any::Bytes(inner) => Self::Bytes(inner),
+    //             Any::List(_) => Self::List,
+    //             Any::Map(_) => Self::Map,
+    //             Any::Link(link) => Self::Link(*link.as_ref().cid()),
+    //         }
+    //     }
+    // }
 }
 
 mod field {
     use super::*;
+    use std::borrow::Cow;
 
     /// Wrapper type for types that can be used as dag keys or indices.
-    pub(crate) enum Field<'a> {
-        Key(&'a str),
+    #[doc(hidden)]
+    #[derive(Clone, Debug, Display, From)]
+    // #[from(forward)]
+    pub enum Field<'a> {
+        Key(Cow<'a, str>),
         // CidKey(&'a Cid),
         Index(usize),
     }
@@ -587,40 +689,123 @@ mod field {
     impl<'a> Field<'a> {
         pub fn append_to_path(&self, path: &mut PathBuf) {
             match self {
-                Self::Key(s) => path.push(s),
+                Self::Key(s) => path.push(s.as_ref()),
                 // Self::CidKey(c) => path.push(c.to_string()),
                 Self::Index(idx) => path.push(idx.to_string()),
             }
         }
-    }
 
-    impl<'a> AsRef<str> for Field<'a> {
-        fn as_ref(&self) -> &str {
+        pub fn into_owned<'b>(&'a self) -> Field<'b> {
             match self {
-                Self::Key(s) => s,
-                _ => unreachable!(),
+                Self::Key(s) => Field::Key(s.clone().into_owned().into()),
+                Self::Index(idx) => Field::Index(*idx),
+            }
+        }
+
+        pub(crate) fn as_key(&self) -> Option<&str> {
+            match self {
+                Self::Key(s) => Some(s.as_ref()),
+                Self::Index(_) => None,
+            }
+        }
+
+        pub(crate) fn as_usize(&self) -> Option<usize> {
+            match self {
+                Self::Index(idx) => Some(*idx),
+                Self::Key(_) => None,
+            }
+        }
+
+        pub fn is_key(&self, s: &str) -> bool {
+            match self {
+                Self::Key(f) => f.eq(s),
+                _ => false,
+            }
+        }
+
+        pub fn is_idx(&self, input: usize) -> bool {
+            match self {
+                Self::Index(idx) => input.eq(idx),
+                _ => false,
             }
         }
     }
 
-    impl<'a> AsRef<usize> for Field<'a> {
-        fn as_ref(&self) -> &usize {
-            match self {
-                Self::Index(idx) => idx,
-                _ => unreachable!(),
-            }
-        }
-    }
+    // impl AsRef<Field<'_>> for &str {
+    //     fn as_ref(&self) ->
+    // }
+
+    // impl AsRef<str> for Field<'_> {
+    //     fn as_ref(&self) -> &str {
+    //         match self {
+    //             Self::Key(s) => s,
+    //             _ => unreachable!(),
+    //         }
+    //     }
+    // }
+
+    // impl AsRef<usize> for Field<'_> {
+    //     fn as_ref(&self) -> &usize {
+    //         match self {
+    //             Self::Index(idx) => idx,
+    //             _ => unreachable!(),
+    //         }
+    //     }
+    // }
 
     impl<'a> From<&'a str> for Field<'a> {
         fn from(inner: &'a str) -> Self {
-            Self::Key(inner)
+            Self::Key(inner.into())
         }
     }
 
-    impl<'a> From<usize> for Field<'a> {
-        fn from(inner: usize) -> Self {
-            Self::Index(inner)
+    // impl From<usize> for Field<'_> {
+    //     fn from(inner: usize) -> Self {
+    //         Self::Index(inner)
+    //     }
+    // }
+
+    // impl From<isize> for Field<'_> {
+    //     fn from(inner: isize) -> Self {
+    //         Self::Index(inner as usize)
+    //     }
+    // }
+
+    // impl<'a> TryInto<&'a str> for &Field<'a> {
+    //     type Error = Error;
+    //     fn try_into(self) -> Result<&'a str, Self::Error> {
+    //         match self {
+    //             Self::Key(inner)
+    //             // _ => Err(Error::)
+    //         }
+    //     }
+    // }
+
+    impl TryInto<Int> for &Field<'_> {
+        type Error = Error;
+        fn try_into(self) -> Result<Int, Self::Error> {
+            match self {
+                Field::Index(idx) => Ok(*idx as i64),
+                Field::Key(s) => Int::from_str(s).map_err(|err| Error::Decoder(err.into())),
+            }
+        }
+    }
+
+    impl Into<String> for Field<'_> {
+        fn into(self) -> String {
+            match self {
+                Self::Index(idx) => idx.to_string(),
+                Self::Key(s) => s.to_string(),
+            }
+        }
+    }
+
+    impl<'a> Into<Cow<'a, str>> for &Field<'a> {
+        fn into(self) -> Cow<'a, str> {
+            match self {
+                Field::Key(s) => s.clone(),
+                Field::Index(idx) => Cow::from(idx.to_string()),
+            }
         }
     }
 }
@@ -705,18 +890,24 @@ mod tests {
 
     schema! {
         #[ipld_attr(internal)]
-        #[derive(Debug)]
+        #[derive(Clone, Debug)]
         type Nullish null;
     }
 
     schema! {
         #[ipld_attr(internal)]
-        #[derive(Debug, PartialEq)]
+        #[derive(Clone, Debug, PartialEq)]
         type Test struct {
             field1 Int,
             field2 String,
         };
     }
+
+    // schema! {
+    //     #[ipld_attr(internal)]
+    //     // pub type ExploreUnion null;
+    //     pub type ExploreUnion2 [nullable Selector];
+    // }
 
     #[test]
     fn it_works() {

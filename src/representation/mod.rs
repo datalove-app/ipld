@@ -9,83 +9,91 @@
 //! type from/to bytes, as well query and mutate a type, while specifically
 //! defining for the type it's `Context` requirements for these operations.
 
+mod strategies;
+
 use crate::dev::*;
 use downcast_rs::{impl_downcast, Downcast};
+use macros::derive_more::From;
+use maybestd::{fmt, str::FromStr};
 
-pub use kind::Kind;
+pub use ipld_macros_internals::schema::{type_kinds, SchemaKind as Kind, TypedKind};
 
+#[doc(hidden)]
+pub use strategies::*;
+
+#[cfg(feature = "old")]
 mod kind {
-    use bitflags::bitflags;
+    // use bitflags::bitflags;
 
-    bitflags! {
-        /// Enum of possible [Data Model](), [Schema]() and [Representation]() kinds.
-        ///
-        pub struct Kind: u16 {
-            // data model kinds
+    // bitflags! {
+    //     /// Enum of possible [Data Model](), [Schema]() and [Representation]() kinds.
+    //     ///
+    //     pub struct Kind: u16 {
+    //         // data model kinds
 
-            ///
-            const Null = 0b0000_0000_0000_0001;
-            ///
-            const Bool = 0b0000_0000_0000_0010;
-            ///
-            const Int = 0b0000_0000_0000_0100;
-            ///
-            const Float = 0b0000_0000_0000_1000;
-            ///
-            const String = 0b0000_0000_0001_0000;
-            ///
-            const Bytes = 0b0000_0000_0010_0000;
-            ///
-            const List = 0b0000_0000_0100_0000;
-            ///
-            const Map = 0b0000_0000_1000_0000;
-            ///
-            const Link = 0b0000_0001_0000_0000;
+    //         ///
+    //         const Null = 0b0000_0000_0000_0001;
+    //         ///
+    //         const Bool = 0b0000_0000_0000_0010;
+    //         ///
+    //         const Int = 0b0000_0000_0000_0100;
+    //         ///
+    //         const Float = 0b0000_0000_0000_1000;
+    //         ///
+    //         const String = 0b0000_0000_0001_0000;
+    //         ///
+    //         const Bytes = 0b0000_0000_0010_0000;
+    //         ///
+    //         const List = 0b0000_0000_0100_0000;
+    //         ///
+    //         const Map = 0b0000_0000_1000_0000;
+    //         ///
+    //         const Link = 0b0000_0001_0000_0000;
 
-            // schema kinds
+    //         // schema kinds
 
-            ///
-            const Struct = 0b0000_0010_0000_0000;
-            ///
-            const Enum = 0b0000_0100_0000_0000;
-            ///
-            const Union = 0b0000_1000_0000_0000;
+    //         ///
+    //         const Struct = 0b0000_0010_0000_0000;
+    //         ///
+    //         const Enum = 0b0000_0100_0000_0000;
+    //         ///
+    //         const Union = 0b0000_1000_0000_0000;
 
-            // any
+    //         // any
 
-            ///
-            const Any = Self::Null.bits
-                | Self::Bool.bits
-                | Self::Int.bits
-                | Self::Float.bits
-                | Self::String.bits
-                | Self::Bytes.bits
-                | Self::List.bits
-                | Self::Map.bits
-                | Self::Link.bits;
-        }
-    }
+    //         ///
+    //         const Any = Self::Null.bits
+    //             | Self::Bool.bits
+    //             | Self::Int.bits
+    //             | Self::Float.bits
+    //             | Self::String.bits
+    //             | Self::Bytes.bits
+    //             | Self::List.bits
+    //             | Self::Map.bits
+    //             | Self::Link.bits;
+    //     }
+    // }
 
-    impl Kind {
-        /// Const function for determining equality between [`Kind`]s.
-        pub const fn eq(&self, other: &Self) -> bool {
-            match (*self, *other) {
-                (Self::Null, Self::Null)
-                | (Self::Bool, Self::Bool)
-                | (Self::Int, Self::Int)
-                | (Self::Float, Self::Float)
-                | (Self::String, Self::String)
-                | (Self::Bytes, Self::Bytes)
-                | (Self::List, Self::List)
-                | (Self::Map, Self::Map)
-                | (Self::Link, Self::Link)
-                | (Self::Struct, Self::Struct)
-                | (Self::Enum, Self::Enum)
-                | (Self::Union, Self::Union) => true,
-                _ => false,
-            }
-        }
-    }
+    // impl Kind {
+    //     /// Const function for determining equality between [`Kind`]s.
+    //     pub const fn eq(&self, other: &Self) -> bool {
+    //         match (*self, *other) {
+    //             (Self::Null, Self::Null)
+    //             | (Self::Bool, Self::Bool)
+    //             | (Self::Int, Self::Int)
+    //             | (Self::Float, Self::Float)
+    //             | (Self::String, Self::String)
+    //             | (Self::Bytes, Self::Bytes)
+    //             | (Self::List, Self::List)
+    //             | (Self::Map, Self::Map)
+    //             | (Self::Link, Self::Link)
+    //             | (Self::Struct, Self::Struct)
+    //             | (Self::Enum, Self::Enum)
+    //             | (Self::Union, Self::Union) => true,
+    //             _ => false,
+    //         }
+    //     }
+    // }
 
     // ///
     // #[derive(Copy, Clone, Debug)]
@@ -156,6 +164,18 @@ mod kind {
 //     Byteprefix(&'static [Field<&'static [u8; 1]>]),
 // }
 
+// trait IsAny<const K: u16> {}
+// impl IsAny<{ Kind::Any.bits() }> for Kind {}
+// impl IsAny<{ Kind::Null.bits() }> for Kind {}
+// impl IsAny<{ Kind::Bool.bits() }> for Kind {}
+// impl IsAny<{ Kind::Int.bits() }> for Kind {}
+// impl IsAny<{ Kind::Float.bits() }> for Kind {}
+// impl IsAny<{ Kind::String.bits() }> for Kind {}
+// impl IsAny<{ Kind::Bytes.bits() }> for Kind {}
+// impl IsAny<{ Kind::List.bits() }> for Kind {}
+// impl IsAny<{ Kind::Map.bits() }> for Kind {}
+// impl IsAny<{ Kind::Link.bits() }> for Kind {}
+
 ///
 ///
 /// Some types have in-memory representations distinct from their IPLD representations:
@@ -191,6 +211,16 @@ mod kind {
 ///         - TODO: ? impl DeserializeSeed for selector?
 ///         - TODO: ? Representation::visitor(selector: &Selector)
 pub trait Representation: Sized {
+    // /// Marker type for exact `u32` value of the type's [`Representation::DATA_MODEL_KIND`], needed for internal blanket implementations of various traits.
+    // #[doc(hidden)]
+    // type DATA_MODEL_KIND: TypedKind;
+    // /// Marker type for exact `u32` value of the type's [`Representation::SCHEMA_KIND`], needed for internal blanket implementations of various traits.
+    // #[doc(hidden)]
+    // type SCHEMA_KIND: TypedKind;
+    // /// Marker type for exact `u32` value of the type's [`Representation::REPR_KIND`], needed for internal blanket implementations of various traits.
+    // #[doc(hidden)]
+    // type REPR_KIND: TypedKind;
+
     // TODO: use this seed in Representation::deserialize by default
     // type Seed<'de, const C: u64>: Default + DeserializeSeed<'de, Value = Self>;
 
@@ -204,7 +234,7 @@ pub trait Representation: Sized {
 
     /// The IPLD [Data Model Kind](https://ipld.io/docs/data-model/kinds/) of
     /// the type, which would inform a user of its access patterns.
-    const DATA_MODEL_KIND: Kind;
+    const DATA_MODEL_KIND: Kind; // Self::DATA_MODEL_KIND::KIND
 
     /// The IPLD [Schema
     /// Kind](https://ipld.io/docs/schemas/features/typekinds/#schema-kinds) of
@@ -212,16 +242,24 @@ pub trait Representation: Sized {
     const SCHEMA_KIND: Kind = Self::DATA_MODEL_KIND;
 
     /// The IPLD [Representation Kind]() of the type, which would inform a user of how the type is represented when encoded.
-    const REPR_KIND: Kind = Self::DATA_MODEL_KIND;
+    const REPR_KIND: Kind = Self::DATA_MODEL_KIND; // K
+
+    // const IS_ADL: bool = false;
+
+    /// Marker for types that can have any representation *and* should be
+    /// ignored entirely during selection/deserialization.
+    #[doc(hidden)]
+    const __IGNORED: bool = false;
 
     ///
-    const IS_LINK: bool = Self::DATA_MODEL_KIND.eq(&Kind::Link);
+    /// todo deprecate
+    const IS_LINK: bool = Self::DATA_MODEL_KIND.is_link();
 
-    ///
+    /// todo deprecate
     const HAS_LINKS: bool = Self::IS_LINK;
 
-    // /// The type's `Select`able field names and their IPLD Schema kinds, if a recursive type.
-    // const FIELDS: Fields = Fields::None;
+    /// The type's `Select`able static field names and their IPLD Schema kinds.
+    const FIELDS: &'static [(Field<'static>, Kind)] = &[];
 
     ///
     /// for unions, this ?should delegate to the variant's type name'
@@ -246,16 +284,31 @@ pub trait Representation: Sized {
     }
 
     ///
+    fn is_link(&self) -> bool {
+        Self::IS_LINK
+    }
+
+    ///
     fn has_links(&self) -> bool {
         Self::HAS_LINKS
     }
 
+    ///
+    fn as_field(&self) -> Option<Field<'_>> {
+        None
+    }
+
+    fn to_selected_node(&self) -> SelectedNode {
+        unimplemented!()
+    }
+
     /// Replacement method for [`serde::Serialize::serialize`] that allows us
-    /// switch serialization behaviour based on the provided [`CodecExt`].
+    /// switch serialization behaviour based on the provided [`Codec`].
     ///
     /// Defaults to the type's underlying [`serde::Serialize::serialize`]
     /// implementation.
     /// TODO: remove the default impl, then remove the trait bounds
+    /// TODO: rename to encode? as in, just encode this type (up to links)
     #[inline]
     #[doc(hidden)]
     fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -272,6 +325,7 @@ pub trait Representation: Sized {
     /// Defaults to the type's underlying [`serde::Deserialize::deserialize`]
     /// implementation.
     /// TODO: remove the default impl, then remove the trait bounds
+    /// TODO: rename to decode? as in, just decode this type (up to links)
     #[inline]
     #[doc(hidden)]
     fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
@@ -375,6 +429,17 @@ pub trait Representation: Sized {
 }
 
 ///
+pub trait StringRepresentation
+where
+    Self: Representation + Clone + fmt::Display + FromStr<Err = Error> + Ord,
+{
+}
+impl<T> StringRepresentation for T where
+    Self: Representation + Clone + fmt::Display + FromStr<Err = Error> + Ord
+{
+}
+
+///
 /// TODO: possibly look at erased-serde to complete this "hack"
 pub(crate) trait ErasedRepresentation: Downcast {
     // /// The underlying [`Representation`] type this type will downcast to.
@@ -426,7 +491,7 @@ where
 }
 
 ///
-// #[derive(Debug)]
+#[derive(From)]
 pub struct AnyRepresentation {
     erased: Box<dyn ErasedRepresentation>,
     // is_partial: bool,
@@ -470,6 +535,8 @@ impl AnyRepresentation {
         // }
     }
 
+    // pub fn roundtrip<T, U>(self)
+
     // ///
     // #[inline]
     // pub fn cast_between<T, U>(self) -> Result<Self, Error>
@@ -490,6 +557,11 @@ impl<T: Representation + 'static> From<T> for AnyRepresentation {
         }
     }
 }
+
+// ///
+// #[doc(hidden)]
+// pub trait IsKind<const DMK: u16, const SK: u16, const RK: u16, T> {}
+// impl<const DMK: u16, const SK: u16, const RK: u16, T> IsTrue<T> for () where T: Representation {}
 
 // mod type_eq {
 //     #[doc(hidden)]
@@ -542,6 +614,28 @@ impl<T: Representation + 'static> From<T> for AnyRepresentation {
 // //     T: Representation + ErasedRepresentation + 'static,
 // {
 //     type Representation = Self;
+// }
+
+// #[doc(hidden)]
+// mod typeeq {
+//     pub trait TypeEq<const EQ: bool, U: ?Sized> {
+//         const EQ: bool = EQ; // impls!( Self: TypeEq<true, U> )
+//     }
+
+//     // // Default implementation.
+//     impl<T: ?Sized, U: ?Sized> TypeEq<false, U> for T {}
+
+//     // Specialization for `T == U`.
+//     impl<T: ?Sized> TypeEq<true, Self> for T {}
+
+//     #[doc(hidden)]
+//     pub const fn type_eq<const EQ: bool, T: ?Sized, U: ?Sized>() -> bool
+// // where
+//     //     T: TypeEq<EQ, U>,
+//     {
+//         // impls!( Self: TypeEq<true, U> )
+//         <T as TypeEq<EQ, U>>::EQ
+//     }
 // }
 
 /*
@@ -598,3 +692,22 @@ pub(crate) fn type_cast_mut<T: Sized + 'static, U: Sized + 'static, E, F>(inner:
         .unwrap()
 }
  */
+
+/// Helper fn for constraining and safely transmuting a generic selection output
+pub(crate) fn type_cast_selection<T: Sized + 'static, U: Sized + 'static, E, F>(
+    inner: F,
+) -> Result<Option<U>, E>
+where
+    F: FnOnce() -> Result<Option<T>, E>,
+{
+    // if !type_eq::<T, U>() {
+    //     unreachable!("should only do this for types known to be identical")
+    // }
+
+    let mut inner = inner()?;
+    let outer = (&mut inner as &mut dyn std::any::Any)
+        .downcast_mut::<Option<U>>()
+        .unwrap()
+        .take();
+    Ok(outer)
+}

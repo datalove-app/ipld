@@ -5,7 +5,7 @@ mod expand_stringpairs;
 mod expand_tuple;
 mod parse;
 
-use crate::dev::{OuterAttributes, SchemaMeta};
+use crate::dev::{Fields, OuterAttributes, SchemaMeta};
 use proc_macro2::TokenStream;
 use std::ops::Deref;
 use syn::{
@@ -97,7 +97,7 @@ pub struct AdvancedStructReprDefinition {
     pub rest: TokenStream,
 }
 
-pub type StructFields = Punctuated<StructField, Token![,]>;
+pub type StructFields = Fields<StructField>;
 
 #[derive(Debug)]
 pub struct StructField {

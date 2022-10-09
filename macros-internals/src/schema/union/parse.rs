@@ -29,9 +29,9 @@ impl Parse for UnionReprDefinition {
             _ if input.peek(kw::envelope) => {
                 input.parse::<kw::envelope>()?;
                 let fields = field_input.parse()?;
+
                 let args;
                 braced!(args in input);
-
                 let mut discriminant_key = None;
                 let mut content_key = None;
                 try_parse_envelope_args(&args, &mut discriminant_key, &mut content_key)?;
@@ -42,6 +42,7 @@ impl Parse for UnionReprDefinition {
                 let content_key = content_key.ok_or(
                     args.error("invalid IPLD union envelope representation: missing `contentKey`"),
                 )?;
+
                 Self::Envelope(EnvelopeUnionReprDefinition {
                     fields,
                     discriminant_key,
@@ -52,9 +53,11 @@ impl Parse for UnionReprDefinition {
             _ if input.peek(kw::inline) => {
                 input.parse::<kw::inline>()?;
                 let fields = field_input.parse()?;
+
                 let args;
                 braced!(args in input);
                 let discriminant_key = parse_kwarg!(args, discriminantKey => LitStr);
+
                 Self::Inline(InlineUnionReprDefinition {
                     fields,
                     discriminant_key,
@@ -64,6 +67,7 @@ impl Parse for UnionReprDefinition {
             _ if input.peek(kw::byteprefix) => {
                 input.parse::<kw::byteprefix>()?;
                 let fields = field_input.parse()?;
+                // TODO: assert that all field types are Bytes
                 Self::BytePrefix(BytePrefixUnionReprDefinition { fields })
             }
             // kinded
@@ -81,7 +85,7 @@ impl Parse for UnionReprDefinition {
                         "invalid IPLD union kinded representation: schema contains non-data model types",
                     ));
                 }
-                if fields.len() != all.bits.count_ones() as usize {
+                if fields.len() != all.bits().count_ones() as usize {
                     return Err(input
                         .error("invalid IPLD union kinded representation: schema contains duplicate type fields"));
                 }

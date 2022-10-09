@@ -350,13 +350,13 @@ macro_rules! derive_newtype {
         quote::quote! {
             impl From<#name> for SelectedNode {
                 fn from(t: #name) -> Self {
-                    Self::#$selected_node(t.0.into())
+                    Self::from(t.0)
                 }
             }
 
             impl Into<Any> for #name {
                 fn into(self) -> Any {
-                    Any::#$dm_ty(self.0.into())
+                    self.0.into()
                 }
             }
 
@@ -364,7 +364,12 @@ macro_rules! derive_newtype {
                 type Error = Error;
                 fn try_from(any: Any) -> Result<Self, Self::Error> {
                     match any {
-                        Any::#$dm_ty(inner) => Ok(Self(inner.into())),
+                        Any::#$dm_ty(inner) => {
+                            let any_variant = Representation::name(&inner);
+                            let inner = inner.try_into()
+                                .or_else(|_| Err(Error::failed_any_conversion::<Self>(any_variant)))?;
+                            Ok(Self(inner))
+                        },
                         _ => Err(Error::MismatchedAny)
                     }
                 }

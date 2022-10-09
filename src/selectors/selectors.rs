@@ -1,8 +1,8 @@
 use crate::dev::*;
 use macros::derive_more::{AsMut, AsRef, From, TryInto};
-use std::{
+use maybestd::{
     fmt,
-    path::{Path, PathBuf},
+    ops::{Bound, Range, RangeBounds, RangeFrom, RangeInclusive},
     rc::Rc,
     str::FromStr,
 };
@@ -18,43 +18,46 @@ schema! {
     #[ipld_attr(internal)]
     #[derive(Clone, Debug, From, TryInto)]
     pub type SelectorEnvelope union {
+        ///
         | Selector "selector"
-    } representation keyed;
+    } representation keyed
 }
 
 schema! {
+    ///
     #[ipld_attr(internal)]
     #[derive(Clone, Debug, From, TryInto)]
     // #[from(forward)]
     #[try_into(owned, ref, ref_mut)]
     pub type Selector union {
+        ///
         | Matcher "."
-
+        ///
         #[ipld_attr(wrapper = "Rc")]
         | ExploreAll "a"
-
+        ///
         | ExploreFields "f"
-
+        ///
         #[ipld_attr(wrapper = "Rc")]
         | ExploreIndex "i"
-
+        ///
         #[ipld_attr(wrapper = "Rc")]
         | ExploreRange "r"
-
+        ///
         #[ipld_attr(wrapper = "Rc")]
         | ExploreRecursive "R"
-
-        // #[ipld_attr(wrapper = "Rc")]
+        ///
+        #[ipld_attr(wrapper = "Rc")]
         | ExploreUnion "|"
-
-        // #[ipld_attr(wrapper = "Rc")]
-        // | ExploreConditional "&"
-
+        ///
+        #[ipld_attr(wrapper = "Rc")]
+        | ExploreConditional "&"
+        ///
         | ExploreRecursiveEdge "@"
-
+        ///
         #[ipld_attr(wrapper = "Rc")]
         | ExploreInterpretAs "~"
-    } representation keyed;
+    } representation keyed
 }
 
 schema! {
@@ -64,8 +67,8 @@ schema! {
     #[ipld_attr(internal)]
     #[derive(Clone, Debug, Default, From)]
     pub type ExploreAll struct {
-        pub next Selector (rename ">"),
-    };
+        next Selector (rename ">")
+    }
 }
 
 schema! {
@@ -79,19 +82,19 @@ schema! {
     #[ipld_attr(internal)]
     #[derive(Clone, Debug, From)]
     pub type ExploreFields struct {
-        // pub fields {String:Selector} (rename "f>"),
-    };
+        // fields {String:Selector} (rename "f>"),
+    }
 }
 
 schema! {
     /// ExploreIndex traverses a specific index in a list, and applies a next
     /// selector to the reached node.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug, From)]
+    #[derive(Clone, Debug)]
     pub type ExploreIndex struct {
-        pub index Int (rename "i"),
-        pub next Selector (rename ">"),
-    };
+        index Int (rename "i")
+        next Selector (rename ">")
+    }
 }
 
 schema! {
@@ -100,10 +103,10 @@ schema! {
     #[ipld_attr(internal)]
     #[derive(Clone, Debug)]
     pub type ExploreRange struct {
-        pub start Int (rename "^"),
-        pub end Int (rename "$"),
-        pub next Selector (rename ">"),
-    };
+        start Int (rename "^")
+        end Int (rename "$")
+        next Selector (rename ">")
+    }
 }
 
 schema! {
@@ -150,11 +153,13 @@ schema! {
     #[ipld_attr(internal)]
     #[derive(Clone, Debug)]
     pub type ExploreRecursive struct {
-        pub sequence Selector (rename ":>"),
-        pub limit RecursionLimit (rename "l"),
+        ///
+        pub sequence Selector (rename ":>")
+        ///
+        pub limit RecursionLimit (rename "l")
         /// if a node matches, we won't match it nor explore it's children
-        pub stopAt optional Condition (rename "!"),
-    };
+        pub stopAt optional Condition (rename "!")
+    }
 }
 
 schema! {
@@ -162,22 +167,24 @@ schema! {
     #[ipld_attr(internal)]
     #[derive(Clone, Debug, From)]
     pub type RecursionLimit union {
+        ///
         | RecursionLimit_None "none"
+        ///
         | RecursionLimit_Depth "depth"
-    } representation keyed;
+    } representation keyed
 }
 schema! {
     ///
     #[ipld_attr(internal)]
     #[derive(Clone, Debug)]
-    pub type RecursionLimit_None struct {};
+    pub type RecursionLimit_None struct {}
 }
 schema! {
     ///
     #[ipld_attr(internal)]
     #[derive(Clone, Debug, From)]
     #[from(forward)]
-    pub type RecursionLimit_Depth int;
+    pub type RecursionLimit_Depth int
 }
 
 schema! {
@@ -192,7 +199,7 @@ schema! {
     /// enclosing ExploreRecursive is an error.
     #[ipld_attr(internal)]
     #[derive(Clone, Debug)]
-    pub type ExploreRecursiveEdge struct {};
+    pub type ExploreRecursiveEdge struct {}
 }
 
 schema! {
@@ -204,7 +211,7 @@ schema! {
     /// simultaneously continuing to explore deeper parts of the tree with
     /// another selector, for example.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, From)]
     pub type ExploreUnion null;
     // pub type ExploreUnion [Selector];
 }
@@ -217,9 +224,9 @@ schema! {
     #[ipld_attr(internal)]
     #[derive(Clone, Debug, From)]
     pub type ExploreConditional struct {
-        pub condition Condition (rename "&"),
-        pub next Selector (rename ">"),
-    };
+        condition Condition (rename "&")
+        next Selector (rename ">")
+    }
 }
 
 schema! {
@@ -231,9 +238,9 @@ schema! {
     #[ipld_attr(internal)]
     #[derive(Clone, Debug, From)]
     pub type ExploreInterpretAs struct {
-        pub r#as String,
-        pub next Selector (rename ">"),
-    };
+        r#as String
+        next Selector (rename ">")
+    }
 }
 
 schema! {
@@ -244,9 +251,9 @@ schema! {
     #[ipld_attr(internal)]
     #[derive(Clone, Debug, Default)]
     pub type Slice struct {
-        pub from Int (rename "["),
-        pub to Int (rename "]"),
-    };
+        from Int (rename "[")
+        to Int (rename "]")
+    }
 }
 
 schema! {
@@ -264,13 +271,13 @@ schema! {
     #[derive(Clone, Debug, Default, From)]
     pub type Matcher struct {
         /// match is true based on position alone if this is not set.
-        pub onlyIf optional Condition,
+        pub onlyIf optional Condition
         /// labels can be used to match multiple different structures in one selection.
-        pub label optional String,
+        pub label optional String
         /// if set, only the subset of the node specified by the slice is matched.
-        pub subset optional Slice,
+        pub subset optional Slice
 
-    };
+    }
 }
 
 schema! {
@@ -287,6 +294,7 @@ schema! {
     #[ipld_attr(internal)]
     #[derive(Clone, Debug, From)]
     pub type Condition union {
+        ///
         | Condition_HasField "hasField"
         /// # will need to contain a kinded union, lol.  these conditions are gonna get deep.)
         | Condition_HasValue "="
@@ -297,60 +305,64 @@ schema! {
         | Condition_HasKind "%"
         /// will need this so we can use it in recursions to say "stop at CID QmFoo".
         | Condition_IsLink "/"
+        ///
         | Condition_GreaterThan "greaterThan"
+        ///
         | Condition_LessThan "lessThan"
+        ///
         | Condition_And "and"
+        ///
         | Condition_Or "or"
-    } representation keyed;
+    } representation keyed
 }
 
 schema! {
     ///
     #[ipld_attr(internal)]
     #[derive(Clone, Debug)]
-    pub type Condition_HasField struct {};
+    pub type Condition_HasField struct {}
 }
 schema! {
     ///
     #[ipld_attr(internal)]
     #[derive(Clone, Debug)]
-    pub type Condition_HasValue struct {};
+    pub type Condition_HasValue struct {}
 }
 schema! {
     ///
     #[ipld_attr(internal)]
     #[derive(Clone, Debug)]
-    pub type Condition_HasKind struct {};
+    pub type Condition_HasKind struct {}
 }
 schema! {
     ///
     #[ipld_attr(internal)]
     #[derive(Clone, Debug)]
-    pub type Condition_IsLink struct {};
+    pub type Condition_IsLink struct {}
 }
 schema! {
     ///
     #[ipld_attr(internal)]
     #[derive(Clone, Debug)]
-    pub type Condition_GreaterThan struct {};
+    pub type Condition_GreaterThan struct {}
 }
 schema! {
     ///
     #[ipld_attr(internal)]
     #[derive(Clone, Debug)]
-    pub type Condition_LessThan struct {};
+    pub type Condition_LessThan struct {}
 }
 schema! {
     ///
     #[ipld_attr(internal)]
     #[derive(Clone, Debug)]
-    pub type Condition_And struct {};
+    pub type Condition_And struct {}
 }
 schema! {
     ///
     #[ipld_attr(internal)]
     #[derive(Clone, Debug)]
-    pub type Condition_Or struct {};
+    pub type Condition_Or struct {}
 }
 
 /// Sealed marker trait for types that can be used as `Selector`s.
@@ -392,12 +404,15 @@ mod private {
 }
 
 macro_rules! impl_variant {
-    ($variant:ident $selector_ty:ty | { $is:ident, $as:ident, $try_into:ident }) => {
+    ($variant:ident $selector_ty:ty |
+        { $is:ident, $as:ident, $try_as:ident, $try_into:ident }) => {
         impl_variant!(@is $is -> $variant $selector_ty);
         impl_variant!(@as $as -> $variant $selector_ty);
+        impl_variant!(@try_as $try_as -> $variant $selector_ty);
         // impl_variant!(@try_into $try_into -> $variant $selector_ty);
     };
-    (@wrapped $variant:ident $selector_ty:ty | { $is:ident, $as:ident, $try_into:ident }) => {
+    (@wrapped $variant:ident $selector_ty:ty |
+        { $is:ident, $as:ident, $try_as:ident, $try_into:ident }) => {
         impl_variant!(@is $is -> $variant $selector_ty);
         impl_variant!(@as $as -> $variant $selector_ty);
         // impl_variant!(@try_into $try_into -> $variant Rc<$selector_ty>);
@@ -418,6 +433,15 @@ macro_rules! impl_variant {
             match self {
                 Self::$variant(inner) => Some(inner),
                 _ => None,
+            }
+        }
+    };
+    (@try_as $fn:ident -> $variant:ident $selector_ty:ty) => {
+        #[inline]
+        pub fn $fn(&self) -> Result<&$selector_ty, Error> {
+            match self {
+                Self::$variant(inner) => Ok(inner),
+                _ => Err(Error::SelectorAssertionFailure),
             }
         }
     };
@@ -470,49 +494,63 @@ impl Selector {
         subset: None,
     });
 
+    ///
+    pub const fn code(&self) -> char {
+        match self {
+            Self::Matcher(_) => Matcher::CODE,
+            Self::ExploreAll(_) => ExploreAll::CODE,
+            Self::ExploreFields(_) => ExploreFields::CODE,
+            Self::ExploreIndex(_) => ExploreIndex::CODE,
+            Self::ExploreRange(_) => ExploreRange::CODE,
+            Self::ExploreRecursive(_) => ExploreRecursive::CODE,
+            Self::ExploreUnion(_) => ExploreUnion::CODE,
+            Self::ExploreConditional(_) => ExploreConditional::CODE,
+            Self::ExploreRecursiveEdge(_) => ExploreRecursiveEdge::CODE,
+            Self::ExploreInterpretAs(_) => ExploreInterpretAs::CODE,
+        }
+    }
+
     /// Attempts to produce the next selector to apply, given an optional field
     /// (key or index).
-    pub fn next<'a, K>(&self, field: Option<K>) -> Option<&Selector>
-    where
-        K: AsRef<str> + AsRef<usize>,
-    {
+    /// TODO: matcher is infinite; need to distinguish link boundaries
+    pub fn try_next<'a>(&self, field: Option<&Field<'_>>) -> Result<&Selector, Error> {
         match (self, field) {
-            (Self::Matcher(_), _) => Some(self),
-            (Self::ExploreAll(inner), _) => Some(&inner.next),
-            (Self::ExploreFields { .. }, _) => todo!(),
+            (Self::Matcher(_), _) => Ok(self),
+            (Self::ExploreAll(inner), _) => Ok(&inner.next),
             // TODO assert that provided field/index matches what the selector defines, otherwise return None
-            (Self::ExploreIndex(inner), Some(f))
-                if inner.index as usize == *(f.as_ref() as &usize) =>
-            {
-                Some(&inner.next)
+            (Self::ExploreFields { .. }, Some(f)) => todo!(),
+            (Self::ExploreIndex(inner), Some(f)) if f.is_idx(inner.index as usize) => {
+                Ok(&inner.next)
             }
             (Self::ExploreRange(inner), Some(f))
-                if (inner.start as usize..inner.end as usize).contains(f.as_ref()) =>
+                if f.as_usize()
+                    .filter(|idx| inner.to_range().contains(idx))
+                    .is_some() =>
             {
-                Some(&inner.next)
+                Ok(&inner.next)
             }
-            (Self::ExploreRecursive(inner), _) => Some(&inner.sequence),
-            (Self::ExploreRecursiveEdge(_), _) => None,
+            (Self::ExploreRecursive(inner), _) => Ok(&inner.sequence),
+            (Self::ExploreRecursiveEdge(_), _) => todo!(),
             (Self::ExploreUnion { .. }, _) => todo!(),
-            (Self::ExploreInterpretAs(inner), _) => Some(&inner.next),
-            _ => None,
+            (Self::ExploreInterpretAs(inner), _) => Ok(&inner.next),
+            _ => Err(Error::missing_next_selector(&self)),
         }
     }
 
     impl_variant!(Matcher Matcher |
-        {is_matcher, as_matcher, try_into_matcher});
+        {is_matcher, as_matcher, try_as_matcher, try_into_matcher});
     impl_variant!(@wrapped ExploreAll ExploreAll |
-        {is_explore_all, as_explore_all, try_into_explore_all});
-    // impl_variant!(ExploreFields ExploreFields |
-    //     {is_explore_fields, as_explore_fields, try_into_explore_fields});
+        {is_explore_all, as_explore_all, try_as_explore_all, try_into_explore_all});
+    impl_variant!(ExploreFields ExploreFields |
+        {is_explore_fields, as_explore_fields, try_as_explore_fields, try_into_explore_fields});
     impl_variant!(@wrapped ExploreIndex ExploreIndex |
-        {is_explore_index, as_explore_index, try_into_explore_index});
+        {is_explore_index, as_explore_index, try_as_explore_index, try_into_explore_index});
     impl_variant!(@wrapped ExploreRange ExploreRange |
-        {is_explore_range, as_explore_range, try_into_explore_range});
+        {is_explore_range, as_explore_range, try_as_explore_range, try_into_explore_range});
     // impl_variant!(ExploreRecursive ExploreRecursive |
     //     {is_explore_recursive, as_explore_recursive, try_into_explore_recursive});
-    // impl_variant!(ExploreUnion ExploreUnion |
-    //     {is_explore_union, as_explore_union, try_into_explore_union});
+    impl_variant!(ExploreUnion ExploreUnion |
+        {is_explore_union, as_explore_union, try_as_explore_union, try_into_explore_union});
     // impl_variant!(ExploreConditional ExploreConditional |
     //     {is_explore_conditional, as_explore_conditional, try_into_explore_conditional);
     // impl_variant!(ExploreInterpretAs ExploreInterpretAs |
@@ -543,30 +581,185 @@ impl FromStr for Selector {
     }
 }
 
-/* Slice */
+impl Matcher {
+    ///
+    pub const CODE: char = '.';
+}
 
-impl From<std::ops::Range<Int>> for Slice {
-    fn from(range: std::ops::Range<Int>) -> Self {
-        Self {
-            from: range.start,
-            to: range.end,
-        }
+/* ExploreAll */
+
+impl ExploreAll {
+    ///
+    pub const CODE: char = 'a';
+
+    ///
+    pub const fn to_range(&self) -> RangeFrom<usize> {
+        0usize..
     }
 }
 
-impl From<Slice> for std::ops::Range<Int> {
-    fn from(slice: Slice) -> std::ops::Range<Int> {
-        std::ops::Range::<Int> {
-            start: slice.from,
-            end: slice.to,
-        }
+impl RangeBounds<Int> for ExploreAll {
+    fn start_bound(&self) -> Bound<&Int> {
+        Bound::Included(&0)
+    }
+    fn end_bound(&self) -> Bound<&Int> {
+        Bound::Unbounded
     }
 }
 
 /* ExploreFields */
 
 impl ExploreFields {
+    ///
+    pub const CODE: char = 'f';
+
+    ///
     pub fn contains_key(&self, key: &str) -> bool {
         unimplemented!()
+    }
+}
+
+/* ExploreIndex */
+
+impl ExploreIndex {
+    ///
+    pub const CODE: char = 'i';
+
+    ///
+    pub const fn index(&self) -> Int {
+        self.index
+    }
+
+    ///
+    pub const fn to_range(&self) -> RangeInclusive<usize> {
+        self.index as usize..=self.index as usize
+    }
+}
+
+impl RangeBounds<Int> for ExploreIndex {
+    fn start_bound(&self) -> Bound<&Int> {
+        Bound::Included(&self.index)
+    }
+    fn end_bound(&self) -> Bound<&Int> {
+        Bound::Included(&self.index)
+    }
+}
+
+/* ExploreRange */
+
+impl ExploreRange {
+    ///
+    pub const CODE: char = 'r';
+
+    ///
+    pub const fn start(&self) -> Int {
+        self.start
+    }
+
+    ///
+    pub const fn end(&self) -> Int {
+        self.end
+    }
+
+    ///
+    pub const fn to_range(&self) -> Range<usize> {
+        self.start as usize..self.end as usize
+    }
+}
+
+impl RangeBounds<Int> for ExploreRange {
+    fn start_bound(&self) -> Bound<&Int> {
+        Bound::Included(&self.start)
+    }
+    fn end_bound(&self) -> Bound<&Int> {
+        Bound::Excluded(&self.end)
+    }
+}
+
+/* ExploreRecursive */
+
+impl ExploreRecursive {
+    ///
+    pub const CODE: char = 'R';
+}
+
+/* ExploreUnion */
+
+impl ExploreUnion {
+    ///
+    pub const CODE: char = '|';
+
+    /// Validates that the first [`Selector`] is a matcher.
+    pub fn matches_first(&self) -> bool {
+        // self.0[0].is_matcher()
+        unimplemented!()
+    }
+
+    /// Asserts that the first [`Selector`] is a matcher.
+    pub fn assert_matches_first<T: Representation>(&self) -> Result<(), Error> {
+        if self.matches_first() {
+            Ok(())
+        } else {
+            // Err(Error::unsupported_selector::<T>(self.0[0]))
+            unimplemented!()
+        }
+    }
+
+    /// Validates that all selectors to perform .
+    pub fn all_disjoint(&self) -> bool {
+        // self.0.iter().all(|s| s.code() == code)
+        unimplemented!()
+    }
+
+    // pub fn to_ranges(&self) -> impl Iterator<Item = Range<usize>> {
+    //     unimplemented!()
+    // }
+}
+
+/* ExploreConditional */
+
+impl ExploreConditional {
+    ///
+    pub const CODE: char = '&';
+}
+
+/* ExploreRecursiveEdge */
+
+impl ExploreRecursiveEdge {
+    ///
+    pub const CODE: char = '@';
+}
+
+/* ExploreInterpretAs */
+
+impl ExploreInterpretAs {
+    ///
+    pub const CODE: char = '~';
+}
+
+/* Slice */
+
+impl Slice {
+    ///
+    pub const fn to_range(&self) -> Range<usize> {
+        self.from as usize..self.to as usize
+    }
+}
+
+impl RangeBounds<Int> for Slice {
+    fn start_bound(&self) -> Bound<&Int> {
+        Bound::Included(&self.from)
+    }
+    fn end_bound(&self) -> Bound<&Int> {
+        Bound::Excluded(&self.to)
+    }
+}
+
+impl From<Range<Int>> for Slice {
+    fn from(range: Range<Int>) -> Self {
+        Self {
+            from: range.start,
+            to: range.end,
+        }
     }
 }

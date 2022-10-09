@@ -1,16 +1,17 @@
 use crate::dev::*;
 use macros::{derive_more::From, impl_selector_seed_serde};
-use std::fmt;
+use maybestd::fmt;
 
 ///
 #[derive(
+    Copy,
     Clone,
     Debug,
-    Eq,
+    Eq, // todo
     From,
     // Hash, Ord,
-    PartialEq,
-    // PartialOrd
+    PartialEq, // todo
+               // PartialOrd
 )]
 pub enum Link<T: Representation = Any> {
     ///
@@ -26,8 +27,26 @@ impl<T: Representation> Link<T> {
     #[inline]
     pub const fn cid(&self) -> &Cid {
         match self {
-            Self::Cid(inner) => inner,
+            Self::Cid(cid) => cid,
             Self::Inner { cid, .. } => cid,
+        }
+    }
+
+    ///
+    #[inline]
+    pub const fn is_dirty(&self) -> bool {
+        match self {
+            Self::Cid(_) => false,
+            Self::Inner { dirty, .. } => *dirty,
+        }
+    }
+
+    ///
+    #[inline]
+    pub const fn as_ref(&self) -> Option<&T> {
+        match self {
+            Self::Cid(_) => None,
+            Self::Inner { t, .. } => Some(t),
         }
     }
 
@@ -67,13 +86,18 @@ impl<T: Representation> Representation for Link<T> {
     }
 
     ///
-    /// TODO: dirty links?
     #[inline]
     fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        Representation::serialize::<C, _>(self.cid(), serializer)
+        if self.is_dirty() {
+            Err(S::Error::custom(
+                "cannot serialize dirty links; flush changes first",
+            ))
+        } else {
+            Representation::serialize::<C, _>(self.cid(), serializer)
+        }
     }
 
     ///
@@ -89,10 +113,7 @@ impl<T: Representation> Representation for Link<T> {
 }
 
 impl_selector_seed_serde! { @codec_seed_visitor
-    { T: Select<Ctx> + 'static }
-    // { for<'b> CodedSelectorSeed<'b, _C, _D, Ctx, T>: DeserializeSeed<'de, Value = ()>, }
-    { }
-    Link<T>
+    { T: Select<Ctx> + 'static } { } Link<T>
 {
     #[inline]
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -101,103 +122,60 @@ impl_selector_seed_serde! { @codec_seed_visitor
 }}
 
 impl_selector_seed_serde! { @codec_seed_visitor_ext
-    { T: Select<Ctx> + 'static }
-    // { for<'b> CodedSelectorSeed<'b, _C, _D, Ctx, T>: DeserializeSeed<'de, Value = ()>, }
-    { }
-    Link<T>
+    { T: Select<Ctx> + 'static } { } Link<T>
 {
     #[inline]
     fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
     where
-        E: serde::de::Error,
+        E: de::Error,
     {
-        self.visit_link(cid)
+        self.0.select_link::<_C>(cid).map_err(E::custom)
     }
 }}
 
-impl_selector_seed_serde! { @selector_seed_codec_deseed
-    { T: Select<Ctx> + 'static }
-    // { for<'b> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de, Value = ()> }
-    { }
-    Link<T>
-{
-    // #[inline]
-    // fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
-    // where
-    //     D: Deserializer<'de>,
-    // {
-    //     cfg_if::cfg_if! {
-    //         if #[cfg(feature = "dag-json")] {
-    //             if C == DagJson::CODE {
-    //                 return DagJson::deserialize_cid::<'de, D, _>(deserializer, CodecSeed::<C, false, _>(self));
-    //             }
-    //         }
-    //     }
-    //     cfg_if::cfg_if!{
-    //         if #[cfg(feature = "dag-cbor")] {
-    //             if C == DagCbor::CODE {
-    //                 return DagCbor::deserialize_cid::<'de, D, _>(deserializer, CodecSeed::<C, false, _>(self));
-    //             }
-    //         }
-    //     }
-
-    //     Deserialize::deserialize(deserializer)
-    // }
-    #[inline]
-    fn deserialize<D>(self, deserializer: D) -> Result<(), D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "dag-json")] {
-                if _C == DagJson::CODE {
-                    return DagJson::deserialize_cid(deserializer, self);
-                }
-            }
-        }
-        cfg_if::cfg_if!{
-            if #[cfg(feature = "dag-cbor")] {
-                if _C == DagCbor::CODE {
-                    return DagCbor::deserialize_cid(deserializer, self);
-                }
-            }
-        }
-
-        Deserialize::deserialize(deserializer)
-    }
-}}
+// impl_selector_seed_serde! { @selector_seed_codec_deseed
+//     { T: Select<Ctx> + 'static } { } Link<T>
+// {
+//     #[inline]
+//     fn deserialize<D>(self, deserializer: D) -> Result<(), D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         cfg_if::cfg_if! {
+//             if #[cfg(feature = "dag-json")] {
+//                 if _C == DagJson::CODE {
+//                     return DagJson::deserialize_cid(deserializer, self);
+//                 }
+//             }
+//         }
+//         cfg_if::cfg_if!{
+//             if #[cfg(feature = "dag-cbor")] {
+//                 if _C == DagCbor::CODE {
+//                     return DagCbor::deserialize_cid(deserializer, self);
+//                 }
+//             }
+//         }
+//
+//         Deserialize::deserialize(deserializer)
+//     }
+// }}
 
 impl_selector_seed_serde! { @selector_seed_select
-    { T: Select<Ctx> + 'static }
-    // { for<'b, 'de> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de, Value = ()> }
-    { }
-    Link<T>
+    { T: Select<Ctx> + 'static } { } Link<T>
 }
 
-impl<'a, const C: u64, const D: bool, Ctx, T> CodedSelectorSeed<'a, C, D, Ctx, Link<T>>
+impl<'a, Ctx, T> SelectorSeed<'a, Ctx, Link<T>>
 where
     Ctx: Context,
     T: Select<Ctx> + 'static,
 {
-    fn visit_link<'de, E>(mut self, cid: Cid) -> Result<(), E>
-    where
-        E: de::Error,
-        // for<'b> CodedSelectorSeed<'b, C, D, Ctx, T>: DeserializeSeed<'de, Value = ()>,
-    {
-        if let Some(matcher) = self.0.selector.as_matcher() {
-            match self.0.mode() {
-                SelectionMode::SelectNode => {
-                    self.0
-                        .select_matched_node(cid.into(), matcher.label.as_deref())
-                        .map_err(E::custom)?;
-                }
-                SelectionMode::SelectDag => {
-                    self.0
-                        .select_matched_dag(Link::Cid(cid), matcher.label.as_deref())
-                        .map_err(E::custom)?;
-                }
-                _ => unimplemented!(),
-            };
+    fn select_link<'de, const C: u64>(mut self, cid: Cid) -> Result<(), Error> {
+        if self.selector.is_matcher() {
+            if self.is_dag_select() {
+                self.select_dag(Link::Cid(cid))?;
+            } else {
+                self.select_node(cid.into())?;
+            }
 
             return Ok(());
         }

@@ -82,7 +82,7 @@ impl ExpandBasicRepresentation for BasicStructReprDefinition {
             .as_ref()
             .map(|g| quote!(#g))
             .unwrap_or(TokenStream::default());
-        let fields: Vec<TokenStream> = self.iter().map(field_def).collect();
+        let fields = self.iter().map(StructField::field_def);
 
         quote! {
             #(#attrs)*
@@ -93,7 +93,7 @@ impl ExpandBasicRepresentation for BasicStructReprDefinition {
         }
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        impl_repr(self.iter(), meta, SchemaKind::Map.data_model_kind())
+        impl_repr(self, meta, &Self::dm_kind())
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
@@ -103,10 +103,16 @@ impl ExpandBasicRepresentation for BasicStructReprDefinition {
     }
 }
 
-pub(super) fn impl_repr<'a>(
-    iter: impl Iterator<Item = &'a StructField>,
+impl BasicStructReprDefinition {
+    pub fn dm_kind() -> Ident {
+        SchemaKind::Map.data_model_kind()
+    }
+}
+
+pub(super) fn impl_repr<'a, D: Deref<Target = StructFields>>(
+    fields: &D,
     meta: &SchemaMeta,
-    repr_kind: Ident,
+    repr_kind: &Ident,
 ) -> TokenStream {
     let lib = &meta.lib;
     let name = &meta.name;
@@ -136,37 +142,39 @@ pub(super) fn impl_repr<'a>(
     repr_body
 }
 
-pub(crate) fn default_field_def(field: &StructField) -> TokenStream {
-    let attrs = &field.attrs;
-    let vis = &field.vis;
-    let key = &field.key;
-    let value = field_value(field);
-    let generics = &field.generics;
+impl StructField {
+    pub fn default_field_def(&self) -> TokenStream {
+        let attrs = &self.attrs;
+        let vis = &self.vis;
+        let key = &self.key;
+        let value = field_value(self);
+        let generics = &self.generics;
 
-    quote! {
-        #(#attrs)*
-        #vis #key: #value #generics
+        quote! {
+            #(#attrs)*
+            #vis #key: #value #generics
+        }
     }
-}
 
-fn field_def(field: &StructField) -> TokenStream {
-    let attrs = &field.attrs;
-    let vis = &field.vis;
-    let key = &field.key;
-    let value = field_value(field);
-    let generics = &field.generics;
+    fn field_def(&self) -> TokenStream {
+        let attrs = &self.attrs;
+        let vis = &self.vis;
+        let key = &self.key;
+        let value = field_value(self);
+        let generics = &self.generics;
 
-    let implicit_attr = field.implicit.as_ref().map(|_| quote!(#[serde(default)]));
-    let rename_attr = field
-        .rename
-        .as_ref()
-        .map(|name| quote!(#[serde(rename = #name)]));
+        let implicit_attr = self.implicit.as_ref().map(|_| quote!(#[serde(default)]));
+        let rename_attr = self
+            .rename
+            .as_ref()
+            .map(|name| quote!(#[serde(rename = #name)]));
 
-    quote! {
-        #(#attrs)*
-        // #implicit_attr
-        // #rename_attr
-        #vis #key: #value #generics
+        quote! {
+            #(#attrs)*
+            // #implicit_attr
+            // #rename_attr
+            #vis #key: #value #generics
+        }
     }
 }
 

@@ -103,14 +103,14 @@ impl DagJson {
 
     #[doc(hidden)]
     #[inline]
-    pub fn read_from_seed<Ctx, T, R>(seed: SelectorSeed<'_, Ctx, T>, reader: R) -> Result<(), Error>
+    pub fn read_with_seed<Ctx, T, R>(seed: SelectorSeed<'_, Ctx, T>, reader: R) -> Result<(), Error>
     where
         Ctx: Context,
         T: Select<Ctx>,
         R: Read,
     {
         let mut de = JsonDeserializer::from_reader(reader);
-        T::__select_from_deserializer::<{ Self::CODE }, _>(seed, &mut de).map_err(Error::decoder)
+        T::__select_de::<{ Self::CODE }, _>(seed, &mut de).map_err(Error::decoder)
     }
 }
 
@@ -343,8 +343,9 @@ mod visitor {
                     A::Error::custom("DagJSON bytes key must be the string \"bytes\"")
                 })?;
 
-            let byte_str = map
-                .next_value_seed(DeserializeWrapper::<{ DagJson::CODE }, IpldString>::default())?;
+            // let byte_str = map
+            //     .next_value_seed(DeserializeWrapper::<{ DagJson::CODE }, IpldString>::default())?;
+            let byte_str = map.next_value::<Cow<'_, str>>()?;
             match multibase::decode(byte_str) {
                 Ok((DagJson::DEFAULT_MULTIBASE, bytes)) => Ok(MapLikeVisitor::Bytes(bytes)),
                 // Ok((mb, _)) => Err(de::Error::custom(format!(
@@ -374,8 +375,7 @@ mod visitor {
         {
             use de::IntoDeserializer;
 
-            if self.first_key.is_some() {
-                let first_key = self.first_key.take().unwrap();
+            if let Some(first_key) = self.first_key.take() {
                 seed.deserialize(first_key.into_deserializer()).map(Some)
             } else {
                 self.map.next_key_seed(seed)
@@ -427,7 +427,7 @@ mod tests {
             // standard string
             (IpldString::from("hello world"), "\"hello world\""),
             // empty string TODO:
-            // (IpldString::default(), "\"\""),
+            (IpldString::default(), "\"\""),
             // non-standard UTF-8 string TODO:
             // (IpldString::from("ÅΩ"), "\"ÅΩ\""),
         ];
@@ -459,8 +459,13 @@ mod tests {
 
     #[test]
     fn test_seq() {
+        // raw types
+        let cases = &[(vec![], "[]"), (vec![1, 2], "[1,2]")];
+        roundtrip_str_codec::<List<i64>>(DagJson::CODE, cases);
+
+        // any types
         let cases = &[
-            // (vec![], "[]"),
+            (vec![], "[]"),
             // (vec![Any::Int(1), Any::Int(2)], "[1,2]"),
             // // (
             // //     vec![Any::Link(Link::Cid(Default::default()).into())],
@@ -472,6 +477,21 @@ mod tests {
 
     #[test]
     fn test_map() {
+        // raw types
+        let cases = &[
+            (Default::default(), "{}"),
+            (
+                {
+                    let mut map: Map<IpldString, i64> = Default::default();
+                    map.insert("abc".into(), 123i64);
+                    map
+                },
+                "{\"abc\":123}",
+            ),
+        ];
+        roundtrip_str_codec::<Map<IpldString, i64>>(DagJson::CODE, cases);
+
+        // any types
         let cases = &[];
         roundtrip_str_codec::<Map>(DagJson::CODE, cases);
     }

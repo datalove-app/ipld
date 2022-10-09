@@ -10,10 +10,10 @@
 mod ipfs;
 
 use crate::dev::*;
-use std::{
-    collections::HashMap,
-    io::{Cursor, Read, Write},
-};
+use maybestd::io::{empty, Cursor, Empty, Read, Sink, Write};
+use std::collections::HashMap;
+
+trait BlockWriter: Write {}
 
 /// Trait for providing blocks and additional logic required for selection.
 pub trait Context: Sized {
@@ -27,6 +27,16 @@ pub trait Context: Sized {
 
     ///
     fn block_reader(&mut self, cid: &Cid) -> Result<Self::Reader, Error>;
+
+    ///
+    fn block_writer(&mut self, cid_to_replace: Option<&Cid>) -> Result<Self::Writer, Error> {
+        unimplemented!()
+    }
+
+    // ///
+    // fn flush_writer(&mut self, cid_to_replace: Option<&Cid>, block: ) -> Result<Cid, Error> {
+
+    // }
 
     //
     // fn decoder<'de, 'a: 'de>(&mut self) -> Box<dyn ErasedDeserializer<'de> + 'a> {
@@ -99,6 +109,15 @@ impl<'a, C: Context + 'a> Context for &'a mut C {
     }
 }
 
+impl Context for () {
+    type Reader = Empty;
+    type Writer = Sink;
+
+    fn block_reader(&mut self, _: &Cid) -> Result<Self::Reader, Error> {
+        Ok(empty())
+    }
+}
+
 ///
 #[derive(Clone, Debug, Default)]
 pub struct MemoryContext {
@@ -115,7 +134,7 @@ impl MemoryContext {
         multihash_code: u64,
         block: Vec<u8>,
     ) -> Result<Cid, Error> {
-        let cid = Cid::new(version, multicodec_code, multihash_code, block.as_ref())?;
+        let cid = Cid::new(version, multicodec_code, multihash_code, block.as_slice())?;
         self.blocks.insert(cid, block);
         Ok(cid)
     }

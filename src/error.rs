@@ -4,8 +4,8 @@ use multibase::Error as MultibaseError;
 use multihash::Error as MultihashError;
 use serde::{de, ser};
 use std::{
-    convert::Infallible, error::Error as StdError, num::TryFromIntError, string::FromUtf8Error,
-    sync::mpsc::SendError,
+    convert::Infallible, error::Error as StdError, fmt::Display, num::TryFromIntError,
+    string::FromUtf8Error, sync::mpsc::SendError,
 };
 use thiserror::Error;
 
@@ -23,6 +23,12 @@ pub enum Error {
     #[error("Mismatched `Any` data model type")]
     MismatchedAny,
 
+    #[error("Failed conversion from `Any::{any_variant}` to `{type_name}`")]
+    FailedAnyConversion {
+        type_name: &'static str,
+        any_variant: &'static str,
+    },
+
     //////////////////////////////////////////////////////////////////////
     // codec
     //////////////////////////////////////////////////////////////////////
@@ -34,15 +40,17 @@ pub enum Error {
     UnknownMulticodecName(String),
 
     #[error("IPLD codec encoding error: {0}")]
-    Encoder(Box<dyn StdError + Send + Sync + 'static>),
+    Encoder(Box<dyn StdError>),
 
     #[error("IPLD codec decoding error: {0}")]
-    Decoder(Box<dyn StdError + Send + Sync + 'static>),
+    Decoder(Box<dyn StdError>),
 
     // #[error("Value error: {0}")]
     // Value(&'static str),
     // #[error("{0}")]
     // BlockMeta(&'static str),
+    #[error("Map field parse error: {0}")]
+    FieldParse(Box<dyn StdError>),
 
     //////////////////////////////////////////////////////////////////////
     // selector
@@ -72,11 +80,31 @@ pub enum Error {
     //     actual_type_name: &'static str,
     //     desired_type_name: &'static str,
     // },
-    #[error("ExploreIndex failure: no node at index {0}")]
-    ExploreIndexFailure(usize),
+    #[error("ExploreIndex failure for type `{type_name}`: no node at index {index}")]
+    ExploreIndexFailure {
+        type_name: &'static str,
+        index: usize,
+    },
 
-    #[error("ExploreRange failure: missing node at index {0}; range {1}..{2}")]
-    ExploreRangeFailure(usize, Int, Int),
+    #[error("ExploreRange failure for type `{type_name}`: missing node at index {index}; range {start}..{end}")]
+    ExploreRangeFailure {
+        type_name: &'static str,
+        index: usize,
+        start: Int,
+        end: Int,
+    },
+
+    #[error("Failed to explore field key `{field_name}` of type `{key_type_name}`")]
+    ExploreFieldKeyFailure {
+        key_type_name: &'static str,
+        field_name: &'static str,
+    },
+
+    #[error("Failed to explore field value of type `{value_type_name}` for key `{key}`")]
+    ExploreFieldValueFailure {
+        value_type_name: &'static str,
+        key: String,
+    },
 
     #[error("Selector depth error: {0}: {1}")]
     SelectorDepth(&'static str, usize),
@@ -90,14 +118,27 @@ pub enum Error {
     //////////////////////////////////////////////////////////////////////
     // misc
     //////////////////////////////////////////////////////////////////////
-    #[error("Downcast failure for type `{0}`: {1}")]
-    DowncastFailure(&'static str, &'static str),
+    #[error("Downcast failure for type `{type_name}`: {msg}")]
+    DowncastFailure {
+        type_name: &'static str,
+        msg: &'static str,
+    },
 
     #[error("{0}")]
     Custom(anyhow::Error),
 }
 
 impl Error {
+    pub(crate) fn failed_any_conversion<T>(any_variant: &'static str) -> Self
+    where
+        T: Representation,
+    {
+        Self::FailedAnyConversion {
+            type_name: T::NAME,
+            any_variant,
+        }
+    }
+
     pub(crate) fn unsupported_selector<T>(selector: &Selector) -> Self
     where
         T: Representation,
@@ -113,10 +154,21 @@ impl Error {
         Self::MissingNextSelector(Representation::name(selector))
     }
 
-    pub(crate) fn explore_list_failure(selector: &Selector, current_index: usize) -> Self {
+    pub(crate) fn explore_list_failure<E: Representation>(
+        selector: &Selector,
+        index: usize,
+    ) -> Self {
         match selector {
-            Selector::ExploreIndex(_) => Self::ExploreIndexFailure(current_index),
-            Selector::ExploreRange(s) => Self::ExploreRangeFailure(current_index, s.start, s.end),
+            Selector::ExploreIndex(_) => Self::ExploreIndexFailure {
+                type_name: E::NAME,
+                index,
+            },
+            Selector::ExploreRange(s) => Self::ExploreRangeFailure {
+                type_name: E::NAME,
+                index,
+                start: s.start(),
+                end: s.end(),
+            },
             _ => unreachable!(),
         }
     }
@@ -129,8 +181,32 @@ impl Error {
         }
     }
 
+    pub(crate) fn explore_index_failure<E: Representation>(index: usize) -> Self {
+        Self::ExploreIndexFailure {
+            type_name: E::NAME,
+            index,
+        }
+    }
+
+    pub(crate) fn explore_key_failure<K: Representation>(field_name: Option<&'static str>) -> Self {
+        Self::ExploreFieldKeyFailure {
+            key_type_name: K::NAME,
+            field_name: field_name.unwrap_or("anonymous key"),
+        }
+    }
+
+    pub(crate) fn explore_value_failure<V: Representation>(field: impl Display) -> Self {
+        Self::ExploreFieldValueFailure {
+            value_type_name: V::NAME,
+            key: field.to_string(),
+        }
+    }
+
     pub(crate) fn downcast_failure<T: Representation>(msg: &'static str) -> Self {
-        Self::DowncastFailure(T::NAME, msg)
+        Self::DowncastFailure {
+            type_name: T::NAME,
+            msg,
+        }
     }
 
     // pub(crate) fn invalid_type_selection<T, U>() -> Self
@@ -148,7 +224,7 @@ impl Error {
     #[inline]
     pub fn decoder<E>(err: E) -> Self
     where
-        E: de::Error + Send + Sync + 'static,
+        E: de::Error + 'static,
     {
         Error::Decoder(Box::new(err))
     }
@@ -157,7 +233,7 @@ impl Error {
     #[inline]
     pub fn encoder<E>(err: E) -> Self
     where
-        E: ser::Error + Send + Sync + 'static,
+        E: ser::Error + 'static,
     {
         Error::Encoder(Box::new(err))
     }

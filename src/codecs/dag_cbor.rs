@@ -93,14 +93,14 @@ impl DagCbor {
 
     #[doc(hidden)]
     #[inline]
-    pub fn read_from_seed<Ctx, T, R>(seed: SelectorSeed<'_, Ctx, T>, reader: R) -> Result<(), Error>
+    pub fn read_with_seed<Ctx, T, R>(seed: SelectorSeed<'_, Ctx, T>, reader: R) -> Result<(), Error>
     where
         Ctx: Context,
         T: Select<Ctx>,
         R: Read,
     {
         let mut de = CborDeserializer::from_reader(reader);
-        T::__select_from_deserializer::<{ Self::CODE }, _>(seed, &mut de).map_err(Error::decoder)
+        T::__select_de::<{ Self::CODE }, _>(seed, &mut de).map_err(Error::decoder)
     }
 
     // pub(crate) fn deserializer_from_reader<R: Read>(

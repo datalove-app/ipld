@@ -13,11 +13,12 @@ use syn::{
 impl Parse for ListReprDefinition {
     fn parse(input: ParseStream) -> ParseResult<Self> {
         // parse list typedef
-        let mut nullable = false;
-        let typedef_stream;
 
         // parse type, which may be nullable
+        let typedef_stream;
         bracketed!(typedef_stream in input);
+
+        let mut nullable = false;
         if typedef_stream.peek(kw::nullable) {
             typedef_stream.parse::<kw::nullable>()?;
             nullable = true;
@@ -46,13 +47,14 @@ impl Parse for ListReprDefinition {
 impl Parse for MapReprDefinition {
     fn parse(input: ParseStream) -> ParseResult<Self> {
         // parse map typedef
-        let mut nullable = false;
+
         let typedef_stream;
         braced!(typedef_stream in input);
 
         // parse key
         let key = typedef_stream.parse::<Type>()?;
         // parse value, which may be nullable
+        let mut nullable = false;
         typedef_stream.parse::<Token![:]>()?;
         if typedef_stream.peek(kw::nullable) {
             typedef_stream.parse::<kw::nullable>()?;

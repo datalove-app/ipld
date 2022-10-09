@@ -1,6 +1,7 @@
 use crate::dev::*;
 use macros::derive_more::{From, IsVariant, TryInto, Unwrap};
-use std::{boxed::Box, path::Path, rc::Rc};
+use maybestd::rc::Rc;
+use std::path::Path;
 
 // ///
 // #[derive(Clone, Debug, IsVariant, Unwrap)]
@@ -17,15 +18,24 @@ schema! {
     #[try_into(owned, ref, ref_mut)]
     // TODO: impl from(forward) and try_into for all unions and enums
     pub type Any union {
+        ///
         #[from(ignore)]
         | Null null
+        ///
         | Bool bool
+        ///
         | Int int
+        ///
         | Float float
+        ///
         | String string
+        ///
         | Bytes bytes
+        ///
         | List list
+        ///
         | Map map
+        ///
         // todo? should this be listed above? decoding untagged variants is attempted in def order
         #[ipld_attr(wrapper = "Rc")]
         | Link link

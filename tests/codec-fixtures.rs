@@ -229,11 +229,12 @@ impl Fixture {
             )
             .expect("should not fail to add block");
 
-        assert_eq!(&self.cid, &cid, "generated Cid should equal fixture Cid");
+        assert_eq!(&self.cid, &cid, "generated Cid should match fixture Cid");
         ctx
     }
 
     fn run(&mut self) {
+        // TODO: create copy types, test those too
         let did_run = match self.r#type() {
             FixtureType::Null => self.run_for::<Null>(),
             FixtureType::Bool => self.run_for::<Bool>(),
@@ -267,7 +268,7 @@ impl Fixture {
                 .expect(&self.format_err::<T>("should not fail to encode dag"));
             let new_cid = self
                 .cid
-                .derive_new(block.as_ref())
+                .derive_new(block.as_slice())
                 .expect(&"should not fail to generate a Cid for a block of bytes");
 
             if self.codec.name() == "dag-json" {

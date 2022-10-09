@@ -13,40 +13,41 @@ impl ExpandBasicRepresentation for ListReprDefinition {
         derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        let child_ty = self.child_ty();
-        expand::impl_repr(
-            meta,
-            quote! {
-                // const SCHEMA: &'static str = macros::concatcp!("type ", Self::NAME, " [", <#child_ty>::NAME, "]");
-                const DATA_MODEL_KIND: Kind = Kind::List;
-                const HAS_LINKS: bool = false;
+        let name = &meta.name;
+        let (_, child_name) = self.child_ty();
+        let schema = quote! {
+            const SCHEMA: &'static str = concat!(
+                "type ", stringify!(#name), " [", #child_name, "]",
+            );
+        };
 
-                // fn has_links(&self) -> bool {
-                //     self.0.has_links()
-                // }
-            },
-        )
+        let inner_ty = self.inner_ty();
+        derive_newtype!(@repr { schema } meta => inner_ty)
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = self.inner_ty();
         derive_newtype!(@select meta => inner_ty)
-        // quote!()
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
+        // let dm_ty = SchemaKind::List.data_model_kind();
+        // derive_newtype!(@conv self, meta => dm_ty dm_ty)
         quote!()
     }
 }
 
 impl ListReprDefinition {
-    fn child_ty(&self) -> Type {
+    fn child_ty(&self) -> (Type, TokenStream) {
         match self {
-            Self::Basic { elem, nullable } if *nullable => Type::Verbatim(quote!(Option<#elem>)),
-            Self::Basic { elem, .. } => elem.clone(),
+            Self::Basic { elem, nullable } if *nullable => (
+                Type::Verbatim(quote!(Option<#elem>)),
+                quote!("nullable ", stringify!(#elem)),
+            ),
+            Self::Basic { elem, .. } => (elem.clone(), quote!(stringify!(#elem))),
             Self::Advanced(..) => unimplemented!(),
         }
     }
     fn inner_ty(&self) -> Type {
-        let child_ty = self.child_ty();
+        let (child_ty, _) = self.child_ty();
         Type::Verbatim(quote!(List<#child_ty>))
     }
 }

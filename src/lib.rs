@@ -10,6 +10,7 @@
 //!     - replace boxed callbacks with a ref
 
 #![warn(rust_2018_idioms, missing_debug_implementations, missing_docs)]
+#[cfg_attr(not(feature = "std"), no_std)]
 #[forbid(unsafe_code)]
 //
 #[path = "cid.rs"]
@@ -43,10 +44,7 @@ mod specs {
 
     // multiformats
     pub use multibase::Base as Multibase;
-    pub use multihash::{
-        self, Code as Multihashes, Hasher as _, Multihash as DefaultMultihash,
-        MultihashDigest as _, MultihashGeneric,
-    };
+    pub use multihash::{self, Hasher as _, Multihash as DefaultMultihash, MultihashDigest as _};
     pub use multihash_::Multihash;
 
     // cid
@@ -55,7 +53,7 @@ mod specs {
 
     // data model, schemas and representation
     pub use crate::data_model::*;
-    pub use crate::representation::Representation;
+    pub use crate::representation::{Kind, Representation, TypedKind as _};
     pub use ipld_macros::{ipld_attr, schema};
 
     // selectors
@@ -70,8 +68,7 @@ pub mod prelude {
     #[doc(inline)]
     pub use crate::specs::*;
     #[doc(inline)]
-    pub use crate::{Any, Cid, Context, Error, Representation, Select, Selector};
-
+    pub use crate::Error;
     #[doc(hidden)]
     pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
 }
@@ -96,6 +93,9 @@ pub mod dev {
     }
 
     #[doc(hidden)]
+    pub use crate::maybestd;
+
+    #[doc(hidden)]
     pub use serde::{
         self,
         de::{
@@ -107,4 +107,28 @@ pub mod dev {
     };
     // #[doc(hidden)]
     // pub use serde_repr;
+    #[doc(hidden)]
+    pub use ipld_macros_internals::dev::typenum;
+    #[doc(hidden)]
+    pub use ipld_macros_internals::dev::typenum_macro;
+}
+
+///
+#[cfg(not(feature = "std"))]
+#[doc(hidden)]
+pub mod maybestd {
+    extern crate alloc;
+
+    pub use alloc::{boxed, collections, rc, vec::Vec};
+    pub use core::{borrow, cell, cmp, convert, fmt, hash, iter, marker, ops, str, sync};
+    pub use core2::{error, io};
+}
+#[cfg(feature = "std")]
+#[doc(hidden)]
+pub mod maybestd {
+    pub use core2::{error, io};
+    pub use std::{
+        borrow, boxed, cell, cmp, collections, convert, fmt, hash, iter, marker, ops, rc, str,
+        sync, vec::Vec,
+    };
 }

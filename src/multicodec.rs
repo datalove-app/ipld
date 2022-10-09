@@ -111,7 +111,7 @@ mod multicodec {
             }
 
             #[doc(hidden)]
-            pub fn read_from_seed<Ctx, T, R>(
+            pub fn read_with_seed<Ctx, T, R>(
                 &mut self,
                 seed: SelectorSeed<'_, Ctx, T>,
                 reader: R,
@@ -124,7 +124,7 @@ mod multicodec {
                 match self {
                     $(
                         #[cfg(feature = $feature)]
-                        Self::$variant(_) => <$ty>::read_from_seed(seed, reader),
+                        Self::$variant(_) => <$ty>::read_with_seed(seed, reader),
                     )*
                 }
             }

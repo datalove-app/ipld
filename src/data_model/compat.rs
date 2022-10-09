@@ -1,4 +1,34 @@
 use crate::dev::*;
+use maybestd::{fmt, marker::PhantomData};
+
+mod ignored {
+    use super::*;
+
+    impl Representation for IgnoredAny {
+        const NAME: &'static str = "IgnoredAny";
+        const SCHEMA: &'static str = "type IgnoredAny = Any";
+        const DATA_MODEL_KIND: Kind = Kind::Null;
+        const SCHEMA_KIND: Kind = Kind::Any;
+        const REPR_KIND: Kind = Kind::Any;
+        const __IGNORED: bool = true;
+
+        #[doc(hidden)]
+        fn serialize<const C: u64, S>(&self, _: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            unreachable!()
+        }
+
+        #[doc(hidden)]
+        fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            Deserialize::deserialize(deserializer)
+        }
+    }
+}
 
 mod option {
     use super::*;
@@ -8,9 +38,7 @@ mod option {
         T: Representation,
     {
         const NAME: &'static str = concat!("Optional", stringify!(T::NAME));
-        // TODO
-        const SCHEMA: &'static str = unimplemented!();
-        // const SCHEMA: &'static str = concat!("type ", stringify!(T::NAME), " nullable");
+        const SCHEMA: &'static str = concat!("type ", stringify!(T::NAME), " nullable");
         const DATA_MODEL_KIND: Kind = T::DATA_MODEL_KIND;
         const SCHEMA_KIND: Kind = T::SCHEMA_KIND;
         const REPR_KIND: Kind = T::REPR_KIND;
@@ -38,6 +66,10 @@ mod option {
             }
         }
 
+        fn as_field(&self) -> Option<Field<'_>> {
+            self.as_ref().and_then(Representation::as_field)
+        }
+
         #[doc(hidden)]
         fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -54,15 +86,46 @@ mod option {
         where
             D: Deserializer<'de>,
         {
-            // DeserializeWrapper::<C, _>::default().deserialize(deserializer)
-            unimplemented!()
+            struct OptionVisitor<const C: u64, T>(PhantomData<T>);
+            impl<'de, const C: u64, T: Representation> Visitor<'de> for OptionVisitor<C, T> {
+                type Value = Option<T>;
+                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    formatter.write_str("Optional")
+                }
+                #[inline]
+                fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+                    Ok(None)
+                }
+                #[inline]
+                fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+                    Ok(None)
+                }
+                #[inline]
+                fn visit_some<D: Deserializer<'de>>(
+                    self,
+                    deserializer: D,
+                ) -> Result<Self::Value, D::Error> {
+                    T::deserialize::<C, _>(deserializer).map(Some)
+                }
+                fn __private_visit_untagged_option<D>(
+                    self,
+                    deserializer: D,
+                ) -> Result<Self::Value, ()>
+                where
+                    D: Deserializer<'de>,
+                {
+                    Ok(T::deserialize::<C, _>(deserializer).ok())
+                }
+            }
+
+            deserializer.deserialize_option(OptionVisitor::<C, T>(PhantomData))
         }
     }
 }
 
 mod wrapper {
     use super::*;
-    use std::{rc::Rc, sync::Arc};
+    use maybestd::{rc::Rc, sync::Arc};
 
     macro_rules! impl_wrapper {
         ($wrapper:ident) => {
@@ -98,6 +161,10 @@ mod wrapper {
                     self.as_ref().has_links()
                 }
 
+                fn as_field(&self) -> Option<Field<'_>> {
+                    self.as_ref().as_field()
+                }
+
                 #[doc(hidden)]
                 fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                 where
@@ -112,6 +179,55 @@ mod wrapper {
                     D: Deserializer<'de>,
                 {
                     Ok(Self::new(T::deserialize::<'de, C, _>(deserializer)?))
+                }
+            }
+
+            impl<Ctx, T> Select<Ctx> for $wrapper<T>
+            where
+                Ctx: Context,
+                T: Select<Ctx> + 'static,
+            {
+                // #[doc(hidden)]
+                // #[inline]
+                // fn __select<'a>(seed: SelectorSeed<'a, Ctx, Self>) -> Result<(), Error> {
+                //     T::__select(seed.wrap::<T, _>($wrapper::from))
+                // }
+
+                #[doc(hidden)]
+                #[inline]
+                fn __select_de<'a, 'de, const C: u64, D>(
+                    seed: SelectorSeed<'a, Ctx, Self>,
+                    deserializer: D,
+                ) -> Result<(), D::Error>
+                where
+                    D: Deserializer<'de>,
+                {
+                    T::__select_de::<C, D>(seed.wrap::<T, _>($wrapper::from), deserializer)
+                }
+
+                #[doc(hidden)]
+                #[inline]
+                fn __select_seq<'a, 'de, const C: u64, A>(
+                    seed: SelectorSeed<'a, Ctx, Self>,
+                    seq: A,
+                ) -> Result<Option<()>, A::Error>
+                where
+                    A: SeqAccess<'de>,
+                {
+                    T::__select_seq::<C, A>(seed.wrap::<T, _>($wrapper::from), seq)
+                }
+
+                #[doc(hidden)]
+                #[inline]
+                fn __select_map<'a, 'de, const C: u64, A>(
+                    seed: SelectorSeed<'a, Ctx, Self>,
+                    map: A,
+                    is_key: bool,
+                ) -> Result<Option<()>, A::Error>
+                where
+                    A: MapAccess<'de>,
+                {
+                    T::__select_map::<C, A>(seed.wrap::<T, _>($wrapper::from), map, is_key)
                 }
             }
         }; /*

@@ -89,9 +89,10 @@ impl expand::ExpandBasicRepresentation for NullReprDefinition {
         derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+        let name = &meta.name;
         let inner_ty = Self::inner_ty();
         let schema = quote! {
-            const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " null");
+            const SCHEMA: &'static str = concat!("type ", stringify!(#name), " null");
         };
         derive_newtype!(@repr { schema } meta => inner_ty)
     }
@@ -100,17 +101,27 @@ impl expand::ExpandBasicRepresentation for NullReprDefinition {
         derive_newtype!(@select meta => inner_ty)
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        let ident = &meta.name;
+        let name = &meta.name;
         quote! {
-            impl From<#ident> for SelectedNode {
-                fn from(t: #ident) -> Self {
+            impl From<#name> for SelectedNode {
+                fn from(t: #name) -> Self {
                     Self::Null
                 }
             }
 
-            impl Into<Any> for #ident {
+            impl Into<Any> for #name {
                 fn into(self) -> Any {
                     Any::Null(Null)
+                }
+            }
+
+            impl TryFrom<Any> for #name {
+                type Error = Error;
+                fn try_from(any: Any) -> Result<Self, Self::Error> {
+                    match any {
+                        Any::Null(inner) => Ok(Self(inner)),
+                        _ => Err(Error::MismatchedAny)
+                    }
                 }
             }
         }
@@ -131,9 +142,10 @@ impl expand::ExpandBasicRepresentation for BoolReprDefinition {
         derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+        let name = &meta.name;
         let inner_ty = Self::inner_ty();
         let schema = quote! {
-            const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " bool");
+            const SCHEMA: &'static str = concat!("type ", stringify!(#name), " bool");
         };
         derive_newtype!(@repr { schema } meta => inner_ty)
     }
@@ -155,9 +167,10 @@ impl expand::ExpandBasicRepresentation for IntReprDefinition {
         derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+        let name = &meta.name;
         let inner_ty = &self.0;
         let schema = quote! {
-            const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " int");
+            const SCHEMA: &'static str = concat!("type ", stringify!(#name), " int");
         };
         derive_newtype!(@repr { schema } meta => inner_ty)
     }
@@ -180,9 +193,10 @@ impl expand::ExpandBasicRepresentation for FloatReprDefinition {
         derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+        let name = &meta.name;
         let inner_ty = &self.0;
         let schema = quote! {
-            const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " float");
+            const SCHEMA: &'static str = concat!("type ", stringify!(#name), " float");
         };
         derive_newtype!(@repr { schema } meta => inner_ty)
     }
@@ -211,9 +225,10 @@ impl expand::ExpandBasicRepresentation for StringReprDefinition {
         derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+        let name = &meta.name;
         let inner_ty = Self::inner_ty();
         let schema = quote! {
-            const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " string");
+            const SCHEMA: &'static str = concat!("type ", stringify!(#name), " string");
         };
         derive_newtype!(@repr { schema } meta => inner_ty)
     }
@@ -235,9 +250,10 @@ impl expand::ExpandBasicRepresentation for CopyReprDefinition {
         derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
+        let name = &meta.name;
         let inner_ty = &self.0;
         let schema = quote! {
-            const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME),  " = ", stringify!(<#inner_ty>::NAME));
+            const SCHEMA: &'static str = concat!("type ", stringify!(#name),  " = ", stringify!(#inner_ty));
 
             // #[inline]
             // fn name(&self) -> &'static str {

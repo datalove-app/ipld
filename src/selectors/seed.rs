@@ -54,9 +54,9 @@ pub type EmptySeed<T> = SelectorSeed<'static, (), T>;
 /// ? 3. Link needs to take some seed, uncode it, then use inner to call SelectorSeed::select for the next block
 #[doc(hidden)]
 #[derive(Debug)]
-pub struct CodecSeed<const C: u64, const RK: u32, S, T = Any>(pub(crate) S, PhantomData<T>);
+pub struct CodecSeed<const C: u64, S, T = Any>(pub(crate) S, PhantomData<T>);
 
-impl<const C: u64, const RK: u32, S, T> CodecSeed<C, RK, S, T> {
+impl<const C: u64, S, T> CodecSeed<C, S, T> {
     // pub const RK: u32 = RK;
     // pub const fn is_select() -> bool {
     //     (!RK)
@@ -72,15 +72,13 @@ impl<const C: u64, const RK: u32, S, T> CodecSeed<C, RK, S, T> {
     where
         T: Representation,
     {
-        if T::SCHEMA_KIND.bits() == Kind::Int.bits() {
+        if Kind::TypedInt.contains(T::SCHEMA_KIND) {
             Int::SCHEMA_KIND
+        } else if Kind::TypedFloat.contains(T::SCHEMA_KIND) {
+            Float::SCHEMA_KIND
         } else {
             T::SCHEMA_KIND
         }
-        // match (T::SCHEMA_KIND, T::REPR_KIND) {
-        //     Kind::Int => Int::SCHEMA_KIND,
-        //     kinds => kinds,
-        // }
     }
 }
 
@@ -88,11 +86,12 @@ impl<const C: u64, const RK: u32, S, T> CodecSeed<C, RK, S, T> {
 /// Doing this allows us to focus selection implementations on what to do when
 /// visiting a particular representation.
 ///
-impl<'a, 'de, const C: u64, const RK: u32, S, T> DeserializeSeed<'de> for CodecSeed<C, RK, S, T>
+impl<'a, 'de, const C: u64, S, T> DeserializeSeed<'de> for CodecSeed<C, S, T>
 where
     Self: Visitor<'de> + IpldVisitorExt<'de>,
     // Ctx: Context,
     // T: Select<Ctx>,
+    S: SeedType,
     T: Representation,
 {
     type Value = <Self as Visitor<'de>>::Value;
@@ -156,7 +155,18 @@ where
     }
 }
 
-impl<'a, const C: u64, const RK: u32, Ctx, T> CodecSeed<C, RK, SelectorSeed<'a, Ctx, T>, T> {
+#[doc(hidden)]
+pub trait SeedType {
+    const CAN_SELECT: bool;
+}
+impl<T> SeedType for PhantomData<T> {
+    const CAN_SELECT: bool = false;
+}
+impl<'a, Ctx, T> SeedType for SelectorSeed<'a, Ctx, T> {
+    const CAN_SELECT: bool = true;
+}
+
+impl<'a, const C: u64, Ctx, T> CodecSeed<C, SelectorSeed<'a, Ctx, T>, T> {
     // ///
     // #[inline]
     // pub(crate) fn from_parts(
@@ -204,7 +214,7 @@ impl<'a, const C: u64, const RK: u32, Ctx, T> CodecSeed<C, RK, SelectorSeed<'a, 
 //     }
 // }
 //
-// impl<'a, const C: u64, Ctx, T> CodecSeed<C, false, SelectorSeed<'a, Ctx, T>> {
+// impl<'a, const C: u64, Ctx, T> CodecSeed<C, SelectorSeed<'a, Ctx, T>> {
 //     fn from(inner: SelectorSeed<'a, Ctx, T>) -> Self {
 //         Self(inner)
 //     }
@@ -237,10 +247,10 @@ impl<'a, const C: u64, const RK: u32, Ctx, T> CodecSeed<C, RK, SelectorSeed<'a, 
 //     }
 // }
 
-///
-#[doc(hidden)]
-pub type CodedSelectorSeed<'a, const C: u64, const RK: u32, Ctx, T> =
-    CodecSeed<C, RK, SelectorSeed<'a, Ctx, T>, T>;
+// ///
+// #[doc(hidden)]
+// pub type CodedSelectorSeed<'a, const C: u64, Ctx, T> =
+//     CodecSeed<C, SelectorSeed<'a, Ctx, T>, T>;
 
 // /// Replacement trait for [`serde::de::DeserializeSeed`], that allows us to
 // /// switch deserialization behaviour based on the current block's [`Codec`].
@@ -337,13 +347,6 @@ where
     //         (Callback::SelectNode { .. }, _) => SelectionMode::SelectNode(None),
     //         (Callback::SelectDag { .. } | Callback::MatchDag { .. }, _) => SelectionMode::SelectDag,
     //         // Self::Patch { .. } => SelectionMode::Patch,
-    //     }
-    // }
-
-    // pub fn empty() -> EmptySeed<T> {
-    //     static DEFAULT_SELECTOR: Selector = Selector::DEFAULT;
-    //     SelectorSeed {
-    //         selector: DEFAULT_SELECTOR,
     //     }
     // }
 
@@ -612,7 +615,7 @@ macro_rules! impl_selector_seed_serde {
                 const _RK: u32 = <$ty as Representation>::REPR_KIND.bits();
                 impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
                     Visitor<'de> for
-                    CodecSeed<_C, _RK,
+                    CodecSeed<_C,
                         SelectorSeed<'_a, Ctx, $ty $(<$($ty_generics),+>)?>,
                         $ty $(<$($ty_generics),+>)?
                     >
@@ -659,7 +662,7 @@ macro_rules! impl_selector_seed_serde {
                 const _RK: u32 = Kind::$rk.bits();
                 impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
                     Visitor<'de> for
-                    CodecSeed<_C, _RK, SelectorSeed<'_a, Ctx, $ty>, $ty>
+                    CodecSeed<_C, SelectorSeed<'_a, Ctx, $ty>, $ty>
                 where
                     // T: Representation<REPR_KIND=type_kinds::List>
                     // T: Select<Ctx, { _RK }>,
@@ -691,7 +694,7 @@ macro_rules! impl_selector_seed_serde {
                 const _RK: u32 = <$ty as Representation>::REPR_KIND.bits();
                 impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
                     IpldVisitorExt<'de> for
-                    CodecSeed<_C, _RK,
+                    CodecSeed<_C,
                         SelectorSeed<'_a, Ctx, $ty $(<$($ty_generics),+>)?>,
                         $ty $(<$($ty_generics),+>)?
                     >

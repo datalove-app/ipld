@@ -495,6 +495,41 @@ mod selection {
     //     }
     // }
 
+    // schema! {
+    //     #[ipld_attr(internal)]
+    //     type List = Null
+    // }
+
+    // schema! {
+    //     #[ipld_attr(internal)]
+    //     type Map = Null
+    // }
+
+    // schema! {
+    //     #[ipld_attr(internal)]
+    //     pub type SelectedNode2 union {
+    //         | Null "null"
+    //         | Bool "bool"
+    //         | Int8 "int8"
+    //         | Int16 "int16"
+    //         | Int32 "int32"
+    //         | Int64 "int64"
+    //         | Int128 "int"
+    //         | Uint8 "uint8"
+    //         | Uint16 "uint16"
+    //         | Uint32 "uint32"
+    //         | Uint64 "uint64"
+    //         | Uint128 "uint128"
+    //         | Float32 "float32"
+    //         | Float64 "float64"
+    //         | String "string"
+    //         | Bytes "bytes"
+    //         | List "list"
+    //         | Map "map"
+    //         | Link "link"
+    //     } representation keyed
+    // }
+
     ///
     #[derive(Clone, Debug, From, Deserialize, Serialize)]
     // #[from(forward)]
@@ -576,6 +611,7 @@ mod selection {
         Map,
 
         ///
+        #[serde(skip)] // TODO
         #[serde(rename = "link")]
         Link(Cid),
     }
@@ -625,14 +661,14 @@ mod selection {
     }
 
     // TODO: Vec<u8>?
-    impl<T: Representation> From<List<T>> for SelectedNode {
-        fn from(_: List<T>) -> Self {
+    impl<T: Representation> From<crate::dev::List<T>> for SelectedNode {
+        fn from(_: crate::dev::List<T>) -> Self {
             Self::List
         }
     }
 
-    impl<K: Representation, V: Representation> From<Map<K, V>> for SelectedNode {
-        fn from(_: Map<K, V>) -> Self {
+    impl<K: Representation, V: Representation> From<crate::dev::Map<K, V>> for SelectedNode {
+        fn from(_: crate::dev::Map<K, V>) -> Self {
             Self::Map
         }
     }

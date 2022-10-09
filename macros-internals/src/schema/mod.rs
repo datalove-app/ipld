@@ -193,14 +193,15 @@ pub mod kind {
             + BitAnd<Recursive>
             + BitAnd<Any>
             + BitAnd<Schema>
-            + BitAnd<TypedNum>,
+            + BitAnd<TypedInt>
+            + BitAnd<TypedFloat>,
     {
         const KIND: SchemaKind;
-        const IS_SCALAR: bool = SchemaKind::Scalar.contains(Self::KIND);
-        const IS_RECURSIVE: bool = SchemaKind::Recursive.contains(Self::KIND);
+        // const IS_SCALAR: bool = SchemaKind::Scalar.contains(Self::KIND);
+        // const IS_RECURSIVE: bool = SchemaKind::Recursive.contains(Self::KIND);
         const IS_DATA_MODEL: bool = SchemaKind::Any.contains(Self::KIND);
-        const IS_SCHEMA: bool = SchemaKind::Schema.contains(Self::KIND) || Self::IS_TYPED_NUM;
-        const IS_TYPED_NUM: bool = SchemaKind::TypedNum.contains(Self::KIND) && !Self::IS_VARIOUS;
+        // const IS_SCHEMA: bool = SchemaKind::Schema.contains(Self::KIND) || Self::IS_TYPED_NUM;
+        // const IS_TYPED_NUM: bool = SchemaKind::TypedNum.contains(Self::KIND) && !Self::IS_VARIOUS;
         const IS_VARIOUS: bool = !is_unary::<Self>();
     }
 
@@ -215,7 +216,8 @@ pub mod kind {
             + BitAnd<Recursive>
             + BitAnd<Any>
             + BitAnd<Schema>
-            + BitAnd<TypedNum>,
+            + BitAnd<TypedInt>
+            + BitAnd<TypedFloat>,
         // And<Self, All>: IsEqual<All>,
     {
         const KIND: SchemaKind = SchemaKind::from_bits_truncate(T::U32);
@@ -246,6 +248,7 @@ pub mod kind {
                 pub struct SchemaKind: u32 {
                     $(const $name = $b;)*
 
+                    /// Marker flag for scalar data model kinds.
                     const Scalar = Self::Null.bits
                         | Self::Bool.bits
                         | Self::Int.bits
@@ -253,15 +256,23 @@ pub mod kind {
                         | Self::String.bits
                         | Self::Bytes.bits
                         | Self::Link.bits;
+
+                        /// Marker flag for scalar data model kinds.
                     const Recursive = Self::List.bits | Self::Map.bits;
+
+                    /// Marker flag for any and all valid data model kinds.
                     const Any = Self::Scalar.bits | Self::Recursive.bits;
+
+                    /// Marker flag for any data model or schema kind.
                     const Schema = Self::Any.bits
                         | Self::Struct.bits
                         | Self::Enum.bits
                         | Self::Union.bits
                         | Self::Copy.bits
                         | Self::Advanced.bits;
-                    const TypedNum = Self::Int8.bits
+
+                    /// Marker flag for lib-specific schema types for integers.
+                    const TypedInt = Self::Int8.bits
                         | Self::Int16.bits
                         | Self::Int32.bits
                         | Self::Int64.bits
@@ -270,12 +281,15 @@ pub mod kind {
                         | Self::Uint16.bits
                         | Self::Uint32.bits
                         | Self::Uint64.bits
-                        | Self::Uint128.bits
-                        | Self::Float32.bits
-                        | Self::Float64.bits;
+                        | Self::Uint128.bits;
+
+                    /// Marker flag for lib-specific schema types for
+                    /// floating-point numbers.
+                    const TypedFloat = Self::Float32.bits | Self::Float64.bits;
                 }
             }
 
+            /// [`typenum`] types representing known [`SchemaKind`]s.
             pub mod type_kinds {
                 $(pub type $name = tyuint!($b);)*
 
@@ -283,10 +297,11 @@ pub mod kind {
                 pub type Recursive = op!(List | Map);
                 pub type Any = op!(Scalar | Recursive);
                 pub type Schema = op!(Any | Struct | Enum | Union | Copy | Advanced);
-                pub type TypedNum = op!(Int8 | Int16 | Int32 | Int64 | Int128 | Uint8 | Uint16 | Uint32 | Uint64 | Uint128 | Float32 | Float64);
+                pub type TypedInt = op!(Int8 | Int16 | Int32 | Int64 | Int128 | Uint8 | Uint16 | Uint32 | Uint64 | Uint128);
+                pub type TypedFloat = op!(Float32 | Float64);
 
                 #[doc(hidden)]
-                pub type All = op!(Any | Schema | TypedNum);
+                pub type All = op!(Any | Schema | TypedInt | TypedFloat);
             }
 
         };
@@ -297,34 +312,34 @@ pub mod kind {
     }
 
     def_kind! {
-        Null = 0b0000_0000_0000_0001;
-        Bool = 0b0000_0000_0000_0010;
-        Int = 0b0000_0000_0000_0100;
-        Float = 0b0000_0000_0000_1000;
-        String = 0b0000_0000_0001_0000;
-        Bytes = 0b0000_0000_0010_0000;
-        List = 0b0000_0000_0100_0000;
-        Map = 0b0000_0000_1000_0000;
-        Link = 0b0000_0001_0000_0000;
+        Null =      0b0001;
+        Bool =      0b0010;
+        Int =       0b0100;
+        Float =     0b1000;
+        String =    0b0001_0000;
+        Bytes =     0b0010_0000;
+        List =      0b0100_0000;
+        Map =       0b1000_0000;
+        Link =      0b0001_0000_0000;
         //
-        Struct = 0b0000_0010_0000_0000;
-        Enum = 0b0000_0100_0000_0000;
-        Union = 0b0000_1000_0000_0000;
-        Copy = 0b0001_0000_0000_0000;
-        Advanced = 0b0010_0000_0000_0000;
+        Struct =    0b0010_0000_0000;
+        Enum =      0b0100_0000_0000;
+        Union =     0b1000_0000_0000;
+        Copy =      0b0001_0000_0000_0000;
+        Advanced =  0b0010_0000_0000_0000;
         //
-        Int8 = 0b0100_0000_0000_0000;
-        Int16 = 0b1000_0000_0000_0000;
-        Int32 = 0b0000_0001_0000_0000_0000_0000;
-        Int64 = 0b0000_0010_0000_0000_0000_0000;
-        Int128 = 0b0000_0100_0000_0000_0000_0000;
-        Uint8 = 0b0000_1000_0000_0000_0000_0000;
-        Uint16 = 0b0001_0000_0000_0000_0000_0000;
-        Uint32 = 0b0010_0000_0000_0000_0000_0000;
-        Uint64 = 0b0100_0000_0000_0000_0000_0000;
-        Uint128 = 0b1000_0000_0000_0000_0000_0000;
-        Float32 = 0b0000_0001_0000_0000_0000_0000_0000_0000;
-        Float64 = 0b0000_0010_0000_0000_0000_0000_0000_0000;
+        Int8 =      0b0100_0000_0000_0000;
+        Int16 =     0b1000_0000_0000_0000;
+        Int32 =     0b0001_0000_0000_0000_0000;
+        Int64 =     0b0010_0000_0000_0000_0000;
+        Int128 =    0b0100_0000_0000_0000_0000;
+        Uint8 =     0b1000_0000_0000_0000_0000;
+        Uint16 =    0b0001_0000_0000_0000_0000_0000;
+        Uint32 =    0b0010_0000_0000_0000_0000_0000;
+        Uint64 =    0b0100_0000_0000_0000_0000_0000;
+        Uint128 =   0b1000_0000_0000_0000_0000_0000;
+        Float32 =   0b0001_0000_0000_0000_0000_0000_0000;
+        Float64 =   0b0010_0000_0000_0000_0000_0000_0000;
     }
 
     impl SchemaKind {

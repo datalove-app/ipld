@@ -19,7 +19,14 @@ pub enum Link<T: Representation = Any> {
 
     ///
     #[from(ignore)]
-    Inner { cid: Cid, t: T, dirty: bool },
+    Inner {
+        ///
+        cid: Cid,
+        ///
+        t: T,
+        ///
+        dirty: bool,
+    },
 }
 
 impl<T: Representation> Link<T> {
@@ -106,9 +113,7 @@ impl<T: Representation> Representation for Link<T> {
     where
         D: Deserializer<'de>,
     {
-        Ok(Self::Cid(Representation::deserialize::<C, _>(
-            deserializer,
-        )?))
+        Ok(Self::Cid(Cid::deserialize::<C, _>(deserializer)?))
     }
 }
 
@@ -132,33 +137,6 @@ impl_selector_seed_serde! { @codec_seed_visitor_ext
         self.0.select_link::<_C>(cid).map_err(E::custom)
     }
 }}
-
-// impl_selector_seed_serde! { @selector_seed_codec_deseed
-//     { T: Select<Ctx> + 'static } { } Link<T>
-// {
-//     #[inline]
-//     fn deserialize<D>(self, deserializer: D) -> Result<(), D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         cfg_if::cfg_if! {
-//             if #[cfg(feature = "dag-json")] {
-//                 if _C == DagJson::CODE {
-//                     return DagJson::deserialize_cid(deserializer, self);
-//                 }
-//             }
-//         }
-//         cfg_if::cfg_if!{
-//             if #[cfg(feature = "dag-cbor")] {
-//                 if _C == DagCbor::CODE {
-//                     return DagCbor::deserialize_cid(deserializer, self);
-//                 }
-//             }
-//         }
-//
-//         Deserialize::deserialize(deserializer)
-//     }
-// }}
 
 impl_selector_seed_serde! { @selector_seed_select
     { T: Select<Ctx> + 'static } { } Link<T>
@@ -185,57 +163,6 @@ where
     }
 }
 
-// impl<'a, 'de, C, T> Visitor<'de> for ContextSeed<'a, C, Link<T>>
-// where
-//     C: Context,
-//     T: Representation + 'static,
-//     for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
-// {
-//     type Value = ();
-//
-//     #[inline]
-//     fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         write!(formatter, "{}", Link::<T>::NAME)
-//     }
-// }
-
-// impl<'a, 'de, C, T> IpldVisitorExt<'de> for ContextSeed<'a, C, Link<T>>
-// where
-//     C: Context,
-//     T: Representation + 'static,
-//     for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
-// {
-//     // TODO:
-// }
-
-// impl<'a, 'de, C, T> DeserializeSeed<'de> for ContextSeed<'a, C, Link<T>>
-// where
-//     C: Context,
-//     T: Representation + 'static,
-//     for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
-// {
-//     type Value = ();
-//
-//     #[inline]
-//     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         deserializer.deserialize_link(self)
-//     }
-// }
-
-// impl<'a, 'de, C, T> Select<C> for Link<T>
-// where
-//     C: Context,
-//     T: Representation + Send + Sync + 'static,
-//     // ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
-// {
-//     fn select(params: SelectionParams<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
-//         unimplemented!()
-//     }
-// }
-
 impl<T: Representation> Into<Cid> for Link<T> {
     fn into(self) -> Cid {
         match self {
@@ -245,34 +172,34 @@ impl<T: Representation> Into<Cid> for Link<T> {
     }
 }
 
-// TODO: dirty links?
-impl<T> Serialize for Link<T>
-where
-    T: Representation,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // <S as Encoder>::serialize_link(serializer, self.cid())
-        // (&mut &mut &mut Encoder(serializer)).serialize_link(self.cid())
-        // self.cid().serialize(serializer)
-        Serialize::serialize(self.cid(), serializer)
-    }
-}
+// // TODO: dirty links?
+// impl<T> Serialize for Link<T>
+// where
+//     T: Representation,
+// {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         // <S as Encoder>::serialize_link(serializer, self.cid())
+//         // (&mut &mut &mut Encoder(serializer)).serialize_link(self.cid())
+//         // self.cid().serialize(serializer)
+//         Serialize::serialize(self.cid(), serializer)
+//     }
+// }
 
-impl<'de, T> Deserialize<'de> for Link<T>
-where
-    T: Representation,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        // Ok(Self::Cid(Cid::deserialize(deserializer)?))
-        Ok(Self::Cid(Deserialize::deserialize(deserializer)?))
-    }
-}
+// impl<'de, T> Deserialize<'de> for Link<T>
+// where
+//     T: Representation,
+// {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         // Ok(Self::Cid(Cid::deserialize(deserializer)?))
+//         Ok(Self::Cid(Deserialize::deserialize(deserializer)?))
+//     }
+// }
 
 ////////////////////////////////////////////////////////////////////////////////
 // additional implementations

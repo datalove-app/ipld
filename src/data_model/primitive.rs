@@ -155,7 +155,7 @@ mod bool {
     //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     //         write!(f, "{}, a boolean type", Bool::NAME)
     //     }
-
+    //
     //     #[inline]
     //     fn visit_bool<E>(self, v : bool) -> Result<Self::Value, E>
     //     where
@@ -166,16 +166,6 @@ mod bool {
     //         } else  {
     //             self.0.match_primitive::<_C>(T::from(v)).map_err(E::custom)
     //         }
-    //     }
-    // }}
-
-    // impl_selector_seed_serde! { @selector_seed_codec_deseed {} {} Bool {
-    //     #[inline]
-    //     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    //     where
-    //         D: Deserializer<'de>,
-    //     {
-    //         deserializer.deserialize_bool(self)
     //     }
     // }}
 

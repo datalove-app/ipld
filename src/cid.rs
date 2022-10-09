@@ -154,22 +154,16 @@ impl Representation for Cid {
     where
         S: Serializer,
     {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "dag-json")] {
-                if C == DagJson::CODE {
-                    return DagJson::serialize_cid(self, serializer);
-                }
-            }
+        #[cfg(feature = "dag-json")]
+        if C == DagJson::CODE {
+            return DagJson::serialize_cid(self, serializer);
         }
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "dag-cbor")] {
-                if C == DagCbor::CODE {
-                    return DagCbor::serialize_cid(self, serializer);
-                }
-            }
+        #[cfg(feature = "dag-cbor")]
+        if C == DagCbor::CODE {
+            return DagCbor::serialize_cid(self, serializer);
         }
 
-        Serialize::serialize(self, serializer)
+        Serialize::serialize(&self.inner, serializer)
     }
 
     ///
@@ -183,11 +177,7 @@ impl Representation for Cid {
             type Value = Cid;
             #[inline]
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(
-                    f,
-                    "a Cid containing a multihash no longer than {} bytes",
-                    Cid::SIZE
-                )
+                write!(f, "a Cid containing a Multihash of max {} bytes", Cid::SIZE)
             }
         }
         impl<'de> IpldVisitorExt<'de> for CidVisitor {
@@ -349,24 +339,24 @@ impl fmt::Display for Cid {
     }
 }
 
-/// Defaults to the `Serialize` impl of `CidGeneric<S>`.
-impl Serialize for Cid {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.inner.serialize(serializer)
-    }
-}
+// /// Defaults to the `Serialize` impl of `CidGeneric<S>`.
+// impl Serialize for Cid {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         self.inner.serialize(serializer)
+//     }
+// }
 
-impl<'de> Deserialize<'de> for Cid {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Ok(Self::from(DefaultCid::deserialize(deserializer)?))
-    }
-}
+// impl<'de> Deserialize<'de> for Cid {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         Ok(Self::from(DefaultCid::deserialize(deserializer)?))
+//     }
+// }
 
 /// A generator of [`Cid`]s.
 #[derive(Debug)]

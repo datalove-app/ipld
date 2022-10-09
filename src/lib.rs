@@ -58,7 +58,7 @@ mod specs {
 
     // selectors
     pub use crate::selectors::{Context, Params, Select, Selector};
-    pub use ipld_macros::selector;
+    // pub use ipld_macros::selector;
 }
 
 /// All the exports and re-exports necessary for using `ipld`.
@@ -88,7 +88,6 @@ pub mod dev {
     pub mod macros {
         pub use crate::impl_selector_seed_serde;
         // pub use const_format::*;
-        pub use cfg_if::cfg_if;
         pub use ipld_macros_internals::*;
     }
 

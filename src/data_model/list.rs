@@ -131,12 +131,55 @@ impl<T: Representation> Representation for List<T> {
 //     { T: Select<Ctx> + 'static } {} List<T> {}
 // }
 
-impl_selector_seed_serde! { @codec_seed_visitor_rk List
-    {} { T: 'static }
+// TODO: this should only apply to List datamodels with a List repr
+// restrict this impl to T: Representation<DataModelKind = type_kinds::List>
+impl_selector_seed_serde! { @codec_seed_visitor_rk List T U
+    { T: Default + Extend<U> +  'static,
+      U: Select<Ctx> + 'static }
+    { }
 {
     #[inline]
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}, a boolean type", Bool::NAME)
+        write!(f, "A list of type {} of {}", T::NAME, U::NAME)
+    }
+
+    #[inline]
+    fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        if let Some(s) = self.0.selector.as_explore_union() {
+            if s.matches_first() {
+                let list = T::deserialize::<_C, _>(SeqAccessDeserializer::new(seq))?;
+                return list.__select_in(self.0).map_err(A::Error::custom);
+            } else {
+                // todo: support multiple non-overlapping ranges
+            }
+        }
+
+        let iter = SerdeListIterator::<'de, _>::from(seq);
+        match self.0.selector {
+            Selector::Matcher(_) => {
+                self.0.match_list::<_C, U, _, _, _, _, _>(
+                    iter,
+                    |_| RefCell::default(),
+                    |dag| Box::new(|child, _| Ok(dag.borrow_mut().extend(iter::once(child)))),
+                    RefCell::into_inner,
+                ).map_err(A::Error::custom)
+            },
+            Selector::ExploreIndex(s) => self.0
+                .explore_list_range::<_C, U, _, _>(iter, s.to_range())
+                .map_err(A::Error::custom),
+            Selector::ExploreRange(s) => self.0
+                .explore_list_range::<_C, U, _, _>(iter, s.to_range())
+                .map_err(A::Error::custom),
+            Selector::ExploreAll(s) => self.0
+                .explore_list_range::<_C, U, _, _>(iter, s.to_range())
+                .map_err(A::Error::custom),
+            _ => Err(A::Error::custom(Error::unsupported_selector::<T>(
+                self.0.selector,
+            ))),
+        }
     }
 }}
 
@@ -152,16 +195,16 @@ impl_selector_seed_serde! { @codec_seed_visitor_rk List
 //     }
 // }}
 
-impl_selector_seed_serde! { @selector_seed_select
-    { T: Select<Ctx> + 'static } {} List<T>
-}
+// impl_selector_seed_serde! { @selector_seed_select
+//     { T: Select<Ctx> + 'static } {} List<T>
+// }
 
 impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
 where
     Ctx: Context,
     T: Select<Ctx> + 'static,
 {
-    /// match
+    /// Executes a [`Matcher`] selector against a list (data model) type.
     /// todo could probably use a collection trait instead of multiple Fns
     pub fn match_list<const C: u64, U, I, T2, F1, F2, F3>(
         mut self,

@@ -8,6 +8,7 @@
 //! TODO:
 //!     - utf-8 string handling/normalization
 //!     - replace boxed callbacks with a ref
+//!     - ?? refactor Matcher* logic to only select nodes
 
 #![warn(rust_2018_idioms, missing_debug_implementations, missing_docs)]
 #[cfg_attr(not(feature = "std"), no_std)]

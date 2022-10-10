@@ -244,6 +244,11 @@ pub mod kind {
                     /// Marker flag for lib-specific schema types for
                     /// floating-point numbers.
                     const TypedFloat = Self::Float32.bits | Self::Float64.bits;
+
+                    ///
+                    const TypedScalar = Self::Scalar.bits
+                        | Self::TypedInt.bits
+                        | Self::TypedFloat.bits;
                 }
             }
 
@@ -261,12 +266,15 @@ pub mod kind {
                 pub type Scalar = op!(Null | Bool | Int | Float | String | Bytes | Link);
                 pub type Recursive = op!(List | Map);
                 pub type Any = op!(Scalar | Recursive);
-                pub type Schema = op!(Any | Struct | Enum | Union | Copy | Advanced);
-                // pub type TypedInt = op!(Int8 | Int16 | Int32 | Int64 | Int128 | Uint8 | Uint16 | Uint32 | Uint64 | Uint128);
-                // pub type TypedFloat = op!(Float32 | Float64);
 
-                // #[doc(hidden)]
-                // pub type All = op!(Any | Schema | TypedInt | TypedFloat);
+                pub type Schema = op!(Any | Struct | Enum | Union | Copy | Advanced);
+                pub type TypedInt = op!(Int8 | Int16 | Int32 | Int64 | Int128 | Uint8 | Uint16 | Uint32 | Uint64 | Uint128);
+                pub type TypedFloat = op!(Float32 | Float64);
+
+                pub type TypedScalar = op!(Scalar | TypedInt | TypedFloat);
+
+                #[doc(hidden)]
+                pub type All = op!(Any | Schema | TypedInt | TypedFloat);
                 #[doc(hidden)]
                 pub type Empty = U0;
             }

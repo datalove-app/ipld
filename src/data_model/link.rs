@@ -140,18 +140,18 @@ impl<T: Representation> Representation for Link<T> {
 //     }
 // }}
 
-impl_selector_seed_serde! { @codec_seed_visitor_rk Link
-    {} { T: 'static }
+impl_selector_seed_serde! { @codec_seed_visitor_rk Link T U
+    { T: 'static, U: Select<Ctx> + 'static } { }
 {
     #[inline]
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}, a boolean type", Bool::NAME)
+        write!(f, "A link of type {} to a {}", T::NAME, U::NAME)
     }
 }}
 
-impl_selector_seed_serde! { @selector_seed_select
-    { T: Select<Ctx> + 'static } { } Link<T>
-}
+// impl_selector_seed_serde! { @selector_seed_select
+//     { T: Select<Ctx> + 'static } { } Link<T>
+// }
 
 impl<'a, Ctx, T> SelectorSeed<'a, Ctx, Link<T>>
 where

@@ -341,8 +341,12 @@ macro_rules! derive_newtype {
         quote::quote! {
             // #lib::dev::macros::impl_selector_seed_serde! { @selector_seed_codec_deseed_newtype {} {} #name as #$inner_ty
             // }
+            // #lib::dev::macros::impl_selector_seed_serde! {
+            //     @selector_seed_select {} {} #name
+            // }
+
             #lib::dev::macros::impl_selector_seed_serde! {
-                @selector_seed_select {} {} #name
+                @select_newtype {} {} #name { #name => #$inner_ty }
             }
         }
     }};

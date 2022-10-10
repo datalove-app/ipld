@@ -142,9 +142,9 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
             // #lib::dev::macros::impl_selector_seed_serde! {
             //     @selector_seed_codec_deseed @any {} {} #name
             // }
-            #lib::dev::macros::impl_selector_seed_serde! {
-                @selector_seed_select {} {} #name
-            }
+            // #lib::dev::macros::impl_selector_seed_serde! {
+            //     @selector_seed_select {} {} #name
+            // }
         }
     }
 
@@ -161,13 +161,10 @@ impl KindedUnionReprDefinition {
     }
 
     fn repr_kind(&self) -> TokenStream {
-        self
-            .iter()
-            .map(|f| f.repr_kind())
-            .fold(
-                quote!(type_kinds::Empty),
-                |ts, kind| quote!(typenum::Or<#ts, #kind>),
-            )
+        self.iter().map(|f| f.repr_kind()).fold(
+            quote!(type_kinds::Empty),
+            |ts, kind| quote!(typenum::Or<#ts, #kind>),
+        )
     }
 }
 

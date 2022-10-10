@@ -63,6 +63,13 @@ pub trait Select<Ctx: Context>: Representation {
             ctx,
         );
 
+        Self::__select(seed)
+    }
+
+    #[doc(hidden)]
+    fn __select<'a>(
+        seed: SelectorSeed<'a, Ctx, Self>,
+    ) -> Result<(), Error> {
         let cid = &seed.state.current_block;
         let block = seed.ctx.block_reader(cid)?;
         cid.multicodec()?.read_with_seed(seed, block)
@@ -76,7 +83,7 @@ pub trait Select<Ctx: Context>: Representation {
     where
         D: Deserializer<'de>,
     {
-        Err(D::Error::custom("unimplemented"))
+        Err(D::Error::custom("__select_de not yet implemented"))
         // TODO: default impl should use GAT for CodedSeed
         // Self::Seed::<'a, 'de, C>::from(seed).deserialize(deserializer)
     }
@@ -90,7 +97,7 @@ pub trait Select<Ctx: Context>: Representation {
         A: SeqAccess<'de>,
     {
         // seq.next_element_seed(CodecSeed::from(seed))
-        Err(A::Error::custom("unimplemented"))
+        Err(A::Error::custom("__select_seq not yet implemented"))
         // TODO: default impl should use GAT for CodedSeed
         // seq.next_element_seed(Self::Seed::<'a, 'de, C>::from(seed))
     }
@@ -104,7 +111,7 @@ pub trait Select<Ctx: Context>: Representation {
     where
         A: MapAccess<'de>,
     {
-        Err(A::Error::custom("unimplemented"))
+        Err(A::Error::custom("__select_map not yet implemented"))
         // TODO: default impl should use GAT for CodedSeed
         // let seed = Self::Seed::<'a, 'de, C>::from(seed);
         // if is_key {
@@ -189,7 +196,7 @@ pub trait Select<Ctx: Context>: Representation {
     ///
     /// TODO
     #[doc(hidden)]
-    fn patch_in<T>(&mut self, params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<bool, Error> {
+    fn patch_in(&mut self, params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<bool, Error> {
         unimplemented!()
     }
 

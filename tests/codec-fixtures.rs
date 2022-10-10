@@ -298,7 +298,6 @@ impl Fixture {
             }
         }
 
-        /*
         {
             // next, decode the concrete type using the Matcher selector
             let mut ctx = self.setup_ctx();
@@ -317,7 +316,7 @@ impl Fixture {
                 .expect(&self.format_err::<T>("should not fail to encode dag"));
             let new_cid = self
                 .cid
-                .derive_new(block.as_ref())
+                .derive_new(block.as_slice())
                 .expect(&"should not fail to generate a Cid for a block of bytes");
 
             if self.codec.name() == "dag-json" {
@@ -344,7 +343,7 @@ impl Fixture {
                 );
             }
         }
-         */
+
         true
     }
 

@@ -120,27 +120,6 @@ pub use strategies::*;
 ///         - TODO: ? Representation::visitor(selector: &Selector)
 // pub trait Representation<ReprKind: TypedKind = type_kinds::Any>: Sized {
 pub trait Representation: Sized {
-    // /// Marker type for exact `u32` value of the type's
-    // /// [`Representation::DATA_MODEL_KIND`], needed for internal blanket
-    // /// implementations of various traits.
-    // #[doc(hidden)]
-    // type DATA_MODEL_KIND: TypedKind;
-
-    // /// Marker type for exact `u32` value of the type's
-    // /// [`Representation::SCHEMA_KIND`], needed for internal blanket
-    // /// implementations of various traits.
-    // #[doc(hidden)]
-    // type SCHEMA_KIND: TypedKind;
-
-    /// Marker type for exact `u32` value of the type's
-    /// [`Representation::REPR_KIND`], needed for internal blanket
-    /// implementations of various traits.
-    #[doc(hidden)]
-    type ReprKind: TypedKind;
-
-    // TODO: use this seed in Representation::deserialize by default
-    // type Seed<'de, const C: u64>: Default + DeserializeSeed<'de, Value = Self>;
-
     /// The stringified name of the IPLD type.
     const NAME: &'static str;
 
@@ -167,6 +146,24 @@ pub trait Representation: Sized {
     /// ignored entirely during selection/deserialization.
     #[doc(hidden)]
     const __IGNORED: bool = false;
+
+    // /// Marker type for exact `u32` value of the type's
+    // /// [`Representation::DATA_MODEL_KIND`], needed for internal blanket
+    // /// implementations of various traits.
+    // #[doc(hidden)]
+    // type DATA_MODEL_KIND: TypedKind;
+
+    // /// Marker type for exact `u32` value of the type's
+    // /// [`Representation::SCHEMA_KIND`], needed for internal blanket
+    // /// implementations of various traits.
+    // #[doc(hidden)]
+    // type SCHEMA_KIND: TypedKind;
+
+    /// Marker type for exact `u32` value of the type's
+    /// [`Representation::REPR_KIND`], needed for internal blanket
+    /// implementations of various traits.
+    #[doc(hidden)]
+    type ReprKind: TypedKind;
 
     ///
     /// todo deprecate

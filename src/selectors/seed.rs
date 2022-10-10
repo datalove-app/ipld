@@ -49,15 +49,16 @@ pub type EmptySeed<T> = SelectorSeed<'static, (), T>;
 /// currenly selecting against.
 #[doc(hidden)]
 #[derive(Debug)]
-pub struct CodecSeed<const C: u64, S, T = Any, RK = <T as Representation>::ReprKind>(
+pub struct CodecSeed<const C: u64, S, T = Any, U = T, RK = <T as Representation>::ReprKind>(
     pub(crate) S,
-    PhantomData<(T, RK)>,
+    PhantomData<(T, U, RK)>,
 )
 where
     T: Representation<ReprKind = RK>,
+    U: Representation,
     RK: TypedKind;
 
-impl<const C: u64, S, T: Representation> CodecSeed<C, S, T> {
+impl<const C: u64, S, T: Representation, U: Representation> CodecSeed<C, S, T, U> {
     // pub const RK: u32 = RK;
     // pub const fn is_select() -> bool {
     //     (!RK)
@@ -69,16 +70,20 @@ impl<const C: u64, S, T: Representation> CodecSeed<C, S, T> {
     //     T::SCHEMA_KIND
     // }
 
-    const fn schema_kind() -> Kind
+    pub fn from(seed: S) -> Self {
+        Self(seed, PhantomData)
+    }
+
+    const fn repr_kind() -> Kind
     where
         T: Representation,
     {
-        if Kind::TypedInt.contains(T::SCHEMA_KIND) {
-            Int::SCHEMA_KIND
-        } else if Kind::TypedFloat.contains(T::SCHEMA_KIND) {
-            Float::SCHEMA_KIND
+        if Kind::TypedInt.contains(T::REPR_KIND) {
+            Int::REPR_KIND
+        } else if Kind::TypedFloat.contains(T::REPR_KIND) {
+            Float::REPR_KIND
         } else {
-            T::SCHEMA_KIND
+            T::REPR_KIND
         }
     }
 }
@@ -87,13 +92,13 @@ impl<const C: u64, S, T: Representation> CodecSeed<C, S, T> {
 /// Doing this allows us to focus selection implementations on what to do when
 /// visiting a particular representation.
 ///
-impl<'a, 'de, const C: u64, S, T> DeserializeSeed<'de> for CodecSeed<C, S, T>
+impl<'a, 'de, const C: u64, S, T, U, RK> DeserializeSeed<'de> for CodecSeed<C, S, T, U, RK>
 where
     Self: Visitor<'de> + IpldVisitorExt<'de>,
-    // Ctx: Context,
-    // T: Select<Ctx>,
-    S: SeedType,
-    T: Representation,
+    S: SeedType<T>,
+    T: Representation<ReprKind = RK>,
+    U: Representation,
+    RK: TypedKind,
 {
     type Value = <Self as Visitor<'de>>::Value;
 
@@ -104,33 +109,36 @@ where
     {
         use Kind as K;
 
-        match (Self::schema_kind(), T::REPR_KIND) {
-            _ if T::__IGNORED => deserializer.deserialize_ignored_any(self),
-            (_, K::Null) => deserializer.deserialize_unit(self),
-            (_, K::Bool) => deserializer.deserialize_bool(self),
-            (K::Int8, K::Int) => deserializer.deserialize_i8(self),
-            (K::Int16, K::Int) => deserializer.deserialize_i16(self),
-            (K::Int32, K::Int) => deserializer.deserialize_i32(self),
-            (K::Int64, K::Int) => deserializer.deserialize_i64(self),
-            (K::Int128, K::Int) => deserializer.deserialize_i128(self),
-            (K::Uint8, K::Int) => deserializer.deserialize_u8(self),
-            (K::Uint16, K::Int) => deserializer.deserialize_u16(self),
-            (K::Uint32, K::Int) => deserializer.deserialize_u32(self),
-            (K::Uint64, K::Int) => deserializer.deserialize_u64(self),
-            (K::Uint128, K::Int) => deserializer.deserialize_u128(self),
-            (K::Float32, K::Float) => deserializer.deserialize_f32(self),
-            (K::Float64, K::Float) => deserializer.deserialize_f64(self),
-            (_, K::String) => deserializer.deserialize_str(self),
-            (_, K::Bytes) => {
+        if T::__IGNORED {
+            return deserializer.deserialize_ignored_any(self);
+        }
+
+        match Self::repr_kind() {
+            K::Null => deserializer.deserialize_unit(self),
+            K::Bool => deserializer.deserialize_bool(self),
+            K::Int8 => deserializer.deserialize_i8(self),
+            K::Int16 => deserializer.deserialize_i16(self),
+            K::Int32 => deserializer.deserialize_i32(self),
+            K::Int64 => deserializer.deserialize_i64(self),
+            K::Int128 => deserializer.deserialize_i128(self),
+            K::Uint8 => deserializer.deserialize_u8(self),
+            K::Uint16 => deserializer.deserialize_u16(self),
+            K::Uint32 => deserializer.deserialize_u32(self),
+            K::Uint64 => deserializer.deserialize_u64(self),
+            K::Uint128 => deserializer.deserialize_u128(self),
+            K::Float32 => deserializer.deserialize_f32(self),
+            K::Float64 => deserializer.deserialize_f64(self),
+            K::String => deserializer.deserialize_str(self),
+            K::Bytes => {
                 #[cfg(feature = "dag-json")]
                 if C == DagJson::CODE {
                     return DagJson::deserialize_bytes(deserializer, self);
                 }
                 deserializer.deserialize_bytes(self)
             }
-            (_, K::List) => deserializer.deserialize_seq(self),
-            (_, K::Map) => deserializer.deserialize_map(self),
-            (_, K::Link) => {
+            K::List => deserializer.deserialize_seq(self),
+            K::Map => deserializer.deserialize_map(self),
+            K::Link => {
                 #[cfg(feature = "dag-json")]
                 if C == DagJson::CODE {
                     return DagJson::deserialize_cid(deserializer, self);
@@ -157,13 +165,16 @@ where
 }
 
 #[doc(hidden)]
-pub trait SeedType {
+pub trait SeedType<T> {
+    type Output;
     const CAN_SELECT: bool;
 }
-impl<T> SeedType for PhantomData<T> {
+impl<T> SeedType<T> for PhantomData<T> {
+    type Output = T;
     const CAN_SELECT: bool = false;
 }
-impl<'a, Ctx, T> SeedType for SelectorSeed<'a, Ctx, T> {
+impl<'a, Ctx, T> SeedType<T> for SelectorSeed<'a, Ctx, T> {
+    type Output = ();
     const CAN_SELECT: bool = true;
 }
 
@@ -603,231 +614,121 @@ where
 macro_rules! impl_selector_seed_serde {
     // visitor for CodedSeed
 
-        // // impl Visitor for CodedSeed
-        // (@codec_seed_visitor
-        //     { $($generics:tt)* } { $($bounds:tt)* }
-        //     $ty:ident $(<
-        //         // match one or more lifetimes separated by a comma
-        //         $( $ty_generics:ident ),+
-        //     >)?
-        //     { $($visit_fns:tt)* }
-        // ) => {
-        //     const _: () = {
-        //         #[allow(unused_imports)]
-        //         use $crate::dev::*;
+    // impl Visitor for CodedSeed
+    (@codec_seed_visitor
+        { $($generics:tt)* } { $($bounds:tt)* }
+        $ty:ident $(<
+            // match one or more lifetimes separated by a comma
+            $( $ty_generics:ident ),+
+        >)?
+        { $($visit_fns:tt)* }
+    ) => {
+        const _: () = {
+            #[allow(unused_imports)]
+            use $crate::dev::*;
 
-        //         const _RK: u32 = <$ty as Representation>::REPR_KIND.bits();
-        //         impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
-        //             Visitor<'de> for
-        //             CodecSeed<_C,
-        //                 SelectorSeed<'_a, Ctx, $ty $(<$($ty_generics),+>)?>,
-        //                 $ty $(<$($ty_generics),+>)?
-        //             >
-        //         where
-        //             Ctx: Context,
-        //             $($bounds)*
-        //         {
-        //             type Value = ();
-        //             $($visit_fns)*
-        //         }
-        //     };
-
-        //     const _: () = {
-        //         #[allow(unused_imports)]
-        //         use $crate::dev::*;
-
-        //         // const _RK: u32 = true;
-        //         // impl<'a, 'de, const _C: u64, $($generics)*>
-        //         //     Visitor<'de> for
-        //         //     CodecSeed<_C, _RK, std::marker::PhantomData<$ty>>
-        //         // where
-        //         //     $($generics)*
-        //         // {
-        //         //     type Value = $ty;
-        //         //     $($visit_fns)*
-        //         // }
-        //     };
-        // };
-        // impl Visitor for CodedSeed by REPR_KIND
-        (@codec_seed_visitor_rk $rk:ident
-            { $($generics:tt)* } { $($bounds:tt)* }
-            // $ty:ident
-            //  $(<
-            //     // match one or more lifetimes separated by a comma
-            //     $( $ty_generics:ident ),+
-            // >)?
-            { $($visit_fns:tt)* }
-        ) => {
-            const _: () = {
-                #[allow(unused_imports)]
-                use $crate::dev::*;
-
-                // const _RK: u32 = <$ty as Representation>::REPR_KIND.bits();
-                // const _RK: u32 = Kind::$rk.bits();
-                impl<'_a, 'de, const _C: u64, T, Ctx, $($generics)*>
-                    Visitor<'de> for
-                    CodecSeed<_C, SelectorSeed<'_a, Ctx, T>, T, type_kinds::$rk>
-                where
-                    T: Representation<ReprKind = type_kinds::$rk> + Select<Ctx>,
-                    Ctx: Context,
-                    $($bounds)*
-                {
-                    type Value = ();
-                    $($visit_fns)*
-                }
-
-                impl<'_a, 'de, const _C: u64, T, Ctx, $($generics)*>
-                    IpldVisitorExt<'de> for
-                    CodecSeed<_C, SelectorSeed<'_a, Ctx, T>, T, type_kinds::$rk>
-                where
-                    T: Representation<ReprKind = type_kinds::$rk> + Select<Ctx>,
-                    Ctx: Context,
-                    $($bounds)*
-                {
-                    // $($visit_fns)*
-                }
-            };
-
-            // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} $ty {} }
-        };
-
-        // impl IpldVisitorExt for CodedSeed
-        (@codec_seed_visitor_ext
-            { $($generics:tt)* } { $($bounds:tt)* }
-            $ty:ident $(<
-                // match one or more lifetimes separated by a comma
-                $( $ty_generics:ident ),+
-            >)?
-            { $($visit_fns:tt)* }
-        ) => {
-            const _: () = {
-                #[allow(unused_imports)]
-                use $crate::dev::*;
-
-                // const _RK: u32 = <$ty as Representation>::REPR_KIND.bits();
-                // impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
-                //     IpldVisitorExt<'de> for
-                //     CodecSeed<_C,
-                //         SelectorSeed<'_a, Ctx, $ty $(<$($ty_generics),+>)?>,
-                //         $ty $(<$($ty_generics),+>)?
-                //     >
-                // where
-                //     Ctx: Context,
-                //     $($bounds)*
-                // {
-                //     $($visit_fns)*
-                // }
-            };
-
-            const _: () = {
-                #[allow(unused_imports)]
-                use $crate::dev::*;
-
-                // const _RK: u32 = true;
-                // impl<'a, 'de, const _C: u64, $($generics)*>
-                //     IpldVisitorExt<'de> for
-                //     CodecSeed<_C, _RK, std::marker::PhantomData<$ty>>
-                // where
-                //     $($generics)*
-                // {
-                //     $($visit_fns)*
-                // }
-            };
-        };
-
-    // CodecDeserializeSeed
-
-        // // impl CodecDeserializeSeed for SelectorSeed
-        // (@selector_seed_codec_deseed
-        //     { $($generics:tt)* } { $($bounds:tt)* }
-        //     $ty:ty
-        //     { $($deseed_fn:tt)* }
-        // ) => {
-        //     const _: () = {
-        //         #[allow(unused_imports)]
-        //         use $crate::dev::*;
-
-        //         // const _RK: u32 = false;
-        //         // impl<'_a, 'de, Ctx, $($generics)*>
-        //         //     CodecDeserializeSeed<'de> for
-        //         //     SelectorSeed<'_a, Ctx, $ty>
-        //         // where
-        //         //     Ctx: Context,
-        //         //     $($bounds)*
-        //         // {
-        //         //     type Value = ();
-        //         //     $($deseed_fn)*
-        //         //     // CodecSeed::<C, _RK, _>(self).deserialize(deserializer)
-        //         // }
-
-        //         // impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
-        //         //     DeserializeSeed<'de> for
-        //         //     CodecSeed<_C, _RK, SelectorSeed<'_a, Ctx, $ty>, $ty>
-        //         // where
-        //         //     Ctx: Context,
-        //         // {
-        //         //     type Value = ();
-        //         //     $($deseed_fn)*
-        //         // }
-        //     };
-
-        //     const _: () = {
-        //         #[allow(unused_imports)]
-        //         use $crate::dev::*;
-
-        //         // const _RK: u32 = true;
-        //         // impl<'a, 'de, $($generics)*>
-        //         //     $crate::dev::CodecDeserializeSeed<'de> for
-        //         //     std::marker::PhantomData<$ty>
-        //         // {
-        //         //     type Value = $ty;
-        //         //     $($deseed_fn)*
-        //         // }
-
-        //         // impl<'de, const _C: u64 $($generics)*>
-        //         //     $crate::dev::DeserializeSeed<'de> for
-        //         //     $crate::dev::CodecSeed<_C, _RK, std::marker::PhantomData<$ty>>
-        //         // where
-        //         //     Self: $crate::dev::Visitor<'de>,
-        //         // {
-        //         //     type Value = <Self as $crate::dev::Visitor<'de>>::Value;
-        //         //     $($deseed_fn)*
-        //         // }
-        //     };
-        // };
-        // impl CodecDeserializeSeed for SelectorSeed, using deserialize_any
-        (@selector_seed_codec_deseed @any
-            { $($generics:tt)* } { $($bounds:tt)* }
-            $ty:ty
-        ) => {
-            $crate::dev::macros::impl_selector_seed_serde! {
-                @selector_seed_codec_deseed { $($generics)* } { $($bounds)* } $ty
+            const _RK: u32 = <$ty as Representation>::REPR_KIND.bits();
+            impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
+                Visitor<'de> for
+                CodecSeed<_C,
+                    SelectorSeed<'_a, Ctx, $ty $(<$($ty_generics),+>)?>,
+                    $ty $(<$($ty_generics),+>)?
+                >
+            where
+                Ctx: Context,
+                $($bounds)*
             {
-                #[inline]
-                fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-                where
-                    D: Deserializer<'de>,
-                {
-                    macros::cfg_if! {
-                        if #[cfg(feature = "dag-json")] {
-                            if _C == DagJson::CODE {
-                                DagJson::deserialize_any(deserializer, self)
-                            } else {
-                                deserializer.deserialize_any(self)
-                            }
-                        } else if #[cfg(featureu = "dag-cbor")] {
-                            if _C == DagCbor::CODE {
-                                DagCbor::deserialize_any(deserializer, self)
-                            } else {
-                                deserializer.deserialize_any(self)
-                            }
-                        } else {
-                            deserializer.deserialize_any(self)
-                        }
-                    }
-                }
-            }}
+                type Value = ();
+                $($visit_fns)*
+            }
         };
+
+    };
+    // impl IpldVisitorExt for CodedSeed
+    (@codec_seed_visitor_ext
+        { $($generics:tt)* } { $($bounds:tt)* }
+        $ty:ident $(<
+            // match one or more lifetimes separated by a comma
+            $( $ty_generics:ident ),+
+        >)?
+        { $($visit_fns:tt)* }
+    ) => {
+        const _: () = {
+            #[allow(unused_imports)]
+            use $crate::dev::*;
+
+            const _RK: u32 = <$ty as Representation>::REPR_KIND.bits();
+            impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
+                IpldVisitorExt<'de> for
+                CodecSeed<_C,
+                    SelectorSeed<'_a, Ctx, $ty $(<$($ty_generics),+>)?>,
+                    $ty $(<$($ty_generics),+>)?
+                >
+            where
+                Ctx: Context,
+                $($bounds)*
+            {
+                $($visit_fns)*
+            }
+        };
+    };
+
+    // impl Visitor for CodedSeed by REPR_KIND
+
+    (@codec_seed_visitor_rk $rk:ident $ty:ident $marker_ty:ty
+        { $($generics:tt)* } { $($bounds:tt)* }
+        // $ty:ident
+        //  $(<
+        //     // match one or more lifetimes separated by a comma
+        //     $( $ty_generics:ident ),+
+        // >)?
+        { $($visit_fns:tt)* }
+    ) => {
+        const _: () = {
+            #[allow(unused_imports)]
+            use $crate::dev::*;
+
+            impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
+                Visitor<'de> for
+                CodecSeed<_C, SelectorSeed<'_a, Ctx, $ty>, $ty, $marker_ty, type_kinds::$rk>
+            where
+                $ty: Representation<ReprKind = type_kinds::$rk> + Select<Ctx>,
+                Ctx: Context,
+                $($bounds)*
+            {
+                type Value = ();
+                $($visit_fns)*
+            }
+        };
+
+        // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} $ty {} }
+    };
+    // impl Visitor for CodedSeed by REPR_KIND
+    (@codec_seed_visitor_ext_rk $rk:ident $ty:ident $marker_ty:ty
+        { $($generics:tt)* } { $($bounds:tt)* }
+        // $ty:ident
+        //  $(<
+        //     // match one or more lifetimes separated by a comma
+        //     $( $ty_generics:ident ),+
+        // >)?
+        { $($visit_fns:tt)* }
+    ) => {
+        const _: () = {
+            #[allow(unused_imports)]
+            use $crate::dev::*;
+
+            impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
+                IpldVisitorExt<'de> for
+                CodecSeed<_C, SelectorSeed<'_a, Ctx, $ty>, $ty, $marker_ty, type_kinds::$rk>
+            where
+                $ty: Representation<ReprKind = type_kinds::$rk> + Select<Ctx>,
+                Ctx: Context,
+                $($bounds)*
+            {
+                $($visit_fns)*
+            }
+        };
+    };
 
     // Select
 
@@ -853,17 +754,17 @@ macro_rules! impl_selector_seed_serde {
                     //     SelectorSeed::<'_, Ctx, Self>::select(params, ctx)
                     // }
 
-                    // #[doc(hidden)]
-                    // fn __select_de<'a, 'de, const C: u64, D>(
-                    //     seed: SelectorSeed<'a, Ctx, Self>,
-                    //     deserializer: D,
-                    // ) -> Result<(), D::Error>
-                    // where
-                    //     D: Deserializer<'de>,
-                    // {
-                    //     let seed = CodecSeed::<C, false, _, Self>::from(seed);
-                    //     seed.deserialize(deserializer)
-                    // }
+                    #[doc(hidden)]
+                    fn __select_de<'a, 'de, const C: u64, D>(
+                        seed: SelectorSeed<'a, Ctx, Self>,
+                        deserializer: D,
+                    ) -> Result<(), D::Error>
+                    where
+                        D: Deserializer<'de>,
+                    {
+                        let seed = CodecSeed::<C, _, Self, Self, Self::ReprKind>::from(seed);
+                        seed.deserialize(deserializer)
+                    }
 
                     // #[doc(hidden)]
                     // fn __select_seq<'a, 'de, const C: u64, A>(
@@ -942,55 +843,52 @@ macro_rules! impl_selector_seed_serde {
                 {
                     #[doc(hidden)]
                     #[inline]
-                    fn __select<'a, 'de, const C: u64>(
+                    fn __select<'a>(
                         seed: SelectorSeed<'a, Ctx, Self>,
-                    ) -> Result<(), D::Error>
-                    where
-                        D: Deserializer<'de>,
-                    {
+                    ) -> Result<(), Error> {
                         let seed = seed.wrap::<$inner_ty, _>($constructor);
-                        <$inner_ty>::__select::<C>(seed, deserializer)
+                        <$inner_ty>::__select(seed)
                     }
 
-                    #[doc(hidden)]
-                    #[inline]
-                    fn __select_de<'a, 'de, const C: u64, D>(
-                        seed: SelectorSeed<'a, Ctx, Self>,
-                        deserializer: D,
-                    ) -> Result<(), D::Error>
-                    where
-                        D: Deserializer<'de>,
-                    {
-                        let seed = seed.wrap::<$inner_ty, _>($constructor);
-                        <$inner_ty>::__select_de::<C, D>(seed, deserializer)
-                    }
+                    // #[doc(hidden)]
+                    // #[inline]
+                    // fn __select_de<'a, 'de, const C: u64, D>(
+                    //     seed: SelectorSeed<'a, Ctx, Self>,
+                    //     deserializer: D,
+                    // ) -> Result<(), D::Error>
+                    // where
+                    //     D: Deserializer<'de>,
+                    // {
+                    //     let seed = seed.wrap::<$inner_ty, _>($constructor);
+                    //     <$inner_ty>::__select_de::<C, D>(seed, deserializer)
+                    // }
 
-                    #[doc(hidden)]
-                    #[inline]
-                    fn __select_seq<'a, 'de, const C: u64, A>(
-                        seed: SelectorSeed<'a, Ctx, Self>,
-                        seq: A,
-                    ) -> Result<Option<()>, A::Error>
-                    where
-                        A: SeqAccess<'de>,
-                    {
-                        let seed = seed.wrap::<$inner_ty, _>($constructor);
-                        <$inner_ty>::__select_seq::<C, D>(seed, seq)
-                    }
+                    // #[doc(hidden)]
+                    // #[inline]
+                    // fn __select_seq<'a, 'de, const C: u64, A>(
+                    //     seed: SelectorSeed<'a, Ctx, Self>,
+                    //     seq: A,
+                    // ) -> Result<Option<()>, A::Error>
+                    // where
+                    //     A: SeqAccess<'de>,
+                    // {
+                    //     let seed = seed.wrap::<$inner_ty, _>($constructor);
+                    //     <$inner_ty>::__select_seq::<C, D>(seed, seq)
+                    // }
 
-                    #[doc(hidden)]
-                    #[inline]
-                    fn __select_map<'a, 'de, const C: u64, A>(
-                        seed: SelectorSeed<'a, Ctx, Self>,
-                        map: A,
-                        is_key: bool,
-                    ) -> Result<Option<()>, A::Error>
-                    where
-                        A: MapAccess<'de>,
-                    {
-                        let seed = seed.wrap::<$inner_ty, _>($constructor);
-                        <$inner_ty>::__select_map::<C, D>(seed, map, is_key)
-                    }
+                    // #[doc(hidden)]
+                    // #[inline]
+                    // fn __select_map<'a, 'de, const C: u64, A>(
+                    //     seed: SelectorSeed<'a, Ctx, Self>,
+                    //     map: A,
+                    //     is_key: bool,
+                    // ) -> Result<Option<()>, A::Error>
+                    // where
+                    //     A: MapAccess<'de>,
+                    // {
+                    //     let seed = seed.wrap::<$inner_ty, _>($constructor);
+                    //     <$inner_ty>::__select_map::<C, D>(seed, map, is_key)
+                    // }
                 }
             };
         };

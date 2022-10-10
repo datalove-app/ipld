@@ -73,12 +73,12 @@ mod null {
 
     // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Null {} }
 
-    impl_selector_seed_serde! { @codec_seed_visitor_rk Null
-        {} { T: From<Null> + 'static }
+    impl_selector_seed_serde! { @codec_seed_visitor_rk Null T T
+        { T: From<Null> + 'static } {  }
     {
         #[inline]
         fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}, a nothing type", T::NAME)
+            write!(f, "A nothing type {}", T::NAME)
         }
 
         #[inline]
@@ -97,6 +97,10 @@ mod null {
             self.visit_none()
         }
     }}
+
+    impl_selector_seed_serde! { @codec_seed_visitor_ext_rk Null T T
+        { T: From<Null> + 'static } {} {}
+    }
 
     impl_selector_seed_serde! { @selector_seed_select {} {} Null }
 }
@@ -152,12 +156,12 @@ mod bool {
 
     // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Bool {} }
 
-    impl_selector_seed_serde! { @codec_seed_visitor_rk Bool
-        {} { T: From<Bool> + 'static }
+    impl_selector_seed_serde! { @codec_seed_visitor_rk Bool T T
+        { T: From<Bool> + 'static } {  }
     {
         #[inline]
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "{}, a boolean type", Bool::NAME)
+            write!(f, "A boolean type {}", T::NAME)
         }
 
         #[inline]
@@ -173,6 +177,10 @@ mod bool {
         }
     }}
 
+    impl_selector_seed_serde! { @codec_seed_visitor_ext_rk Bool T T
+        { T: From<Bool> + 'static } {} {}
+    }
+
     impl_selector_seed_serde! { @selector_seed_select {} {} Bool }
 }
 
@@ -181,7 +189,7 @@ mod num {
 
     /// Implements IPLD traits for native number types.
     macro_rules! impl_ipld_num {
-        (   $ty:ident : $name:ident $kind:ident {
+        (   $ty:ident : $name:ident $dm_kind:ident {
                 // $deserialize_fn:ident
                 $visit_fn:ident
                 @conv { $($other_ty:ty : $other_visit_fn:ident)* }
@@ -195,11 +203,11 @@ mod num {
 
                 const NAME: &'static str = stringify!($name);
                 const SCHEMA: &'static str = concat!("type ", stringify!($name), " int");
-                const DATA_MODEL_KIND: Kind = Kind::$kind;
+                const DATA_MODEL_KIND: Kind = Kind::$dm_kind;
                 const SCHEMA_KIND: Kind = Kind::$name;
-                // const REPR_KIND: Kind = Kind::$kind;
+                // const REPR_KIND: Kind = Kind::$dm_kind;
 
-                impl_ipld_num!(@field $kind $ty);
+                impl_ipld_num!(@field $dm_kind $ty);
 
                 #[doc(hidden)]
                 fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -218,42 +226,40 @@ mod num {
                 }
             }
 
-            // impl_selector_seed_serde! { @codec_seed_visitor {} {} $ty {
-            //     #[inline]
-            //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            //         write!(f, "{}, a fixed-length number type represented as a(n) {}", <$ty>::NAME, stringify!($ty))
-            //     }
-
-            //     #[inline]
-            //     fn $visit_fn<E>(self, v: $ty) -> Result<Self::Value, E>
-            //     where
-            //         E: de::Error,
-            //     {
-            //         self.0.select_primitive::<_C>(v).map_err(E::custom)
-            //     }
-
-            //     $(
-            //         #[inline]
-            //         fn $other_visit_fn<E>(self, v: $other_ty) -> Result<Self::Value, E>
-            //         where
-            //             E: de::Error,
-            //         {
-            //             let n = <$ty as Representation>::deserialize::<_C, _>(v.into_deserializer())?;
-            //             self.$visit_fn(n)
-            //         }
-            //     )*
-            // }}
-
-            // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} $ty {} }
-
-            impl_selector_seed_serde! { @codec_seed_visitor_rk $name
-                {} { T: From<$ty> + 'static }
+            impl_selector_seed_serde! { @codec_seed_visitor_rk $name T T
+                { T: From<$ty> + 'static } {  }
             {
                 #[inline]
                 fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    write!(f, "{}, a nothing type", T::NAME)
+                    write!(f,
+                        "{}, a fixed-length number type represented as a(n) {}",
+                        <$ty>::NAME, stringify!($ty),
+                    )
                 }
+
+                #[inline]
+                fn $visit_fn<E>(self, v: $ty) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    self.0.select_primitive::<_C>(T::from(v)).map_err(E::custom)
+                }
+
+                $(
+                    #[inline]
+                    fn $other_visit_fn<E>(self, v: $other_ty) -> Result<Self::Value, E>
+                    where
+                        E: de::Error,
+                    {
+                        let n = <$ty as Representation>::deserialize::<_C, _>(v.into_deserializer())?;
+                        self.$visit_fn(n)
+                    }
+                )*
             }}
+
+            impl_selector_seed_serde! { @codec_seed_visitor_ext_rk $name T T
+                { T: From<$ty> + 'static } {} {}
+            }
 
             impl_selector_seed_serde! { @selector_seed_select {} {} $ty }
         };
@@ -446,41 +452,34 @@ mod string {
         }
     }
 
-    // TODO:
-    // impl_selector_seed_serde! { @codec_seed_visitor {} {} IpldString {
-    //     #[inline]
-    //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    //         write!(f, "An IPLD string")
-    //     }
-
-    //     #[inline]
-    //     fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-    //     where
-    //         E: de::Error,
-    //     {
-    //         let v = IpldString::from(s);
-    //         self.0.select_primitive::<_C>(v).map_err(E::custom)
-    //     }
-
-    //     #[inline]
-    //     fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
-    //     where
-    //         E: de::Error,
-    //     {
-    //         self.visit_str(s.as_ref())
-    //     }
-    // }}
-
-    // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} IpldString {} }
-
-    impl_selector_seed_serde! { @codec_seed_visitor_rk String
-        {} { T: From<IpldString> + 'static }
+    impl_selector_seed_serde! { @codec_seed_visitor_rk String T T
+        { T: From<IpldString> + 'static } {}
     {
         #[inline]
         fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}, a nothing type", T::NAME)
+            write!(f, "A string of type {}", T::NAME)
+        }
+
+        #[inline]
+        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            self.0.select_primitive::<_C>(T::from(IpldString::from(s))).map_err(E::custom)
+        }
+
+        #[inline]
+        fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            self.visit_str(s.as_ref())
         }
     }}
+
+    impl_selector_seed_serde! { @codec_seed_visitor_ext_rk String T T
+        { T: From<IpldString> + 'static } {} {}
+    }
 
     impl_selector_seed_serde! { @selector_seed_select {} {} IpldString }
 
@@ -583,52 +582,53 @@ mod bytes {
             if C == DagJson::CODE {
                 return DagJson::deserialize_bytes(deserializer, BytesVisitor);
             }
+
             deserializer.deserialize_bytes(BytesVisitor)
         }
     }
 
-    // impl_selector_seed_serde! { @codec_seed_visitor {} {} Bytes {
-    //     #[inline]
-    //     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-    //         write!(formatter, "A slice of bytes")
-    //     }
-
-    //     #[inline]
-    //     fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
-    //     where
-    //         E: de::Error,
-    //     {
-    //         self.0.select_bytes::<_C>(Bytes::copy_from_slice(bytes)).map_err(E::custom)
-    //     }
-
-    //     #[inline]
-    //     fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
-    //     where
-    //         E: de::Error,
-    //     {
-    //         self.0.select_bytes::<_C>(Bytes::from(bytes)).map_err(E::custom)
-    //     }
-    // }}
-
-    // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Bytes {} }
-
-    impl_selector_seed_serde! { @codec_seed_visitor_rk Bytes
-        {} { T: From<Bytes> + 'static }
+    impl_selector_seed_serde! { @codec_seed_visitor_rk Bytes T T
+        { T: From<Bytes> + 'static } {  }
     {
         #[inline]
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "{}, a nothing type", T::NAME)
+            write!(f, "Bytes of type {}", T::NAME)
         }
+
+        // #[inline]
+        // fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
+        // where
+        //     E: de::Error,
+        // {
+        //     self.0.select_bytes::<_C>(Bytes::copy_from_slice(bytes)).map_err(E::custom)
+        // }
+
+        // #[inline]
+        // fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
+        // where
+        //     E: de::Error,
+        // {
+        //     self.0.select_bytes::<_C>(Bytes::from(bytes)).map_err(E::custom)
+        // }
     }}
+
+    impl_selector_seed_serde! { @codec_seed_visitor_ext_rk Bytes T T
+        { T: From<Bytes> + 'static } {} {}
+    }
 
     impl_selector_seed_serde! { @selector_seed_select {} {} Bytes }
 
     impl<'a, Ctx> SelectorSeed<'a, Ctx, Bytes>
     where
         Ctx: Context,
+        // impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
+        // where
+        //     Ctx: Context,
+        //     T: Select<Ctx>,
     {
         ///
         #[inline]
+        // TODO: should accept a slice of bytes, then do conversion
         pub fn select_bytes<const C: u64>(mut self, bytes: Bytes) -> Result<(), Error> {
             // if let Some(s) = self.selector.as_explore_union() {
             //     s.assert_matches_first::<Bytes>()?;
@@ -663,22 +663,11 @@ mod bytes {
     }
 }
 
-// enum Assert<const COND: bool> {}
-// trait IsTrue {}
-// impl IsTrue for Assert<true> {}
-
-// impl<'a, const C: u64, const RK: u32, Ctx, T> CodecSeed<C, RK, SelectorSeed<'a, Ctx, T>, T>
-// where
-//     Ctx: Context,
-//     T: Representation + 'static,
-//     Assert<{ (Kind::Scalar.bits() & RK) == RK }>: IsTrue,
-// {
-// }
-
 impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
 where
     Ctx: Context,
     T: Representation + 'static,
+    // TODO And<T::ReprKind, TypedScalar>: TypedScalar
 {
     ///
     pub fn select_primitive<const C: u64>(self, raw: T) -> Result<(), Error>

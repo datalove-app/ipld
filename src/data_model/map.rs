@@ -7,7 +7,7 @@ pub use iterators::*;
 
 ///
 /// TODO: indexmap?
-pub type Map<K: StringRepresentation = IpldString, V = Any> = BTreeMap<K, V>;
+pub type Map<K = IpldString, V = Any> = BTreeMap<K, V>;
 
 impl<K, V> Representation for Map<K, V>
 where
@@ -150,34 +150,58 @@ where
 //     {} Map<K, V> {}
 // }
 
-impl_selector_seed_serde! { @codec_seed_visitor_rk Map
-    {} { T: 'static }
+impl_selector_seed_serde! { @codec_seed_visitor_rk Map T (K, V)
+    { T: Default + Extend<(K, V)> +  'static,
+      K: Select<Ctx> + StringRepresentation + 'static,
+      V: Select<Ctx> + 'static }
+    { }
 {
     #[inline]
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}, a boolean type", Bool::NAME)
+        write!(f, "A map of type {} of {} to {}", T::NAME, K::NAME, V::NAME)
+    }
+
+    #[inline]
+    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        if let Some(s) = self.0.selector.as_explore_union() {
+            if s.matches_first() {
+                let map = T::deserialize::<_C, _>(MapAccessDeserializer::new(map))?;
+                return map.__select_in(self.0).map_err(A::Error::custom);
+            }
+        }
+
+        let iter = SerdeMapIterator::<'de, _>::from(map);
+        match self.0.selector {
+            Selector::Matcher(_) => {
+                self.0.match_map::<_C, K, V, _, _, _, _, _>(
+                    iter,
+                    |_| RefCell::default(),
+                    |key, dag| Box::new(|child, _| {
+                        dag.borrow_mut().extend(iter::once((key.clone(), child)));
+                        Ok(())
+                    }),
+                    RefCell::into_inner,
+                ).map_err(A::Error::custom)
+            },
+            Selector::ExploreFields(_) => self.0
+                .explore_map_fields::<_C, K, V, _>(iter).map_err(A::Error::custom),
+            Selector::ExploreAll(_) => self.0
+                .explore_map_fields::<_C, K, V, _>(iter).map_err(A::Error::custom),
+            _ => Err(A::Error::custom(Error::unsupported_selector::<T>(
+                self.0.selector,
+            ))),
+        }
     }
 }}
 
-// impl_selector_seed_serde! { @selector_seed_codec_deseed
+// impl_selector_seed_serde! { @selector_seed_select
 //     { K: Select<Ctx> + StringRepresentation + 'static,
 //       V: Select<Ctx> + 'static }
 //     {} Map<K, V>
-// {
-//     #[inline]
-//     fn deserialize<D>(self, deserializer: D) -> Result<(), D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         deserializer.deserialize_map(self)
-//     }
-// }}
-
-impl_selector_seed_serde! { @selector_seed_select
-    { K: Select<Ctx> + StringRepresentation + 'static,
-      V: Select<Ctx> + 'static }
-    {} Map<K, V>
-}
+// }
 
 impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
 where

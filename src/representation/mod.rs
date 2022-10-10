@@ -118,16 +118,25 @@ pub use strategies::*;
 ///         - TODO: ? stateful visitor derived from selector + type?
 ///         - TODO: ? impl DeserializeSeed for selector?
 ///         - TODO: ? Representation::visitor(selector: &Selector)
+// pub trait Representation<ReprKind: TypedKind = type_kinds::Any>: Sized {
 pub trait Representation: Sized {
-    // /// Marker type for exact `u32` value of the type's [`Representation::DATA_MODEL_KIND`], needed for internal blanket implementations of various traits.
+    // /// Marker type for exact `u32` value of the type's
+    // /// [`Representation::DATA_MODEL_KIND`], needed for internal blanket
+    // /// implementations of various traits.
     // #[doc(hidden)]
     // type DATA_MODEL_KIND: TypedKind;
-    // /// Marker type for exact `u32` value of the type's [`Representation::SCHEMA_KIND`], needed for internal blanket implementations of various traits.
+
+    // /// Marker type for exact `u32` value of the type's
+    // /// [`Representation::SCHEMA_KIND`], needed for internal blanket
+    // /// implementations of various traits.
     // #[doc(hidden)]
     // type SCHEMA_KIND: TypedKind;
-    // /// Marker type for exact `u32` value of the type's [`Representation::REPR_KIND`], needed for internal blanket implementations of various traits.
-    // #[doc(hidden)]
-    // type REPR_KIND: TypedKind;
+
+    /// Marker type for exact `u32` value of the type's
+    /// [`Representation::REPR_KIND`], needed for internal blanket
+    /// implementations of various traits.
+    #[doc(hidden)]
+    type ReprKind: TypedKind;
 
     // TODO: use this seed in Representation::deserialize by default
     // type Seed<'de, const C: u64>: Default + DeserializeSeed<'de, Value = Self>;
@@ -137,8 +146,7 @@ pub trait Representation: Sized {
 
     /// The stringified IPLD type definition (or equivalent, if a native type
     /// not defined by IPLD).
-    /// TODO: we cant concat generic consts, only concrete ones - so refactor this to a function
-    const SCHEMA: &'static str = unimplemented!();
+    const SCHEMA: &'static str;
 
     /// The IPLD [Data Model Kind](https://ipld.io/docs/data-model/kinds/) of
     /// the type, which would inform a user of its access patterns.
@@ -150,7 +158,8 @@ pub trait Representation: Sized {
     const SCHEMA_KIND: Kind = Self::DATA_MODEL_KIND;
 
     /// The IPLD [Representation Kind]() of the type, which would inform a user of how the type is represented when encoded.
-    const REPR_KIND: Kind = Self::DATA_MODEL_KIND; // K
+    // const REPR_KIND: Kind = Self::DATA_MODEL_KIND;
+    const REPR_KIND: Kind = Self::ReprKind::KIND;
 
     // const IS_ADL: bool = false;
 

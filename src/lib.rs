@@ -76,6 +76,8 @@ pub mod prelude {
 /// All exports from `ipld::prelude`, plus re-exports of first- and third-party
 /// dependencies to aid developers wanting to implement or extend `ipld` behaviour.
 pub mod dev {
+    #[doc(hidden)]
+    pub use crate::maybestd;
     pub use crate::{prelude::*, representation::*, selectors::*};
 
     // dependency re-exports for macro convenience
@@ -83,16 +85,12 @@ pub mod dev {
     pub use anyhow;
     #[doc(hidden)]
     pub use bytes;
-    // pub use erased_serde::{Deserializer as ErasedDeserializer, Serializer as ErasedSerializer};
     /// Useful macros for aiding in providing bespoke IPLD support.
     pub mod macros {
         pub use crate::impl_selector_seed_serde;
         // pub use const_format::*;
-        pub use ipld_macros_internals::*;
+        pub use ipld_macros_internals::dev::*;
     }
-
-    #[doc(hidden)]
-    pub use crate::maybestd;
 
     #[doc(hidden)]
     pub use serde::{

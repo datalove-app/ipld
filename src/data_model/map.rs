@@ -16,6 +16,8 @@ where
     // K: AsRef<Field<'_>>
     V: Representation,
 {
+    type ReprKind = type_kinds::Map;
+
     const NAME: &'static str = "Map";
     const SCHEMA: &'static str = concat!(
         "type Map {",
@@ -95,58 +97,67 @@ where
     }
 }
 
-impl_selector_seed_serde! { @codec_seed_visitor
-    { K: Select<Ctx> + StringRepresentation + 'static,
-      V: Select<Ctx> + 'static }
-    { }
-    Map<K, V>
+// impl_selector_seed_serde! { @codec_seed_visitor
+//     { K: Select<Ctx> + StringRepresentation + 'static,
+//       V: Select<Ctx> + 'static }
+//     { }
+//     Map<K, V>
+// {
+//     #[inline]
+//     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         write!(f, "{}", Map::<K, V>::NAME)
+//     }
+
+//     #[inline]
+//     fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+//     where
+//         A: MapAccess<'de>,
+//     {
+//         if let Some(s) = self.0.selector.as_explore_union() {
+//             if s.matches_first() {
+//                 let map = <Map<K, V>>::deserialize::<_C, _>(MapAccessDeserializer::new(map))?;
+//                 return map.__select_in(self.0).map_err(A::Error::custom);
+//             }
+//         }
+
+//         let iter = SerdeMapIterator::<'de, _>::from(map);
+//         match self.0.selector {
+//             Selector::Matcher(_) => {
+//                 self.0.match_map::<_C, K, V, _, _, _, _, _>(
+//                     iter,
+//                     |iter| RefCell::<Map<K, V>>::default(),
+//                     |key, dag| Box::new(|child, _| {
+//                         dag.borrow_mut().insert(key.clone(), child);
+//                         Ok(())
+//                     }),
+//                     RefCell::into_inner,
+//                 ).map_err(A::Error::custom)
+//             },
+//             Selector::ExploreFields(_) => self.0
+//                 .explore_map_fields::<_C, K, V, _>(iter).map_err(A::Error::custom),
+//             Selector::ExploreAll(_) => self.0
+//                 .explore_map_fields::<_C, K, V, _>(iter).map_err(A::Error::custom),
+//             _ => Err(A::Error::custom(Error::unsupported_selector::<Map<K, V>>(
+//                 self.0.selector,
+//             ))),
+//         }
+//     }
+// }}
+
+// impl_selector_seed_serde! { @codec_seed_visitor_ext
+//     { K: Select<Ctx> + StringRepresentation + 'static,
+//       V: Select<Ctx> + 'static }
+//     {} Map<K, V> {}
+// }
+
+impl_selector_seed_serde! { @codec_seed_visitor_rk Map
+    {} { T: 'static }
 {
     #[inline]
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Map::<K, V>::NAME)
-    }
-
-    #[inline]
-    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
-    where
-        A: MapAccess<'de>,
-    {
-        if let Some(s) = self.0.selector.as_explore_union() {
-            if s.matches_first() {
-                let map = <Map<K, V>>::deserialize::<_C, _>(MapAccessDeserializer::new(map))?;
-                return map.__select_in(self.0).map_err(A::Error::custom);
-            }
-        }
-
-        let iter = SerdeMapIterator::<'de, _>::from(map);
-        match self.0.selector {
-            Selector::Matcher(_) => {
-                self.0.match_map::<_C, K, V, _, _, _, _, _>(
-                    iter,
-                    |iter| RefCell::<Map<K, V>>::default(),
-                    |key, dag| Box::new(|child, _| {
-                        dag.borrow_mut().insert(key.clone(), child);
-                        Ok(())
-                    }),
-                    RefCell::into_inner,
-                ).map_err(A::Error::custom)
-            },
-            Selector::ExploreFields(_) => self.0
-                .explore_map_fields::<_C, K, V, _>(iter).map_err(A::Error::custom),
-            Selector::ExploreAll(_) => self.0
-                .explore_map_fields::<_C, K, V, _>(iter).map_err(A::Error::custom),
-            _ => Err(A::Error::custom(Error::unsupported_selector::<Map<K, V>>(
-                self.0.selector,
-            ))),
-        }
+        write!(f, "{}, a boolean type", Bool::NAME)
     }
 }}
-
-impl_selector_seed_serde! { @codec_seed_visitor_ext
-    { K: Select<Ctx> + StringRepresentation + 'static,
-      V: Select<Ctx> + 'static }
-    {} Map<K, V> {}
-}
 
 // impl_selector_seed_serde! { @selector_seed_codec_deseed
 //     { K: Select<Ctx> + StringRepresentation + 'static,

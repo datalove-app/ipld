@@ -74,6 +74,8 @@ impl<T: Representation> Link<T> {
 }
 
 impl<T: Representation> Representation for Link<T> {
+    type ReprKind = type_kinds::Link;
+
     const NAME: &'static str = "Link";
     const SCHEMA: &'static str = concat!("type Link &", stringify!(T::NAME));
     const DATA_MODEL_KIND: Kind = Kind::Link;
@@ -117,24 +119,33 @@ impl<T: Representation> Representation for Link<T> {
     }
 }
 
-impl_selector_seed_serde! { @codec_seed_visitor
-    { T: Select<Ctx> + 'static } { } Link<T>
+// impl_selector_seed_serde! { @codec_seed_visitor
+//     { T: Select<Ctx> + 'static } { } Link<T>
+// {
+//     #[inline]
+//     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         write!(f, "A link to a `{}`", T::NAME)
+//     }
+// }}
+
+// impl_selector_seed_serde! { @codec_seed_visitor_ext
+//     { T: Select<Ctx> + 'static } { } Link<T>
+// {
+//     #[inline]
+//     fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
+//     where
+//         E: de::Error,
+//     {
+//         self.0.select_link::<_C>(cid).map_err(E::custom)
+//     }
+// }}
+
+impl_selector_seed_serde! { @codec_seed_visitor_rk Link
+    {} { T: 'static }
 {
     #[inline]
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "A link to a `{}`", T::NAME)
-    }
-}}
-
-impl_selector_seed_serde! { @codec_seed_visitor_ext
-    { T: Select<Ctx> + 'static } { } Link<T>
-{
-    #[inline]
-    fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        self.0.select_link::<_C>(cid).map_err(E::custom)
+        write!(f, "{}, a boolean type", Bool::NAME)
     }
 }}
 

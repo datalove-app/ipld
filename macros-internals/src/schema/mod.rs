@@ -67,14 +67,6 @@ impl SchemaMeta {
         quote!(#path)
     }
 
-    /// Returns the `Ident` of the `Visitor` generated for this type.
-    pub fn visitor_name(&self) -> Ident {
-        Ident::new(
-            &format!("_{}Visitor", &self.name.to_string()),
-            Span::call_site(),
-        )
-    }
-
     pub fn generics_tokens(&self) -> TokenStream {
         self.generics
             .as_ref()
@@ -136,65 +128,30 @@ impl ReprDefinition {
     }
 }
 
+// #[macro_use]
 pub mod kind {
-    use super::*;
-    use std::ops::BitAnd;
+    // use super::*;
+    use std::ops::{BitAnd, BitOr};
     use type_kinds::*;
     use typenum::*;
-    use typenum_macro::tyuint;
+    use typenum_macro::*;
 
-    // ///
-    // #[derive(Debug, PartialEq, Eq, Hash)]
-    // pub enum SchemaKind {
-    //     Null,
-    //     Bool,
-    //     Int, // same as Int128
-    //     Int8,
-    //     Int16,
-    //     Int32,
-    //     Int64,
-    //     Int128,
-    //     Uint8,
-    //     Uint16,
-    //     Uint32,
-    //     Uint64,
-    //     Uint128,
-    //     Float, // same as Float64
-    //     Float32,
-    //     Float64,
-    //     Bytes,
-    //     String,
-    //     List,
-    //     Map,
-    //     Link,
-    //     Struct,
-    //     Enum,
-    //     Union,
-    //     Copy,
-    // }
-
-    // ///
-    // pub trait TypedKind<const K: u32> {
-    //     const KIND: SchemaKind = SchemaKind::from::<K>();
-    //     const IS_SCALAR: bool = SchemaKind::Scalar.contains(Self::KIND);
-    //     const IS_RECURSIVE: bool = SchemaKind::Recursive.contains(Self::KIND);
-    //     const IS_DATA_MODEL: bool = SchemaKind::Any.contains(Self::KIND);
-    //     const IS_SCHEMA: bool = SchemaKind::Any.contains(Self::KIND);
-    // }
-
+    ///
+    /// TODO: BitAnd/BitOr dont work without fully-qualified syntax
     pub trait TypedKind
     where
         Self: NonZero
             + Unsigned
-            + IsLessOrEqual<All> // replace with And<Self, All>: IsEqual<All>,
-            + BitAnd<Self>
-            + BitAnd<All>
+            // + IsLessOrEqual<All> // TODO: replace with And<Self, All>: IsEqual<All>,
+            // + BitAnd<Self>
+            // + BitAnd<All>
             + BitAnd<Scalar>
             + BitAnd<Recursive>
             + BitAnd<Any>
             + BitAnd<Schema>
-            + BitAnd<TypedInt>
-            + BitAnd<TypedFloat>,
+            // + BitAnd<TypedInt>
+            // + BitAnd<TypedFloat>
+            + BitOr<Null>,
     {
         const KIND: SchemaKind;
         // const IS_SCALAR: bool = SchemaKind::Scalar.contains(Self::KIND);
@@ -209,15 +166,16 @@ pub mod kind {
     where
         T: NonZero
             + Unsigned
-            + IsLessOrEqual<All>
-            + BitAnd<Self>
-            + BitAnd<All>
+            // + IsLessOrEqual<All>
+            // + BitAnd<Self>
+            // + BitAnd<All>
             + BitAnd<Scalar>
             + BitAnd<Recursive>
             + BitAnd<Any>
             + BitAnd<Schema>
-            + BitAnd<TypedInt>
-            + BitAnd<TypedFloat>,
+            // + BitAnd<TypedInt>
+            // + BitAnd<TypedFloat>
+            + BitOr<Null>,
         // And<Self, All>: IsEqual<All>,
     {
         const KIND: SchemaKind = SchemaKind::from_bits_truncate(T::U32);
@@ -237,16 +195,16 @@ pub mod kind {
     // {
     // }
 
-    macro_rules! def_kind {
-        ($(
-            $name:ident = $b:expr;
-        )*) => {
+    macro_rules! def_kind { (
+        $($name:ident = $b:expr;)*) => {
             bitflags::bitflags! {
                 /// Enum of possible [Data Model](), [Schema]() and [Representation]() kinds.
                 ///
                 #[repr(transparent)]
                 pub struct SchemaKind: u32 {
-                    $(const $name = $b;)*
+                    $(
+                        const $name = $b;
+                    )*
 
                     /// Marker flag for scalar data model kinds.
                     const Scalar = Self::Null.bits
@@ -290,25 +248,29 @@ pub mod kind {
             }
 
             /// [`typenum`] types representing known [`SchemaKind`]s.
+            // #[macro_use]
             pub mod type_kinds {
+                use super::*;
+                // use typenum;
+                // use $crate::dev::typenum_macro;
+
                 $(pub type $name = tyuint!($b);)*
+
+                // pub type Optional<T> = typenum::op!(Null | T);
 
                 pub type Scalar = op!(Null | Bool | Int | Float | String | Bytes | Link);
                 pub type Recursive = op!(List | Map);
                 pub type Any = op!(Scalar | Recursive);
                 pub type Schema = op!(Any | Struct | Enum | Union | Copy | Advanced);
-                pub type TypedInt = op!(Int8 | Int16 | Int32 | Int64 | Int128 | Uint8 | Uint16 | Uint32 | Uint64 | Uint128);
-                pub type TypedFloat = op!(Float32 | Float64);
+                // pub type TypedInt = op!(Int8 | Int16 | Int32 | Int64 | Int128 | Uint8 | Uint16 | Uint32 | Uint64 | Uint128);
+                // pub type TypedFloat = op!(Float32 | Float64);
 
+                // #[doc(hidden)]
+                // pub type All = op!(Any | Schema | TypedInt | TypedFloat);
                 #[doc(hidden)]
-                pub type All = op!(Any | Schema | TypedInt | TypedFloat);
+                pub type Empty = U0;
             }
-
         };
-        // (@custom $name:ident $($kind:ident,)*) => {
-        //     pub type $name = $crate::typenum::op!($($kind | )*);
-        //     impl Sealed for $name {}
-        // }
     }
 
     def_kind! {

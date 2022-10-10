@@ -47,16 +47,17 @@ pub type EmptySeed<T> = SelectorSeed<'static, (), T>;
 
 /// A marked [`SelectorSeed`] that's aware of the codec of the block it's
 /// currenly selecting against.
-///
-/// TODO: a few issues to consider (going backwards):
-/// ? 1. codec needs to receive a CodecDeserializeSeed (or otherwise CodedSeed, to associate the right const C)
-/// ? 2. const C needs to carry down until we reach bytes/links
-/// ? 3. Link needs to take some seed, uncode it, then use inner to call SelectorSeed::select for the next block
 #[doc(hidden)]
 #[derive(Debug)]
-pub struct CodecSeed<const C: u64, S, T = Any>(pub(crate) S, PhantomData<T>);
+pub struct CodecSeed<const C: u64, S, T = Any, RK = <T as Representation>::ReprKind>(
+    pub(crate) S,
+    PhantomData<(T, RK)>,
+)
+where
+    T: Representation<ReprKind = RK>,
+    RK: TypedKind;
 
-impl<const C: u64, S, T> CodecSeed<C, S, T> {
+impl<const C: u64, S, T: Representation> CodecSeed<C, S, T> {
     // pub const RK: u32 = RK;
     // pub const fn is_select() -> bool {
     //     (!RK)
@@ -166,7 +167,10 @@ impl<'a, Ctx, T> SeedType for SelectorSeed<'a, Ctx, T> {
     const CAN_SELECT: bool = true;
 }
 
-impl<'a, const C: u64, Ctx, T> CodecSeed<C, SelectorSeed<'a, Ctx, T>, T> {
+impl<'a, const C: u64, Ctx, T> CodecSeed<C, SelectorSeed<'a, Ctx, T>, T>
+where
+    T: Representation,
+{
     // ///
     // #[inline]
     // pub(crate) fn from_parts(
@@ -599,55 +603,55 @@ where
 macro_rules! impl_selector_seed_serde {
     // visitor for CodedSeed
 
-        // impl Visitor for CodedSeed
-        (@codec_seed_visitor
-            { $($generics:tt)* } { $($bounds:tt)* }
-            $ty:ident $(<
-                // match one or more lifetimes separated by a comma
-                $( $ty_generics:ident ),+
-            >)?
-            { $($visit_fns:tt)* }
-        ) => {
-            const _: () = {
-                #[allow(unused_imports)]
-                use $crate::dev::*;
+        // // impl Visitor for CodedSeed
+        // (@codec_seed_visitor
+        //     { $($generics:tt)* } { $($bounds:tt)* }
+        //     $ty:ident $(<
+        //         // match one or more lifetimes separated by a comma
+        //         $( $ty_generics:ident ),+
+        //     >)?
+        //     { $($visit_fns:tt)* }
+        // ) => {
+        //     const _: () = {
+        //         #[allow(unused_imports)]
+        //         use $crate::dev::*;
 
-                const _RK: u32 = <$ty as Representation>::REPR_KIND.bits();
-                impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
-                    Visitor<'de> for
-                    CodecSeed<_C,
-                        SelectorSeed<'_a, Ctx, $ty $(<$($ty_generics),+>)?>,
-                        $ty $(<$($ty_generics),+>)?
-                    >
-                where
-                    Ctx: Context,
-                    $($bounds)*
-                {
-                    type Value = ();
-                    $($visit_fns)*
-                }
-            };
+        //         const _RK: u32 = <$ty as Representation>::REPR_KIND.bits();
+        //         impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
+        //             Visitor<'de> for
+        //             CodecSeed<_C,
+        //                 SelectorSeed<'_a, Ctx, $ty $(<$($ty_generics),+>)?>,
+        //                 $ty $(<$($ty_generics),+>)?
+        //             >
+        //         where
+        //             Ctx: Context,
+        //             $($bounds)*
+        //         {
+        //             type Value = ();
+        //             $($visit_fns)*
+        //         }
+        //     };
 
-            const _: () = {
-                #[allow(unused_imports)]
-                use $crate::dev::*;
+        //     const _: () = {
+        //         #[allow(unused_imports)]
+        //         use $crate::dev::*;
 
-                // const _RK: u32 = true;
-                // impl<'a, 'de, const _C: u64, $($generics)*>
-                //     Visitor<'de> for
-                //     CodecSeed<_C, _RK, std::marker::PhantomData<$ty>>
-                // where
-                //     $($generics)*
-                // {
-                //     type Value = $ty;
-                //     $($visit_fns)*
-                // }
-            };
-        };
+        //         // const _RK: u32 = true;
+        //         // impl<'a, 'de, const _C: u64, $($generics)*>
+        //         //     Visitor<'de> for
+        //         //     CodecSeed<_C, _RK, std::marker::PhantomData<$ty>>
+        //         // where
+        //         //     $($generics)*
+        //         // {
+        //         //     type Value = $ty;
+        //         //     $($visit_fns)*
+        //         // }
+        //     };
+        // };
         // impl Visitor for CodedSeed by REPR_KIND
         (@codec_seed_visitor_rk $rk:ident
             { $($generics:tt)* } { $($bounds:tt)* }
-            $ty:ident
+            // $ty:ident
             //  $(<
             //     // match one or more lifetimes separated by a comma
             //     $( $ty_generics:ident ),+
@@ -659,19 +663,28 @@ macro_rules! impl_selector_seed_serde {
                 use $crate::dev::*;
 
                 // const _RK: u32 = <$ty as Representation>::REPR_KIND.bits();
-                const _RK: u32 = Kind::$rk.bits();
-                impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
+                // const _RK: u32 = Kind::$rk.bits();
+                impl<'_a, 'de, const _C: u64, T, Ctx, $($generics)*>
                     Visitor<'de> for
-                    CodecSeed<_C, SelectorSeed<'_a, Ctx, $ty>, $ty>
+                    CodecSeed<_C, SelectorSeed<'_a, Ctx, T>, T, type_kinds::$rk>
                 where
-                    // T: Representation<REPR_KIND=type_kinds::List>
-                    // T: Select<Ctx, { _RK }>,
-                    // Assert::<{ $ty::REPR_KIND.eq(Kind::$rk) }>: IsTrue,
+                    T: Representation<ReprKind = type_kinds::$rk> + Select<Ctx>,
                     Ctx: Context,
                     $($bounds)*
                 {
                     type Value = ();
                     $($visit_fns)*
+                }
+
+                impl<'_a, 'de, const _C: u64, T, Ctx, $($generics)*>
+                    IpldVisitorExt<'de> for
+                    CodecSeed<_C, SelectorSeed<'_a, Ctx, T>, T, type_kinds::$rk>
+                where
+                    T: Representation<ReprKind = type_kinds::$rk> + Select<Ctx>,
+                    Ctx: Context,
+                    $($bounds)*
+                {
+                    // $($visit_fns)*
                 }
             };
 
@@ -691,19 +704,19 @@ macro_rules! impl_selector_seed_serde {
                 #[allow(unused_imports)]
                 use $crate::dev::*;
 
-                const _RK: u32 = <$ty as Representation>::REPR_KIND.bits();
-                impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
-                    IpldVisitorExt<'de> for
-                    CodecSeed<_C,
-                        SelectorSeed<'_a, Ctx, $ty $(<$($ty_generics),+>)?>,
-                        $ty $(<$($ty_generics),+>)?
-                    >
-                where
-                    Ctx: Context,
-                    $($bounds)*
-                {
-                    $($visit_fns)*
-                }
+                // const _RK: u32 = <$ty as Representation>::REPR_KIND.bits();
+                // impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
+                //     IpldVisitorExt<'de> for
+                //     CodecSeed<_C,
+                //         SelectorSeed<'_a, Ctx, $ty $(<$($ty_generics),+>)?>,
+                //         $ty $(<$($ty_generics),+>)?
+                //     >
+                // where
+                //     Ctx: Context,
+                //     $($bounds)*
+                // {
+                //     $($visit_fns)*
+                // }
             };
 
             const _: () = {
@@ -724,64 +737,64 @@ macro_rules! impl_selector_seed_serde {
 
     // CodecDeserializeSeed
 
-        // impl CodecDeserializeSeed for SelectorSeed
-        (@selector_seed_codec_deseed
-            { $($generics:tt)* } { $($bounds:tt)* }
-            $ty:ty
-            { $($deseed_fn:tt)* }
-        ) => {
-            const _: () = {
-                #[allow(unused_imports)]
-                use $crate::dev::*;
+        // // impl CodecDeserializeSeed for SelectorSeed
+        // (@selector_seed_codec_deseed
+        //     { $($generics:tt)* } { $($bounds:tt)* }
+        //     $ty:ty
+        //     { $($deseed_fn:tt)* }
+        // ) => {
+        //     const _: () = {
+        //         #[allow(unused_imports)]
+        //         use $crate::dev::*;
 
-                // const _RK: u32 = false;
-                // impl<'_a, 'de, Ctx, $($generics)*>
-                //     CodecDeserializeSeed<'de> for
-                //     SelectorSeed<'_a, Ctx, $ty>
-                // where
-                //     Ctx: Context,
-                //     $($bounds)*
-                // {
-                //     type Value = ();
-                //     $($deseed_fn)*
-                //     // CodecSeed::<C, _RK, _>(self).deserialize(deserializer)
-                // }
+        //         // const _RK: u32 = false;
+        //         // impl<'_a, 'de, Ctx, $($generics)*>
+        //         //     CodecDeserializeSeed<'de> for
+        //         //     SelectorSeed<'_a, Ctx, $ty>
+        //         // where
+        //         //     Ctx: Context,
+        //         //     $($bounds)*
+        //         // {
+        //         //     type Value = ();
+        //         //     $($deseed_fn)*
+        //         //     // CodecSeed::<C, _RK, _>(self).deserialize(deserializer)
+        //         // }
 
-                // impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
-                //     DeserializeSeed<'de> for
-                //     CodecSeed<_C, _RK, SelectorSeed<'_a, Ctx, $ty>, $ty>
-                // where
-                //     Ctx: Context,
-                // {
-                //     type Value = ();
-                //     $($deseed_fn)*
-                // }
-            };
+        //         // impl<'_a, 'de, const _C: u64, Ctx, $($generics)*>
+        //         //     DeserializeSeed<'de> for
+        //         //     CodecSeed<_C, _RK, SelectorSeed<'_a, Ctx, $ty>, $ty>
+        //         // where
+        //         //     Ctx: Context,
+        //         // {
+        //         //     type Value = ();
+        //         //     $($deseed_fn)*
+        //         // }
+        //     };
 
-            const _: () = {
-                #[allow(unused_imports)]
-                use $crate::dev::*;
+        //     const _: () = {
+        //         #[allow(unused_imports)]
+        //         use $crate::dev::*;
 
-                // const _RK: u32 = true;
-                // impl<'a, 'de, $($generics)*>
-                //     $crate::dev::CodecDeserializeSeed<'de> for
-                //     std::marker::PhantomData<$ty>
-                // {
-                //     type Value = $ty;
-                //     $($deseed_fn)*
-                // }
+        //         // const _RK: u32 = true;
+        //         // impl<'a, 'de, $($generics)*>
+        //         //     $crate::dev::CodecDeserializeSeed<'de> for
+        //         //     std::marker::PhantomData<$ty>
+        //         // {
+        //         //     type Value = $ty;
+        //         //     $($deseed_fn)*
+        //         // }
 
-                // impl<'de, const _C: u64 $($generics)*>
-                //     $crate::dev::DeserializeSeed<'de> for
-                //     $crate::dev::CodecSeed<_C, _RK, std::marker::PhantomData<$ty>>
-                // where
-                //     Self: $crate::dev::Visitor<'de>,
-                // {
-                //     type Value = <Self as $crate::dev::Visitor<'de>>::Value;
-                //     $($deseed_fn)*
-                // }
-            };
-        };
+        //         // impl<'de, const _C: u64 $($generics)*>
+        //         //     $crate::dev::DeserializeSeed<'de> for
+        //         //     $crate::dev::CodecSeed<_C, _RK, std::marker::PhantomData<$ty>>
+        //         // where
+        //         //     Self: $crate::dev::Visitor<'de>,
+        //         // {
+        //         //     type Value = <Self as $crate::dev::Visitor<'de>>::Value;
+        //         //     $($deseed_fn)*
+        //         // }
+        //     };
+        // };
         // impl CodecDeserializeSeed for SelectorSeed, using deserialize_any
         (@selector_seed_codec_deseed @any
             { $($generics:tt)* } { $($bounds:tt)* }
@@ -1136,358 +1149,3 @@ macro_rules! impl_selector_seed_serde {
     //     }
     // };
 }
-
-/*
-/// Returns an iterator ...
-pub fn seq_iter<'a: 'de, 'de, Ctx, A, T, U>(
-    selector: &'a Selector,
-    mut state: &'a mut SelectorState,
-    callback: Params<'_, C, T, Option<U>>,
-    mut ctx: &'a mut C,
-    seq: A,
-) -> Box<dyn Iterator<Item = Result<Option<U>, A::Error>> + 'a>
-// ) -> FromFn<&'a mut dyn FnMut() -> Option<Result<Option<U>, Error>>>
-where
-    C: Context,
-    A: SeqAccess<'de> + 'a,
-    T: Representation + Select<C>,
-    U: Representation,
-    Option<U>: Select<C>,
-{
-    // return an iterator
-    // for each item:
-    //  - descend index, get next selector
-    //  - create a deserializer, set it to state
-    //      -
-    //  - call T::select(inputs)
-
-    let mut decoder = SeqIterDecoder::<_, C, T, U> {
-        seq,
-        end: false,
-        _t: PhantomData,
-    };
-    Box::new(std::iter::from_fn(move || {
-        if decoder.end {
-            None
-        } else {
-            ctx.set_decoder(&mut decoder);
-            // todo: using option isnt right
-            match T::select::<Option<U>>(&selector, &mut state, callback, &mut ctx).transpose() {
-                Some(Err(err)) => Some(Err(A::Error::custom(err))),
-                Some(Ok(inner)) => Some(Ok(inner)),
-                None => None,
-            }
-        }
-    }))
-
-    // T::select::<U>(selector, state, ctx)
-    // unimplemented!()
-}
-
-pub struct SeqIterDecoder<A, C, T, U> {
-    pub seq: A,
-    pub end: u32,
-    _t: PhantomData<(C, T, U)>,
-}
-
-impl<A, C, T, U> SeqIterDecoder<A, C, T, U> {
-    // fn new<'de>(seq: A) -> Box<dyn ErasedDeserializer<'de>>
-    // where
-    //     A: SeqAccess<'de> + 'static,
-    // {
-    //     Box::new(<dyn ErasedDeserializer<'de>>::erase(Self {
-    //         seq,
-    //         end: false,
-    //     }))
-    // }
-
-    // fn decode<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    // where
-    //     V: Visitor<'de>,
-    // {
-
-    // }
-}
-
-macro_rules! deserialize {
-    ($fn:ident) => {
-        // todo issue with this is that we cant add constraints to the V to use it as a seed
-        fn $fn<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: Visitor<'de>,
-        {
-            // if type_eq::<SelectorSeed<'_, C, T, U>, V>() {
-            //     if let Some(next) = self.seq.next_element(self)
-            // }
-        }
-    };
-}
-
-impl<'de, A: SeqAccess<'de>, C, T, U> Deserializer<'de> for SeqIterDecoder<A, C, T, U> {
-    type Error = A::Error;
-
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    serde::serde_if_integer128! {
-        fn deserialize_i128<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: Visitor<'de>
-        {
-            let _ = visitor;
-            Err(Self::Error::custom("i128 is not supported"))
-        }
-    }
-
-    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    serde::serde_if_integer128! {
-        fn deserialize_u128<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: Visitor<'de>
-        {
-            let _ = visitor;
-            Err(Self::Error::custom("u128 is not supported"))
-        }
-    }
-
-    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_unit_struct<V>(
-        self,
-        name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_newtype_struct<V>(
-        self,
-        name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_tuple_struct<V>(
-        self,
-        name: &'static str,
-        len: usize,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_struct<V>(
-        self,
-        name: &'static str,
-        fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_enum<V>(
-        self,
-        name: &'static str,
-        variants: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-
-    fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        unimplemented!()
-    }
-}
-
-// default impl<'de, 'a, C, T, U> DeserializeSeed<'de> for SelectorSeed<'a, C, T, U>
-// where
-//     C: Context,
-//     T: Representation,
-//     U: Representation,
-// {
-//     default type Value = Option<U>;
-
-//     #[inline]
-//     default fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         D::Error::custom("must be implemented by an `ipld` crate type")
-//     }
-// }
-
- */

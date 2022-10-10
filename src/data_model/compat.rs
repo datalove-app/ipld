@@ -5,11 +5,13 @@ mod ignored {
     use super::*;
 
     impl Representation for IgnoredAny {
+        type ReprKind = type_kinds::Any;
+
         const NAME: &'static str = "IgnoredAny";
         const SCHEMA: &'static str = "type IgnoredAny = Any";
         const DATA_MODEL_KIND: Kind = Kind::Null;
         const SCHEMA_KIND: Kind = Kind::Any;
-        const REPR_KIND: Kind = Kind::Any;
+        // const REPR_KIND: Kind = Kind::Any;
         const __IGNORED: bool = true;
 
         #[doc(hidden)]
@@ -37,11 +39,16 @@ mod option {
     where
         T: Representation,
     {
+        type ReprKind = T::ReprKind;
+        // type ReprKind = type_kinds::Optional<<T as Representation>::ReprKind>;
+        // type ReprKind = typenum::op!(type_kinds::Null | T::ReprKind);
+        // type ReprKind = typenum::Or<type_kinds::Null, T::ReprKind>;
+
         const NAME: &'static str = concat!("Optional", stringify!(T::NAME));
         const SCHEMA: &'static str = concat!("type ", stringify!(T::NAME), " nullable");
         const DATA_MODEL_KIND: Kind = T::DATA_MODEL_KIND;
         const SCHEMA_KIND: Kind = T::SCHEMA_KIND;
-        const REPR_KIND: Kind = T::REPR_KIND;
+        // const REPR_KIND: Kind = T::REPR_KIND;
         const IS_LINK: bool = T::IS_LINK;
         const HAS_LINKS: bool = T::HAS_LINKS;
 
@@ -133,11 +140,13 @@ mod wrapper {
             where
                 T: Representation,
             {
+                type ReprKind = <T as Representation>::ReprKind;
+
                 const NAME: &'static str = T::NAME;
                 const SCHEMA: &'static str = T::SCHEMA;
                 const DATA_MODEL_KIND: Kind = T::DATA_MODEL_KIND;
                 const SCHEMA_KIND: Kind = T::SCHEMA_KIND;
-                const REPR_KIND: Kind = T::REPR_KIND;
+                // const REPR_KIND: Kind = T::REPR_KIND;
                 const IS_LINK: bool = T::IS_LINK;
                 const HAS_LINKS: bool = T::HAS_LINKS;
 

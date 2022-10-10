@@ -132,9 +132,12 @@ pub(super) fn impl_repr<'a, D: Deref<Target = StructFields>>(
     let repr_body = expand::impl_repr(
         meta,
         quote! {
+            type ReprKind = type_kinds::#repr_kind;
+
+            const SCHEMA: &'static str = "";
             const DATA_MODEL_KIND: Kind = Kind::Map;
             const SCHEMA_KIND: Kind = Kind::Struct;
-            const REPR_KIND: Kind = Kind::#repr_kind;
+            // const REPR_KIND: Kind = Kind::#repr_kind;
             // const FIELDS: Fields = Fields::Struct(&[#(#fields,)*]);
         },
     );

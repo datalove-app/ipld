@@ -1,6 +1,9 @@
 use crate::dev::*;
-use macros::derive_more::{From, IsVariant, TryInto, Unwrap};
-use maybestd::rc::Rc;
+use macros::{
+    derive_more::{From, IsVariant, TryInto, Unwrap},
+    impl_selector_seed_serde,
+};
+use maybestd::{fmt, rc::Rc};
 use std::path::Path;
 
 // ///
@@ -41,6 +44,15 @@ schema! {
         | Link link
     } representation kinded;
 }
+
+// impl_selector_seed_serde! { @codec_seed_visitor_rk Any
+//     {} { T: 'static }
+// {
+//     #[inline]
+//     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         write!(f, "{}, a boolean type", Bool::NAME)
+//     }
+// }}
 
 /// TODO: convert these to a Node trait, that all types implement
 impl Any {

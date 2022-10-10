@@ -1,11 +1,3 @@
-pub extern crate derive_more;
-#[macro_use]
-pub extern crate typenum;
-#[macro_use]
-pub extern crate typenum_macro;
-// #[macro_use]
-// pub extern crate static_assertions;
-
 pub mod common;
 pub mod schema;
 pub mod selector;
@@ -21,4 +13,8 @@ pub mod dev {
     pub use crate::schema::{expand::*, parse::*, *};
     pub use crate::selector::*;
     pub use crate::*;
+
+    pub use derive_more;
+    pub use typenum;
+    pub use typenum_macro;
 }

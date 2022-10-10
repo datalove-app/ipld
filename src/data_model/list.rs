@@ -14,11 +14,13 @@ pub use iterators::*;
 pub type List<T = Any> = Vec<T>;
 
 impl<T: Representation> Representation for List<T> {
+    type ReprKind = type_kinds::List;
+
     const NAME: &'static str = "List";
     const SCHEMA: &'static str = concat!("type List [", stringify!(T::NAME), "]");
     const DATA_MODEL_KIND: Kind = Kind::List;
     const SCHEMA_KIND: Kind = Kind::List;
-    const REPR_KIND: Kind = Kind::List;
+    // const REPR_KIND: Kind = Kind::List;
     const HAS_LINKS: bool = T::HAS_LINKS;
 
     fn has_links(&self) -> bool {
@@ -74,60 +76,69 @@ impl<T: Representation> Representation for List<T> {
     }
 }
 
-impl_selector_seed_serde! { @codec_seed_visitor
-    { T: Select<Ctx> + 'static } {} List<T>
+// impl_selector_seed_serde! { @codec_seed_visitor
+//     { T: Select<Ctx> + 'static } {} List<T>
+// {
+//     #[inline]
+//     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         write!(f, "A list of `{}`", T::NAME)
+//     }
+
+//     #[inline]
+//     fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+//     where
+//         A: SeqAccess<'de>,
+//     {
+//         if let Some(s) = self.0.selector.as_explore_union() {
+//             if s.matches_first() {
+//                 let list = <List<T>>::deserialize::<_C, _>(SeqAccessDeserializer::new(seq))?;
+//                 return list.__select_in(self.0).map_err(A::Error::custom);
+//             } else {
+//                 // todo: support multiple non-overlapping ranges
+//             }
+//         }
+
+//         let iter = SerdeListIterator::<'de, _>::from(seq);
+//         match self.0.selector {
+//             Selector::Matcher(_) => {
+//                 self.0.match_list::<_C, T, _, _, _, _, _>(
+//                     iter,
+//                     |iter| {
+//                         let len = <_ as ListIterator<T>>::size_hint(iter).unwrap_or(8);
+//                         RefCell::new(List::<T>::with_capacity(len))
+//                     },
+//                     |dag| Box::new(|child, _| Ok(dag.borrow_mut().push(child))),
+//                     RefCell::into_inner,
+//                 ).map_err(A::Error::custom)
+//             },
+//             Selector::ExploreIndex(s) => self.0
+//                 .explore_list_range::<_C, T, _, _>(iter, s.to_range())
+//                 .map_err(A::Error::custom),
+//             Selector::ExploreRange(s) => self.0
+//                 .explore_list_range::<_C, T, _, _>(iter, s.to_range())
+//                 .map_err(A::Error::custom),
+//             Selector::ExploreAll(s) => self.0
+//                 .explore_list_range::<_C, T, _, _>(iter, s.to_range())
+//                 .map_err(A::Error::custom),
+//             _ => Err(A::Error::custom(Error::unsupported_selector::<List<T>>(
+//                 self.0.selector,
+//             ))),
+//         }
+//     }
+// }}
+
+// impl_selector_seed_serde! { @codec_seed_visitor_ext
+//     { T: Select<Ctx> + 'static } {} List<T> {}
+// }
+
+impl_selector_seed_serde! { @codec_seed_visitor_rk List
+    {} { T: 'static }
 {
     #[inline]
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "A list of `{}`", T::NAME)
-    }
-
-    #[inline]
-    fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
-    where
-        A: SeqAccess<'de>,
-    {
-        if let Some(s) = self.0.selector.as_explore_union() {
-            if s.matches_first() {
-                let list = <List<T>>::deserialize::<_C, _>(SeqAccessDeserializer::new(seq))?;
-                return list.__select_in(self.0).map_err(A::Error::custom);
-            } else {
-                // todo: support multiple non-overlapping ranges
-            }
-        }
-
-        let iter = SerdeListIterator::<'de, _>::from(seq);
-        match self.0.selector {
-            Selector::Matcher(_) => {
-                self.0.match_list::<_C, T, _, _, _, _, _>(
-                    iter,
-                    |iter| {
-                        let len = <_ as ListIterator<T>>::size_hint(iter).unwrap_or(8);
-                        RefCell::new(List::<T>::with_capacity(len))
-                    },
-                    |dag| Box::new(|child, _| Ok(dag.borrow_mut().push(child))),
-                    RefCell::into_inner,
-                ).map_err(A::Error::custom)
-            },
-            Selector::ExploreIndex(s) => self.0
-                .explore_list_range::<_C, T, _, _>(iter, s.to_range())
-                .map_err(A::Error::custom),
-            Selector::ExploreRange(s) => self.0
-                .explore_list_range::<_C, T, _, _>(iter, s.to_range())
-                .map_err(A::Error::custom),
-            Selector::ExploreAll(s) => self.0
-                .explore_list_range::<_C, T, _, _>(iter, s.to_range())
-                .map_err(A::Error::custom),
-            _ => Err(A::Error::custom(Error::unsupported_selector::<List<T>>(
-                self.0.selector,
-            ))),
-        }
+        write!(f, "{}, a boolean type", Bool::NAME)
     }
 }}
-
-impl_selector_seed_serde! { @codec_seed_visitor_ext
-    { T: Select<Ctx> + 'static } {} List<T> {}
-}
 
 // impl_selector_seed_serde! { @selector_seed_codec_deseed
 //     { T: Select<Ctx> + 'static } {} List<T>

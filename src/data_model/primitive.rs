@@ -24,6 +24,8 @@ mod null {
     pub struct Null;
 
     impl Representation for Null {
+        type ReprKind = type_kinds::Null;
+
         const NAME: &'static str = "Null";
         const SCHEMA: &'static str = "type Null null";
         const DATA_MODEL_KIND: Kind = Kind::Null;
@@ -46,37 +48,10 @@ mod null {
         }
     }
 
-    impl_selector_seed_serde! { @codec_seed_visitor {} {} Null {
-        #[inline]
-        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", Null::NAME)
-        }
-
-        #[inline]
-        fn visit_none<E>(self) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            self.0.select_primitive::<_C>(Null).map_err(E::custom)
-        }
-
-        #[inline]
-        fn visit_unit<E>(self) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            self.visit_none()
-        }
-    }}
-
-    impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Null {} }
-
-    // impl_selector_seed_serde! { @codec_seed_visitor_rk Null
-    //     { T: From<Null> + 'static } {} T
-    // {
+    // impl_selector_seed_serde! { @codec_seed_visitor {} {} Null {
     //     #[inline]
     //     fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    //         write!(f, "{}, a nothing type", T::NAME)
+    //         write!(f, "{}", Null::NAME)
     //     }
 
     //     #[inline]
@@ -84,7 +59,7 @@ mod null {
     //     where
     //         E: de::Error,
     //     {
-    //         self.0.select_primitive::<_C>(T::from(Null)).map_err(E::custom)
+    //         self.0.select_primitive::<_C>(Null).map_err(E::custom)
     //     }
 
     //     #[inline]
@@ -96,6 +71,33 @@ mod null {
     //     }
     // }}
 
+    // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Null {} }
+
+    impl_selector_seed_serde! { @codec_seed_visitor_rk Null
+        {} { T: From<Null> + 'static }
+    {
+        #[inline]
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}, a nothing type", T::NAME)
+        }
+
+        #[inline]
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            self.0.select_primitive::<_C>(T::from(Null)).map_err(E::custom)
+        }
+
+        #[inline]
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            self.visit_none()
+        }
+    }}
+
     impl_selector_seed_serde! { @selector_seed_select {} {} Null }
 }
 
@@ -106,6 +108,8 @@ mod bool {
     pub type Bool = bool;
 
     impl Representation for bool {
+        type ReprKind = type_kinds::Bool;
+
         const NAME: &'static str = "Bool";
         const SCHEMA: &'static str = "type Bool bool";
         const DATA_MODEL_KIND: Kind = Kind::Bool;
@@ -127,7 +131,30 @@ mod bool {
         }
     }
 
-    impl_selector_seed_serde! { @codec_seed_visitor {} {} Bool {
+    // impl_selector_seed_serde! { @codec_seed_visitor {} {} Bool {
+    //     #[inline]
+    //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    //         write!(f, "{}, a boolean type", Bool::NAME)
+    //     }
+
+    //     #[inline]
+    //     fn visit_bool<E>(self, v : bool) -> Result<Self::Value, E>
+    //     where
+    //         E: de::Error,
+    //     {
+    //         if self.0.selector.is_explore_union() {
+    //             v.__select_in(self.0).map_err(E::custom)
+    //         } else  {
+    //             self.0.match_primitive::<_C>(v).map_err(E::custom)
+    //         }
+    //     }
+    // }}
+
+    // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Bool {} }
+
+    impl_selector_seed_serde! { @codec_seed_visitor_rk Bool
+        {} { T: From<Bool> + 'static }
+    {
         #[inline]
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "{}, a boolean type", Bool::NAME)
@@ -139,35 +166,12 @@ mod bool {
             E: de::Error,
         {
             if self.0.selector.is_explore_union() {
-                v.__select_in(self.0).map_err(E::custom)
+                T::from(v).__select_in(self.0).map_err(E::custom)
             } else  {
-                self.0.match_primitive::<_C>(v).map_err(E::custom)
+                self.0.match_primitive::<_C>(T::from(v)).map_err(E::custom)
             }
         }
     }}
-
-    impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Bool {} }
-
-    // impl_selector_seed_serde! { @codec_seed_visitor_rk Bool
-    //     { T: From<Bool> } {} T
-    // {
-    //     #[inline]
-    //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    //         write!(f, "{}, a boolean type", Bool::NAME)
-    //     }
-    //
-    //     #[inline]
-    //     fn visit_bool<E>(self, v : bool) -> Result<Self::Value, E>
-    //     where
-    //         E: de::Error,
-    //     {
-    //         if self.0.selector.is_explore_union() {
-    //             T::from(v).__select_in(self.0).map_err(E::custom)
-    //         } else  {
-    //             self.0.match_primitive::<_C>(T::from(v)).map_err(E::custom)
-    //         }
-    //     }
-    // }}
 
     impl_selector_seed_serde! { @selector_seed_select {} {} Bool }
 }
@@ -178,7 +182,7 @@ mod num {
     /// Implements IPLD traits for native number types.
     macro_rules! impl_ipld_num {
         (   $ty:ident : $name:ident $kind:ident {
-                $deserialize_fn:ident
+                // $deserialize_fn:ident
                 $visit_fn:ident
                 @conv { $($other_ty:ty : $other_visit_fn:ident)* }
             }
@@ -187,11 +191,13 @@ mod num {
             pub type $name = $ty;
 
             impl Representation for $ty {
+                type ReprKind = type_kinds::$name;
+
                 const NAME: &'static str = stringify!($name);
                 const SCHEMA: &'static str = concat!("type ", stringify!($name), " int");
                 const DATA_MODEL_KIND: Kind = Kind::$kind;
                 const SCHEMA_KIND: Kind = Kind::$name;
-                const REPR_KIND: Kind = Kind::$kind;
+                // const REPR_KIND: Kind = Kind::$kind;
 
                 impl_ipld_num!(@field $kind $ty);
 
@@ -212,33 +218,42 @@ mod num {
                 }
             }
 
-            impl_selector_seed_serde! { @codec_seed_visitor {} {} $ty {
-                #[inline]
-                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    write!(f, "{}, a fixed-length number type represented as a(n) {}", <$ty>::NAME, stringify!($ty))
-                }
+            // impl_selector_seed_serde! { @codec_seed_visitor {} {} $ty {
+            //     #[inline]
+            //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            //         write!(f, "{}, a fixed-length number type represented as a(n) {}", <$ty>::NAME, stringify!($ty))
+            //     }
 
-                #[inline]
-                fn $visit_fn<E>(self, v: $ty) -> Result<Self::Value, E>
-                where
-                    E: de::Error,
-                {
-                    self.0.select_primitive::<_C>(v).map_err(E::custom)
-                }
+            //     #[inline]
+            //     fn $visit_fn<E>(self, v: $ty) -> Result<Self::Value, E>
+            //     where
+            //         E: de::Error,
+            //     {
+            //         self.0.select_primitive::<_C>(v).map_err(E::custom)
+            //     }
 
-                $(
-                    #[inline]
-                    fn $other_visit_fn<E>(self, v: $other_ty) -> Result<Self::Value, E>
-                    where
-                        E: de::Error,
-                    {
-                        let n = <$ty as Representation>::deserialize::<_C, _>(v.into_deserializer())?;
-                        self.$visit_fn(n)
-                    }
-                )*
+            //     $(
+            //         #[inline]
+            //         fn $other_visit_fn<E>(self, v: $other_ty) -> Result<Self::Value, E>
+            //         where
+            //             E: de::Error,
+            //         {
+            //             let n = <$ty as Representation>::deserialize::<_C, _>(v.into_deserializer())?;
+            //             self.$visit_fn(n)
+            //         }
+            //     )*
+            // }}
+
+            // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} $ty {} }
+
+            impl_selector_seed_serde! { @codec_seed_visitor_rk $name
+                {} { T: From<$ty> + 'static }
+            {
+                #[inline]
+                fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    write!(f, "{}, a nothing type", T::NAME)
+                }
             }}
-
-            impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} $ty {} }
 
             impl_selector_seed_serde! { @selector_seed_select {} {} $ty }
         };
@@ -252,7 +267,7 @@ mod num {
 
     impl_ipld_num! (
         i8 : Int8 Int {
-            deserialize_i8
+            // deserialize_i8
             visit_i8
             @conv {
                 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
@@ -262,7 +277,7 @@ mod num {
     );
     impl_ipld_num! (
         i16 : Int16 Int {
-            deserialize_i16
+            // deserialize_i16
             visit_i16
             @conv {
                 i8:visit_i8 i32:visit_i32 i64:visit_i64 i128:visit_i128
@@ -272,7 +287,7 @@ mod num {
     );
     impl_ipld_num! (
         i32 : Int32 Int {
-            deserialize_i32
+            // deserialize_i32
             visit_i32
             @conv {
                 i8:visit_i8 i16:visit_i16 i64:visit_i64 i128:visit_i128
@@ -282,7 +297,7 @@ mod num {
     );
     impl_ipld_num! (
         i64 : Int64 Int {
-            deserialize_i64
+            // deserialize_i64
             visit_i64
             @conv {
                 i8:visit_i8 i16:visit_i16 i32:visit_i32 i128:visit_i128
@@ -292,7 +307,7 @@ mod num {
     );
     impl_ipld_num! (
         i128 : Int128 Int {
-            deserialize_i128
+            // deserialize_i128
             visit_i128
             @conv {
                 i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64
@@ -302,7 +317,7 @@ mod num {
     );
     impl_ipld_num! (
         u8 : Uint8 Int {
-            deserialize_u8
+            // deserialize_u8
             visit_u8
             @conv {
                 i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
@@ -312,7 +327,7 @@ mod num {
     );
     impl_ipld_num! (
         u16 : Uint16 Int {
-            deserialize_u16
+            // deserialize_u16
             visit_u16
             @conv {
                 i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
@@ -322,7 +337,7 @@ mod num {
     );
     impl_ipld_num! (
         u32 : Uint32 Int {
-            deserialize_u32
+            // deserialize_u32
             visit_u32
             @conv {
                 i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
@@ -332,7 +347,7 @@ mod num {
     );
     impl_ipld_num! (
         u64 : Uint64 Int {
-            deserialize_u64
+            // deserialize_u64
             visit_u64
             @conv {
                 i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
@@ -342,7 +357,7 @@ mod num {
     );
     impl_ipld_num! (
         u128 : Uint128 Int {
-            deserialize_u128
+            // deserialize_u128
             visit_u128
             @conv {
                 i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
@@ -352,14 +367,14 @@ mod num {
     );
     impl_ipld_num! (
         f32 : Float32 Float {
-            deserialize_f32
+            // deserialize_f32
             visit_f32
             @conv { f64:visit_f64 }
         }
     );
     impl_ipld_num! (
         f64 : Float64 Float {
-            deserialize_f64
+            // deserialize_f64
             visit_f64
             @conv { f32:visit_f32 }
         }
@@ -404,6 +419,8 @@ mod string {
     }
 
     impl Representation for IpldString {
+        type ReprKind = type_kinds::String;
+
         const NAME: &'static str = "String";
         const SCHEMA: &'static str = "type String string";
         const DATA_MODEL_KIND: Kind = Kind::String;
@@ -430,31 +447,40 @@ mod string {
     }
 
     // TODO:
-    impl_selector_seed_serde! { @codec_seed_visitor {} {} IpldString {
-        #[inline]
-        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "An IPLD string")
-        }
+    // impl_selector_seed_serde! { @codec_seed_visitor {} {} IpldString {
+    //     #[inline]
+    //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    //         write!(f, "An IPLD string")
+    //     }
 
-        #[inline]
-        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            let v = IpldString::from(s);
-            self.0.select_primitive::<_C>(v).map_err(E::custom)
-        }
+    //     #[inline]
+    //     fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+    //     where
+    //         E: de::Error,
+    //     {
+    //         let v = IpldString::from(s);
+    //         self.0.select_primitive::<_C>(v).map_err(E::custom)
+    //     }
 
+    //     #[inline]
+    //     fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
+    //     where
+    //         E: de::Error,
+    //     {
+    //         self.visit_str(s.as_ref())
+    //     }
+    // }}
+
+    // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} IpldString {} }
+
+    impl_selector_seed_serde! { @codec_seed_visitor_rk String
+        {} { T: From<IpldString> + 'static }
+    {
         #[inline]
-        fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            self.visit_str(s.as_ref())
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}, a nothing type", T::NAME)
         }
     }}
-
-    impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} IpldString {} }
 
     impl_selector_seed_serde! { @selector_seed_select {} {} IpldString }
 
@@ -506,6 +532,8 @@ mod bytes {
     pub type Bytes = crate::dev::bytes::Bytes;
 
     impl Representation for Bytes {
+        type ReprKind = type_kinds::Bytes;
+
         const NAME: &'static str = "Bytes";
         const SCHEMA: &'static str = "type Bytes bytes";
         const DATA_MODEL_KIND: Kind = Kind::Bytes;
@@ -559,30 +587,39 @@ mod bytes {
         }
     }
 
-    impl_selector_seed_serde! { @codec_seed_visitor {} {} Bytes {
-        #[inline]
-        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(formatter, "A slice of bytes")
-        }
+    // impl_selector_seed_serde! { @codec_seed_visitor {} {} Bytes {
+    //     #[inline]
+    //     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    //         write!(formatter, "A slice of bytes")
+    //     }
 
-        #[inline]
-        fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            self.0.select_bytes::<_C>(Bytes::copy_from_slice(bytes)).map_err(E::custom)
-        }
+    //     #[inline]
+    //     fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
+    //     where
+    //         E: de::Error,
+    //     {
+    //         self.0.select_bytes::<_C>(Bytes::copy_from_slice(bytes)).map_err(E::custom)
+    //     }
 
+    //     #[inline]
+    //     fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
+    //     where
+    //         E: de::Error,
+    //     {
+    //         self.0.select_bytes::<_C>(Bytes::from(bytes)).map_err(E::custom)
+    //     }
+    // }}
+
+    // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Bytes {} }
+
+    impl_selector_seed_serde! { @codec_seed_visitor_rk Bytes
+        {} { T: From<Bytes> + 'static }
+    {
         #[inline]
-        fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            self.0.select_bytes::<_C>(Bytes::from(bytes)).map_err(E::custom)
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{}, a nothing type", T::NAME)
         }
     }}
-
-    impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Bytes {} }
 
     impl_selector_seed_serde! { @selector_seed_select {} {} Bytes }
 
@@ -626,9 +663,9 @@ mod bytes {
     }
 }
 
-enum Assert<const COND: bool> {}
-trait IsTrue {}
-impl IsTrue for Assert<true> {}
+// enum Assert<const COND: bool> {}
+// trait IsTrue {}
+// impl IsTrue for Assert<true> {}
 
 // impl<'a, const C: u64, const RK: u32, Ctx, T> CodecSeed<C, RK, SelectorSeed<'a, Ctx, T>, T>
 // where

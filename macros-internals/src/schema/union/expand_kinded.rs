@@ -39,9 +39,12 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
         expand::impl_repr(
             meta,
             quote! {
+                type ReprKind = #repr_kind;
+
+                const SCHEMA: &'static str = "";
                 const DATA_MODEL_KIND: Kind = #dm_kind;
                 const SCHEMA_KIND: Kind = Kind::Union;
-                const REPR_KIND: Kind = #repr_kind;
+                // const REPR_KIND: Kind = #repr_kind;
                 // const FIELDS: Fields = Fields::Keyed(&[#(#fields,)*]);
 
                 #[inline]
@@ -121,24 +124,24 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
             //     }
             // }
 
-            #lib::dev::macros::impl_selector_seed_serde! {
-                @codec_seed_visitor {} {} #name
-            {
-                #[inline]
-                fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    write!(f, "A `{}`", <#name as Representation>::NAME)
-                }
+            // #lib::dev::macros::impl_selector_seed_serde! {
+            //     @codec_seed_visitor {} {} #name
+            // {
+            //     #[inline]
+            //     fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            //         write!(f, "A `{}`", <#name as Representation>::NAME)
+            //     }
 
-                #(#non_link_visitors)*
-            }}
-            #lib::dev::macros::impl_selector_seed_serde! {
-                @codec_seed_visitor_ext {} {} #name
-            {
-                #(#link_visitors)*
-            }}
-            #lib::dev::macros::impl_selector_seed_serde! {
-                @selector_seed_codec_deseed @any {} {} #name
-            }
+            //     #(#non_link_visitors)*
+            // }}
+            // #lib::dev::macros::impl_selector_seed_serde! {
+            //     @codec_seed_visitor_ext {} {} #name
+            // {
+            //     #(#link_visitors)*
+            // }}
+            // #lib::dev::macros::impl_selector_seed_serde! {
+            //     @selector_seed_codec_deseed @any {} {} #name
+            // }
             #lib::dev::macros::impl_selector_seed_serde! {
                 @selector_seed_select {} {} #name
             }
@@ -158,10 +161,13 @@ impl KindedUnionReprDefinition {
     }
 
     fn repr_kind(&self) -> TokenStream {
-        self.iter()
-            .map(|f| f.ty(false))
-            .map(|ty| quote!(<#ty as Representation>::REPR_KIND))
-            .fold(quote!(Kind::empty()), |ts, kind| quote!(#ts.union(#kind)))
+        self
+            .iter()
+            .map(|f| f.repr_kind())
+            .fold(
+                quote!(type_kinds::Empty),
+                |ts, kind| quote!(typenum::Or<#ts, #kind>),
+            )
     }
 }
 
@@ -183,6 +189,21 @@ impl UnionKindedField {
             SchemaKind::List => quote!(Kind::List),
             SchemaKind::Map => quote!(Kind::Map),
             SchemaKind::Link => quote!(Kind::Link),
+            _ => unreachable!(),
+        }
+    }
+
+    fn repr_kind(&self) -> TokenStream {
+        match self.key {
+            SchemaKind::Null => quote!(type_kinds::Null),
+            SchemaKind::Bool => quote!(type_kinds::Bool),
+            SchemaKind::Int => quote!(type_kinds::Int),
+            SchemaKind::Float => quote!(type_kinds::Float),
+            SchemaKind::String => quote!(type_kinds::String),
+            SchemaKind::Bytes => quote!(type_kinds::Bytes),
+            SchemaKind::List => quote!(type_kinds::List),
+            SchemaKind::Map => quote!(type_kinds::Map),
+            SchemaKind::Link => quote!(type_kinds::Link),
             _ => unreachable!(),
         }
     }

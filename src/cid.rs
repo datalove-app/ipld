@@ -144,6 +144,8 @@ impl Cid {
 }
 
 impl Representation for Cid {
+    type ReprKind = type_kinds::Link;
+
     const NAME: &'static str = "Cid";
     const SCHEMA: &'static str = "type Cid &Any";
     const DATA_MODEL_KIND: Kind = Kind::Link;

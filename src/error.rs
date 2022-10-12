@@ -1,12 +1,11 @@
 use crate::dev::*;
 use cid::Error as CidError;
+use maybestd::{
+    error::Error as StdError, fmt::Display, num::TryFromIntError, string::FromUtf8Error,
+};
 use multibase::Error as MultibaseError;
 use multihash::Error as MultihashError;
 use serde::{de, ser};
-use std::{
-    convert::Infallible, error::Error as StdError, fmt::Display, num::TryFromIntError,
-    string::FromUtf8Error, sync::mpsc::SendError,
-};
 use thiserror::Error;
 
 #[derive(Debug, Error)]

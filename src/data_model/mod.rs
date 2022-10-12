@@ -4,7 +4,6 @@ use crate::dev::*;
 use macros::derive_more::From;
 
 mod any;
-mod compat;
 // pub mod borrowed;
 // mod canon;
 mod link;

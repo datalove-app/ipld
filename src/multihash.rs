@@ -1,5 +1,6 @@
 use crate::dev::*;
 use macros::derive_more::From;
+use maybestd::io;
 use multihash::Hasher;
 
 macro_rules! impl_multihasher {
@@ -94,13 +95,13 @@ macro_rules! impl_multihasher {
             }
         }
 
-        impl std::io::Write for Multihash {
-            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        impl io::Write for Multihash {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
                 self.update(buf);
                 Ok(buf.len())
             }
 
-            fn flush(&mut self) -> std::io::Result<()> {
+            fn flush(&mut self) -> io::Result<()> {
                 Ok(())
             }
         }

@@ -14,8 +14,6 @@ path = "src/lib.rs"
 # core
 bytes = "1.2"
 cid = { version = "0.8", features = ["alloc", "serde-codec"] }
-# erased-serde = { version = "0.3", features = ["std"] }
-# ipfs = { git = "https://github.com/ipfs-rust/rust-ipfs", branch = "master", optional = true }
 ipld-macros = { path = "./macros" }
 ipld-macros-internals = { path = "./macros-internals" }
 multibase = "0.9"
@@ -41,12 +39,14 @@ delegate = { version = "0.8", optional = true }
 downcast-rs = "1.2"
 
 [dev-dependencies]
-criterion = "0.4"
-proptest = "1.0"
+# criterion = "0.4"
+# proptest = "1.0"
 
 [features]
-default = ["multicodec", "std"]
+default = ["multicodec", "std", "dev"]
 std = ["cid/std", "core2/std", "multihash/std"]
+# activate dev docs
+dev = []
 
 # codecs
 dag-cbor = ["serde_cbor"]
@@ -61,12 +61,8 @@ multicodec = ["dag-cbor", "dag-json", "dag-pb"]
 
 [workspace]
 members = [
-  # "advanced-schemas",
-  # "codegen",
   "macros",
-  "macros-hack",
   "macros-internals",
-  # "sqlite",
 ]
 exclude = [
   "codec-fixtures/rust",

@@ -1,7 +1,7 @@
 use crate::dev::*;
 use macros::{
     derive_more::{From, IsVariant, TryInto, Unwrap},
-    impl_selector_seed_serde,
+    repr_serde,
 };
 use maybestd::{fmt, rc::Rc};
 use std::path::Path;
@@ -16,7 +16,9 @@ use std::path::Path;
 schema! {
     ///
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug, From, PartialEq, TryInto, IsVariant, Unwrap)]
+    #[derive(Clone, Debug, From, PartialEq, TryInto,
+        // IsVariant, Unwrap
+    )]
     // #[from(forward)]
     #[try_into(owned, ref, ref_mut)]
     // TODO: impl from(forward) and try_into for all unions and enums
@@ -45,14 +47,16 @@ schema! {
     } representation kinded;
 }
 
-// impl_selector_seed_serde! { @codec_seed_visitor_rk Any
-//     {} { T: 'static }
+// repr_serde! { @visitor T T { type_kinds::Any }
+//     { T: TryFrom<Any> + 'static } {}
 // {
 //     #[inline]
 //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 //         write!(f, "{}, a boolean type", Bool::NAME)
 //     }
 // }}
+
+// repr_serde! { @visitor_ext T T { type_kinds::Any } { T: TryFrom<Any> + 'static } {} {}}
 
 /// TODO: convert these to a Node trait, that all types implement
 impl Any {

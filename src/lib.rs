@@ -18,6 +18,7 @@
 mod cid_;
 #[path = "codecs/mod.rs"]
 mod codecs_;
+mod compat;
 mod data_model;
 mod error;
 mod multicodec;
@@ -26,9 +27,12 @@ mod multihash_;
 mod representation;
 mod selectors;
 
+pub use cid;
 #[doc(inline)]
 pub use error::Error;
-#[doc(inline)]
+pub use multibase;
+pub use multihash;
+
 pub use specs::*;
 
 mod specs {
@@ -45,16 +49,22 @@ mod specs {
 
     // multiformats
     pub use multibase::Base as Multibase;
-    pub use multihash::{self, Hasher as _, Multihash as DefaultMultihash, MultihashDigest as _};
+
+    #[doc(hidden)]
+    pub use multihash::{Hasher as _, Multihash as DefaultMultihash, MultihashDigest as _};
     pub use multihash_::Multihash;
 
     // cid
     pub use crate::cid_::*;
-    pub use cid::{Cid as DefaultCid, CidGeneric, Version};
+    pub use cid::Version;
+    #[doc(hidden)]
+    pub use cid::{Cid as DefaultCid, CidGeneric};
 
     // data model, schemas and representation
     pub use crate::data_model::*;
-    pub use crate::representation::{Kind, Representation, TypedKind as _};
+    #[doc(hidden)]
+    pub use crate::representation::TypedKind as _;
+    pub use crate::representation::{Kind, Representation};
     pub use ipld_macros::{ipld_attr, schema};
 
     // selectors
@@ -88,7 +98,7 @@ pub mod dev {
     pub use bytes;
     /// Useful macros for aiding in providing bespoke IPLD support.
     pub mod macros {
-        pub use crate::impl_selector_seed_serde;
+        pub use crate::repr_serde;
         // pub use const_format::*;
         pub use ipld_macros_internals::dev::*;
     }
@@ -118,7 +128,9 @@ pub mod maybestd {
     extern crate alloc;
 
     pub use alloc::{boxed, collections, rc, vec::Vec};
-    pub use core::{borrow, cell, cmp, convert, fmt, hash, iter, marker, ops, str, sync};
+    pub use core::{
+        borrow, cell, cmp, convert, fmt, hash, iter, marker, num, ops, str, string, sync,
+    };
     pub use core2::{error, io};
 }
 #[cfg(feature = "std")]
@@ -126,7 +138,7 @@ pub mod maybestd {
 pub mod maybestd {
     pub use core2::{error, io};
     pub use std::{
-        borrow, boxed, cell, cmp, collections, convert, fmt, hash, iter, marker, ops, rc, str,
-        sync, vec::Vec,
+        borrow, boxed, cell, cmp, collections, convert, fmt, hash, iter, marker, num, ops, rc, str,
+        string, sync, vec::Vec,
     };
 }

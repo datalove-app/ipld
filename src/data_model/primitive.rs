@@ -1,9 +1,14 @@
 use crate::dev::*;
 use macros::{
     derive_more::{AsMut, AsRef, Deref, DerefMut, From, Index, IndexMut, Into, IntoIterator},
-    impl_selector_seed_serde,
+    repr_serde,
 };
-use maybestd::{borrow::Cow, fmt, str::FromStr};
+use maybestd::{
+    borrow::Cow,
+    fmt,
+    ops::{self, RangeBounds},
+    str::FromStr,
+};
 
 pub use self::bool::Bool;
 pub use self::bytes::Bytes;
@@ -43,38 +48,12 @@ mod null {
         where
             D: Deserializer<'de>,
         {
-            <()>::deserialize(deserializer)?;
-            Ok(Self)
+            Ok(Self::from(<()>::deserialize(deserializer)?))
         }
     }
 
-    // impl_selector_seed_serde! { @codec_seed_visitor {} {} Null {
-    //     #[inline]
-    //     fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    //         write!(f, "{}", Null::NAME)
-    //     }
-
-    //     #[inline]
-    //     fn visit_none<E>(self) -> Result<Self::Value, E>
-    //     where
-    //         E: de::Error,
-    //     {
-    //         self.0.select_primitive::<_C>(Null).map_err(E::custom)
-    //     }
-
-    //     #[inline]
-    //     fn visit_unit<E>(self) -> Result<Self::Value, E>
-    //     where
-    //         E: de::Error,
-    //     {
-    //         self.visit_none()
-    //     }
-    // }}
-
-    // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Null {} }
-
-    impl_selector_seed_serde! { @codec_seed_visitor_rk Null T T
-        { T: From<Null> + 'static } {  }
+    repr_serde! { @visitor T T { type_kinds::Null }
+        { T } { T: From<Null> + 'static }
     {
         #[inline]
         fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -86,7 +65,7 @@ mod null {
         where
             E: de::Error,
         {
-            self.0.select_primitive::<_C>(T::from(Null)).map_err(E::custom)
+            self.0.select_scalar::<C>(T::from(Null)).map_err(E::custom)
         }
 
         #[inline]
@@ -98,11 +77,18 @@ mod null {
         }
     }}
 
-    impl_selector_seed_serde! { @codec_seed_visitor_ext_rk Null T T
-        { T: From<Null> + 'static } {} {}
+    repr_serde! { @visitor_ext T T { type_kinds::Null }
+        { T } { T: From<Null> + 'static } {}
     }
 
-    impl_selector_seed_serde! { @selector_seed_select {} {} Null }
+    repr_serde! { @select Null => Null {} {} }
+
+    impl From<()> for Null {
+        #[inline]
+        fn from(_: ()) -> Self {
+            Self
+        }
+    }
 }
 
 mod bool {
@@ -135,29 +121,8 @@ mod bool {
         }
     }
 
-    // impl_selector_seed_serde! { @codec_seed_visitor {} {} Bool {
-    //     #[inline]
-    //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    //         write!(f, "{}, a boolean type", Bool::NAME)
-    //     }
-
-    //     #[inline]
-    //     fn visit_bool<E>(self, v : bool) -> Result<Self::Value, E>
-    //     where
-    //         E: de::Error,
-    //     {
-    //         if self.0.selector.is_explore_union() {
-    //             v.__select_in(self.0).map_err(E::custom)
-    //         } else  {
-    //             self.0.match_primitive::<_C>(v).map_err(E::custom)
-    //         }
-    //     }
-    // }}
-
-    // impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Bool {} }
-
-    impl_selector_seed_serde! { @codec_seed_visitor_rk Bool T T
-        { T: From<Bool> + 'static } {  }
+    repr_serde! { @visitor T T { type_kinds::Bool }
+        { T } { T: From<Bool> + 'static }
     {
         #[inline]
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -169,19 +134,15 @@ mod bool {
         where
             E: de::Error,
         {
-            if self.0.selector.is_explore_union() {
-                T::from(v).__select_in(self.0).map_err(E::custom)
-            } else  {
-                self.0.match_primitive::<_C>(T::from(v)).map_err(E::custom)
-            }
+            self.0.select_scalar::<C>(T::from(v)).map_err(E::custom)
         }
     }}
 
-    impl_selector_seed_serde! { @codec_seed_visitor_ext_rk Bool T T
-        { T: From<Bool> + 'static } {} {}
+    repr_serde! { @visitor_ext T T { type_kinds::Bool }
+        { T } { T: From<Bool> + 'static } {}
     }
 
-    impl_selector_seed_serde! { @selector_seed_select {} {} Bool }
+    repr_serde! { @select Bool => Bool {} {} }
 }
 
 mod num {
@@ -205,7 +166,6 @@ mod num {
                 const SCHEMA: &'static str = concat!("type ", stringify!($name), " int");
                 const DATA_MODEL_KIND: Kind = Kind::$dm_kind;
                 const SCHEMA_KIND: Kind = Kind::$name;
-                // const REPR_KIND: Kind = Kind::$dm_kind;
 
                 impl_ipld_num!(@field $dm_kind $ty);
 
@@ -226,8 +186,8 @@ mod num {
                 }
             }
 
-            impl_selector_seed_serde! { @codec_seed_visitor_rk $name T T
-                { T: From<$ty> + 'static } {  }
+            repr_serde! { @visitor T T { type_kinds::$name }
+                { T } { T: From<$ty> + 'static }
             {
                 #[inline]
                 fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -242,7 +202,7 @@ mod num {
                 where
                     E: de::Error,
                 {
-                    self.0.select_primitive::<_C>(T::from(v)).map_err(E::custom)
+                    self.0.select_scalar::<C>(T::from(v)).map_err(E::custom)
                 }
 
                 $(
@@ -251,17 +211,17 @@ mod num {
                     where
                         E: de::Error,
                     {
-                        let n = <$ty as Representation>::deserialize::<_C, _>(v.into_deserializer())?;
+                        let n = <$ty as Representation>::deserialize::<C, _>(v.into_deserializer())?;
                         self.$visit_fn(n)
                     }
                 )*
             }}
 
-            impl_selector_seed_serde! { @codec_seed_visitor_ext_rk $name T T
-                { T: From<$ty> + 'static } {} {}
+            repr_serde! { @visitor_ext T T { type_kinds::$name }
+                { T } { T: From<$ty> + 'static } {}
             }
 
-            impl_selector_seed_serde! { @selector_seed_select {} {} $ty }
+            repr_serde! { @select $ty => $ty {} {} }
         };
         (@field Int $ty:ty) => {
             fn as_field(&self) -> Option<Field<'_>> {
@@ -271,120 +231,48 @@ mod num {
         (@field Float $ty:ty) => {};
     }
 
-    impl_ipld_num! (
-        i8 : Int8 Int {
-            // deserialize_i8
-            visit_i8
-            @conv {
-                i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        i16 : Int16 Int {
-            // deserialize_i16
-            visit_i16
-            @conv {
-                i8:visit_i8 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        i32 : Int32 Int {
-            // deserialize_i32
-            visit_i32
-            @conv {
-                i8:visit_i8 i16:visit_i16 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        i64 : Int64 Int {
-            // deserialize_i64
-            visit_i64
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        i128 : Int128 Int {
-            // deserialize_i128
-            visit_i128
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        u8 : Uint8 Int {
-            // deserialize_u8
-            visit_u8
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        u16 : Uint16 Int {
-            // deserialize_u16
-            visit_u16
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        u32 : Uint32 Int {
-            // deserialize_u32
-            visit_u32
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        u64 : Uint64 Int {
-            // deserialize_u64
-            visit_u64
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        u128 : Uint128 Int {
-            // deserialize_u128
-            visit_u128
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64
-            }
-        }
-    );
-    impl_ipld_num! (
-        f32 : Float32 Float {
-            // deserialize_f32
-            visit_f32
-            @conv { f64:visit_f64 }
-        }
-    );
-    impl_ipld_num! (
-        f64 : Float64 Float {
-            // deserialize_f64
-            visit_f64
-            @conv { f32:visit_f32 }
-        }
-    );
+    impl_ipld_num! (i8 : Int8 Int { visit_i8 @conv {
+        i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (i16 : Int16 Int { visit_i16 @conv {
+        i8:visit_i8 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (i32 : Int32 Int { visit_i32 @conv {
+        i8:visit_i8 i16:visit_i16 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (i64 : Int64 Int { visit_i64 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (i128 : Int128 Int { visit_i128 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (u8 : Uint8 Int { visit_u8 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (u16 : Uint16 Int { visit_u16 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (u32 : Uint32 Int { visit_u32 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (u64 : Uint64 Int { visit_u64 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u128:visit_u128
+    }});
+    impl_ipld_num! (u128 : Uint128 Int { visit_u128 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64
+    }});
+    impl_ipld_num! (f32 : Float32 Float { visit_f32 @conv { f64:visit_f64 } });
+    impl_ipld_num! (f64 : Float64 Float { visit_f64 @conv { f32:visit_f32 } });
 }
 
 // TODO: unicode normalization? https://ipld.io/docs/data-model/kinds/#string-kind
@@ -452,8 +340,8 @@ mod string {
         }
     }
 
-    impl_selector_seed_serde! { @codec_seed_visitor_rk String T T
-        { T: From<IpldString> + 'static } {}
+    repr_serde! { @visitor T T { type_kinds::String }
+        { T } { T: From<IpldString> + 'static }
     {
         #[inline]
         fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -465,7 +353,7 @@ mod string {
         where
             E: de::Error,
         {
-            self.0.select_primitive::<_C>(T::from(IpldString::from(s))).map_err(E::custom)
+            self.0.select_scalar::<C>(T::from(IpldString::from(s))).map_err(E::custom)
         }
 
         #[inline]
@@ -477,11 +365,11 @@ mod string {
         }
     }}
 
-    impl_selector_seed_serde! { @codec_seed_visitor_ext_rk String T T
-        { T: From<IpldString> + 'static } {} {}
+    repr_serde! { @visitor_ext T T { type_kinds::String }
+        { T } { T: From<IpldString> + 'static } {}
     }
 
-    impl_selector_seed_serde! { @selector_seed_select {} {} IpldString }
+    repr_serde! { @select IpldString => IpldString {} {} }
 
     impl From<&str> for IpldString {
         #[inline]
@@ -527,8 +415,72 @@ mod string {
 mod bytes {
     use super::*;
 
-    /// A bytes type.
-    pub type Bytes = crate::dev::bytes::Bytes;
+    // /// A bytes type.
+    // pub type Bytes = crate::dev::bytes::Bytes;
+
+    /// A `bytes` type, which thinly wraps [`bytes::Bytes`].
+    ///
+    /// TODO: mutability
+    /// [`Bytes`]: bytes::Bytes
+    #[derive(
+        AsRef,
+        // AsMut,
+        Clone,
+        Debug,
+        Default,
+        Deref,
+        Eq,
+        From,
+        Hash,
+        // Index,
+        IntoIterator,
+        Ord,
+        PartialOrd,
+        PartialEq,
+    )]
+    #[as_ref(forward)]
+    #[deref(forward)]
+    #[from(forward)]
+    pub struct Bytes(crate::dev::bytes::Bytes);
+
+    impl Bytes {
+        ///
+        pub const fn new() -> Self {
+            Self(crate::dev::bytes::Bytes::new())
+        }
+
+        ///
+        pub fn copy_from_slice(bytes: &[u8]) -> Self {
+            Self(crate::dev::bytes::Bytes::copy_from_slice(bytes))
+        }
+
+        ///
+        pub const fn len(&self) -> usize {
+            self.0.len()
+        }
+
+        ///
+        pub const fn is_empty(&self) -> bool {
+            self.0.is_empty()
+        }
+
+        ///
+        pub fn slice(&self, range: impl RangeBounds<usize>) -> Self {
+            Self(self.0.slice(range))
+        }
+
+        ///
+        pub fn clear(&mut self) {
+            self.0.clear()
+        }
+    }
+
+    // impl<R: ops::RangeBounds<usize>> ops::Index<R> for Bytes {
+    //     type Output = Self;
+    //     fn index(&self, index: R) -> &Self::Output {
+    //         Self(self.0.slice(index))
+    //     }
+    // }
 
     impl Representation for Bytes {
         type ReprKind = type_kinds::Bytes;
@@ -587,8 +539,9 @@ mod bytes {
         }
     }
 
-    impl_selector_seed_serde! { @codec_seed_visitor_rk Bytes T T
-        { T: From<Bytes> + 'static } {  }
+    repr_serde! { @visitor T T { type_kinds::Bytes } { T }
+        // { T: for<'a> TryFrom<&'a [u8], Error = Error> + 'static }
+        { T: From<Bytes> + 'static }
     {
         #[inline]
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -600,7 +553,7 @@ mod bytes {
         // where
         //     E: de::Error,
         // {
-        //     self.0.select_bytes::<_C>(Bytes::copy_from_slice(bytes)).map_err(E::custom)
+        //     self.0.select_bytes::<C>(Bytes::copy_from_slice(bytes)).map_err(E::custom)
         // }
 
         // #[inline]
@@ -608,15 +561,16 @@ mod bytes {
         // where
         //     E: de::Error,
         // {
-        //     self.0.select_bytes::<_C>(Bytes::from(bytes)).map_err(E::custom)
+        //     self.0.select_bytes::<C>(Bytes::from(bytes)).map_err(E::custom)
         // }
     }}
 
-    impl_selector_seed_serde! { @codec_seed_visitor_ext_rk Bytes T T
-        { T: From<Bytes> + 'static } {} {}
+    repr_serde! { @visitor_ext T T { type_kinds::Bytes } { T }
+        // { T: for<'a> TryFrom<&'a [u8], Error = Error> + 'static } {}
+        { T: From<Bytes> + 'static } {}
     }
 
-    impl_selector_seed_serde! { @selector_seed_select {} {} Bytes }
+    repr_serde! { @select Bytes => Bytes {} {} }
 
     impl<'a, Ctx> SelectorSeed<'a, Ctx, Bytes>
     where
@@ -634,7 +588,7 @@ mod bytes {
             //     s.assert_matches_first::<Bytes>()?;
             //     bytes.__select_in(self)
             // } else {
-            //     self.match_primitive::<C>(raw)
+            //     self.match_scalar::<C>(raw)
             // }
 
             if let Some(matcher) = self.selector.as_matcher() {
@@ -655,7 +609,7 @@ mod bytes {
 
             match self.selector {
                 Selector::ExploreInterpretAs(_) => {
-                    todo!("what reprs and ADLs are interpreted from byte nodes?")
+                    todo!("what reprs and ADLs are interpreted from bytes?")
                 }
                 selector => Err(Error::unsupported_selector::<Bytes>(&selector)),
             }
@@ -666,24 +620,21 @@ mod bytes {
 impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
 where
     Ctx: Context,
-    T: Representation + 'static,
+    T: Select<Ctx> + 'static,
     // TODO And<T::ReprKind, TypedScalar>: TypedScalar
 {
     ///
-    pub fn select_primitive<const C: u64>(self, raw: T) -> Result<(), Error>
-    where
-        T: Select<Ctx>,
-    {
+    pub fn select_scalar<const C: u64>(self, raw: T) -> Result<(), Error> {
         if let Some(s) = self.selector.as_explore_union() {
             s.assert_matches_first::<T>()?;
             raw.__select_in(self)
         } else {
-            self.match_primitive::<C>(raw)
+            self.match_scalar::<C>(raw)
         }
     }
 
     #[inline]
-    fn match_primitive<'de, const C: u64>(mut self, dag: T) -> Result<(), Error> {
+    fn match_scalar<'de, const C: u64>(mut self, dag: T) -> Result<(), Error> {
         self.selector.try_as_matcher()?;
 
         if self.is_node_select() {

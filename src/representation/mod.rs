@@ -14,7 +14,7 @@ mod strategies;
 use crate::dev::*;
 use downcast_rs::{impl_downcast, Downcast};
 use macros::derive_more::From;
-use maybestd::{fmt, str::FromStr};
+use maybestd::{fmt, marker::PhantomData, str::FromStr};
 
 pub use ipld_macros_internals::schema::{type_kinds, SchemaKind as Kind, TypedKind};
 
@@ -84,41 +84,22 @@ pub use strategies::*;
 // impl IsAny<{ Kind::Map.bits() }> for Kind {}
 // impl IsAny<{ Kind::Link.bits() }> for Kind {}
 
+#[doc(hidden)]
+pub struct Label<T: Representation> {
+    label: Field<'static>,
+    _t: PhantomData<T>,
+}
+
 ///
 ///
-/// Some types have in-memory representations distinct from their IPLD representations:
-///     - Links can map to types, so they can represent both CIDs and the underling types
-///     - Signed/encrypted payloads can be further resolved into native types after verifying the signature/performing decryption
-///
-///
-/// TODO? == what are the requirements?
-///     - serialize a type to a block
-///         - serialize an ipld as this type to a block
-///     - deserialize a type from a block
-///         -
-///         - deserialize an ipld as this type from a block
-///     - focus a type to a value (typed or ipld?) based on a selector
-///         - ? call a closure on the selected type?
-///     - transform a value within a type based on a selector (? and a closure ?)
-///         - return a typed value or ipld?
-///
-/// TODO? selection can only happen *accurately* against fully-resolved types and blocks
-///
-/// TODO: what to impl?
-///     - focus<T>(&self, selector, context) -> Result<T>
-///     - patch<T, F>(&mut self, selector, f: F, context) -> Result<()>
-///         where F: Fn(&mut T, context);
-///         - based on success of recursing, flags any link type as dirty
-///     - flush(&self, context) -> Result<Selector>
-///     TODO? << other impls >>
-///     - validate_selector(selector)
-///         - TODO: ? returns a stateful Visitor + DeserializeSeed?
-///     - derive Serialize
-///     - in focus<T>(...), impl Deserialize
-///         - TODO: ? stateful visitor derived from selector + type?
-///         - TODO: ? impl DeserializeSeed for selector?
-///         - TODO: ? Representation::visitor(selector: &Selector)
-// pub trait Representation<ReprKind: TypedKind = type_kinds::Any>: Sized {
+// Some types have in-memory representations distinct from their IPLD representations:
+//     - Links can map to types, so they can represent both CIDs and the underling types
+//     - Signed/encrypted payloads can be further resolved into native types after verifying the signature/performing decryption
+//
+//     - patch<T, F>(&mut self, selector, f: F, context) -> Result<()>
+//         where F: Fn(&mut T, context);
+//         - based on success of recursing, flags any link type as dirty
+//     - flush(&self, context) -> Result<Selector>
 pub trait Representation: Sized {
     /// The stringified name of the IPLD type.
     const NAME: &'static str;
@@ -173,7 +154,7 @@ pub trait Representation: Sized {
     const HAS_LINKS: bool = Self::IS_LINK;
 
     /// The type's `Select`able static field names and their IPLD Schema kinds.
-    const FIELDS: &'static [(Field<'static>, Kind)] = &[];
+    const FIELDS: &'static [()] = &[];
 
     ///
     /// for unions, this ?should delegate to the variant's type name'
@@ -345,13 +326,23 @@ pub trait Representation: Sized {
 ///
 pub trait StringRepresentation
 where
-    Self: Representation + Clone + fmt::Display + FromStr<Err = Error> + Ord,
+    Self: Representation<ReprKind = type_kinds::String>
+        + Clone
+        + fmt::Display
+        + FromStr<Err = Error>
+        + Ord,
 {
 }
 impl<T> StringRepresentation for T where
-    Self: Representation + Clone + fmt::Display + FromStr<Err = Error> + Ord
+    T: Representation<ReprKind = type_kinds::String>
+        + Clone
+        + fmt::Display
+        + FromStr<Err = Error>
+        + Ord
 {
 }
+
+trait AdvancedRepresentation<Ctx: Context>: Representation + Select<Ctx> {}
 
 ///
 /// TODO: possibly look at erased-serde to complete this "hack"

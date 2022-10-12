@@ -4,22 +4,37 @@
 //! - support pub/pub(crate) and additional #[derive(...)] statements
 //! - anything can have an advanced representation, so add support to all types
 
-use proc_macro_hack::proc_macro_hack;
-
-// pub use ipld_macros_internals::{};
-
-///
-/// todo: docs
-pub use ipld_macros_hack::schema;
-
-///
-/// todo: docs
-#[proc_macro_hack]
-pub use ipld_macros_hack::selector;
+use ipld_macros_internals::{
+    // def_attributes,
+    RootSelectorDefinition,
+    // ValueDefinition,
+    SchemaDefinition,
+};
+use proc_macro::TokenStream;
+use syn::parse_macro_input;
 
 ///
-/// todo: docs
-pub use ipld_macros_hack::ipld_attr;
+///
+/// TODO: rename attrs to ipld_macros(), add a `wrap = Box/Rc/etc` attr
+#[proc_macro]
+pub fn schema(input: TokenStream) -> TokenStream {
+    let schema = parse_macro_input!(input as SchemaDefinition);
+    TokenStream::from(schema.expand())
+}
+
+/// A no-op macro, used to help the `schema!` and `selector!` macros capture
+/// relevant arguments.
+#[proc_macro_attribute]
+pub fn ipld_attr(_attr: TokenStream, items: TokenStream) -> TokenStream {
+    items
+}
+
+///
+#[proc_macro]
+pub fn selector(input: TokenStream) -> TokenStream {
+    let selector = parse_macro_input!(input as RootSelectorDefinition);
+    TokenStream::from(selector.expand())
+}
 
 // def_attributes!(
 //     #[doc(hidden)]

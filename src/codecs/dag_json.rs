@@ -41,7 +41,7 @@ impl DagJson {
     /// `{ "/": { "base64": <some base64-encoded string> } }`.
     #[inline]
     pub(crate) fn serialize_bytes<S: Serializer>(
-        bytes: &[u8],
+        bytes: impl AsRef<[u8]>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
         use ser::SerializeStructVariant;

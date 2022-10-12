@@ -35,6 +35,8 @@ mod ignored {
 mod option {
     use super::*;
 
+    // ? define Optional<T> and Nullable<T>?
+
     impl<T> Representation for Option<T>
     where
         T: Representation,

@@ -1,5 +1,5 @@
 use crate::dev::*;
-use macros::{derive_more::From, impl_selector_seed_serde};
+use macros::{derive_more::From, repr_serde};
 use maybestd::fmt;
 
 ///
@@ -119,39 +119,30 @@ impl<T: Representation> Representation for Link<T> {
     }
 }
 
-// impl_selector_seed_serde! { @codec_seed_visitor
-//     { T: Select<Ctx> + 'static } { } Link<T>
-// {
-//     #[inline]
-//     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         write!(f, "A link to a `{}`", T::NAME)
-//     }
-// }}
-
-// impl_selector_seed_serde! { @codec_seed_visitor_ext
-//     { T: Select<Ctx> + 'static } { } Link<T>
-// {
-//     #[inline]
-//     fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
-//     where
-//         E: de::Error,
-//     {
-//         self.0.select_link::<_C>(cid).map_err(E::custom)
-//     }
-// }}
-
-impl_selector_seed_serde! { @codec_seed_visitor_rk Link T U
-    { T: 'static, U: Select<Ctx> + 'static } { }
+repr_serde! { @visitor S T { type_kinds::Link } { S, T }
+    { S: 'static, T: Select<Ctx> + 'static }
 {
     #[inline]
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "A link of type {} to a {}", T::NAME, U::NAME)
+        write!(f, "A link of type {} to a {}", S::NAME, T::NAME)
     }
 }}
 
-// impl_selector_seed_serde! { @selector_seed_select
-//     { T: Select<Ctx> + 'static } { } Link<T>
-// }
+// ? impl From<T>?
+repr_serde! { @visitor_ext S T { type_kinds::Link } { S, T }
+    { S: 'static, T: Select<Ctx> + 'static }
+{
+    #[inline]
+    fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        // self.0.select_link::<C>(cid).map_err(E::custom)
+        unimplemented!()
+    }
+}}
+
+repr_serde! { @select Link<T> => T { T } { T: Select<Ctx> + 'static } }
 
 impl<'a, Ctx, T> SelectorSeed<'a, Ctx, Link<T>>
 where
@@ -159,6 +150,8 @@ where
     T: Select<Ctx> + 'static,
 {
     fn select_link<'de, const C: u64>(mut self, cid: Cid) -> Result<(), Error> {
+        // TODO: handle "blocks encoded with rawa codec are valid Bytes kinds"
+
         if self.selector.is_matcher() {
             if self.is_dag_select() {
                 self.select_dag(Link::Cid(cid))?;

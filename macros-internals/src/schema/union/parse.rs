@@ -50,6 +50,7 @@ impl Parse for UnionReprDefinition {
                 })
             }
             // inline
+            // TODO: assert all field ty REPR_KINDs are Maps
             _ if input.peek(kw::inline) => {
                 input.parse::<kw::inline>()?;
                 let fields = field_input.parse()?;
@@ -64,18 +65,20 @@ impl Parse for UnionReprDefinition {
                 })
             }
             // byteprefix
+            // TODO: assert all field ty REPR_KINDs are Bytes
             _ if input.peek(kw::byteprefix) => {
                 input.parse::<kw::byteprefix>()?;
                 let fields = field_input.parse()?;
-                // TODO: assert that all field types are Bytes
                 Self::BytePrefix(BytePrefixUnionReprDefinition { fields })
             }
             // kinded
+            // TODO: assert all field ty REPR_KINDs are unique
             _ if input.peek(kw::kinded) => {
                 input.parse::<kw::kinded>()?;
                 let fields = field_input.parse::<UnionKindedFields>()?;
 
                 // validate that all the kinds are of the data model and unique
+                // TODO: should validate that all are unique representation kinds
                 let all = &fields
                     .iter()
                     .map(|fs| fs.key)

@@ -211,7 +211,9 @@ schema! {
     /// simultaneously continuing to explore deeper parts of the tree with
     /// another selector, for example.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug, From)]
+    #[derive(Clone, Debug
+        // From
+    )]
     pub type ExploreUnion null;
     // pub type ExploreUnion [Selector];
 }

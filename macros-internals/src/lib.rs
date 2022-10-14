@@ -5,6 +5,7 @@ pub mod selector;
 pub use schema::SchemaDefinition;
 pub use selector::{RootSelectorDefinition, SelectorDefinition};
 
+/// Convenient re-exports for development.
 pub mod dev {
     pub use crate::common::*;
     pub use crate::derive_newtype;

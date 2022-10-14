@@ -5,21 +5,27 @@ use maybestd::{
     fmt, iter,
     marker::PhantomData,
     ops::{Bound, RangeBounds},
+    vec::Vec,
 };
 use serde::de::value::SeqAccessDeserializer;
 
 pub use iterators::*;
 
+/// A list type, implemented as a [`Vec`].
 ///
+/// [`Vec`]: crate::maybestd::vec::Vec
 pub type List<T = Any> = Vec<T>;
 
 impl<T: Representation> Representation for List<T> {
+    type DataModelKind = type_kinds::List;
+    type SchemaKind = type_kinds::List;
     type ReprKind = type_kinds::List;
 
     const NAME: &'static str = "List";
-    const SCHEMA: &'static str = concat!("type List [", stringify!(T::NAME), "]");
+    const SCHEMA: &'static str = "type List [Any]";
     const DATA_MODEL_KIND: Kind = Kind::List;
     const SCHEMA_KIND: Kind = Kind::List;
+    const REPR_KIND: Kind = Kind::List;
     const HAS_LINKS: bool = T::HAS_LINKS;
 
     fn has_links(&self) -> bool {
@@ -75,12 +81,14 @@ impl<T: Representation> Representation for List<T> {
     }
 }
 
-// TODO: this should only apply to List datamodels with a List repr
-// restrict this impl to T: Representation<DataModelKind = type_kinds::List>
-repr_serde! { @visitor S T { type_kinds::List } { S, T }
-    { S: Default + Extend<T> +  'static,
-      T: Select<Ctx> + 'static }
-{
+repr_serde! { @select_for List<T> => T
+    { @dk (type_kinds::List) @sk (type_kinds::List) @rk (type_kinds::List) }
+    { T } { T: Select<Ctx> + 'static }
+}
+repr_serde! { @visitors for S => T
+    { @dk (type_kinds::List) @sk (type_kinds::List) @rk (type_kinds::List) }
+    { S, T }  { S: Default + Extend<T> +  'static,
+                T: Select<Ctx> + 'static } @serde {
     #[inline]
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "A list of type {} of {}", S::NAME, T::NAME)
@@ -94,6 +102,7 @@ repr_serde! { @visitor S T { type_kinds::List } { S, T }
         if let Some(s) = self.0.selector.as_explore_union() {
             if s.matches_first() {
                 let list = S::deserialize::<C, _>(SeqAccessDeserializer::new(seq))?;
+                // todo: for each selector, __select_in
                 return list.__select_in(self.0).map_err(A::Error::custom);
             } else {
                 // todo: support multiple non-overlapping ranges
@@ -126,18 +135,46 @@ repr_serde! { @visitor S T { type_kinds::List } { S, T }
     }
 }}
 
-repr_serde! { @visitor_ext S T { type_kinds::List } { S, T }
-    { S: Default + Extend<T> +  'static,
-      T: Select<Ctx> + 'static } {}
-}
+// repr_serde! { @visitor_ext S T { type_kinds::List } { S, T }
+//     { S: Default + Extend<T> +  'static,
+//       T: Select<Ctx> + 'static } {}
+// }
+// repr_serde! { @link_visitor_blanket for S => T { type_kinds::List }
+//     { S, T }
+//     { S: Default + Extend<T> +  'static, T: Select<Ctx> + 'static } {}
+// }
+// repr_serde! { @select List<T> => T { T } { T: Select<Ctx> + 'static } }
+// repr_serde! { @select_blanket S T { type_kinds::List } { S, T }
+//     { S: Default + Extend<T> +  'static, T: Select<Ctx> + 'static }
+// }
 
-repr_serde! { @select List<T> => T { T } { T: Select<Ctx> + 'static } }
-
+// TODO: constrain to DM=List and SK=List, then blanket Select<Ctx> for them
 impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
 where
     Ctx: Context,
-    T: Select<Ctx> + 'static,
+    T: Representation<ReprKind = type_kinds::List> + Select<Ctx> + 'static,
 {
+    ///
+    pub fn select_list<const C: u64, U, I>(
+        mut self,
+        // dag: Either<&T2, I>,
+    ) -> Result<(), Error>
+    where
+        U: Select<Ctx>,
+        I: ListIterator<U>,
+    {
+        unimplemented!()
+    }
+
+    ///
+    pub fn patch_list<const F: bool, const C: u64, U, I>(mut self, dag: &mut T) -> Result<(), Error>
+    where
+        U: Select<Ctx>,
+        I: ListIterator<U>,
+    {
+        unimplemented!()
+    }
+
     /// Executes a [`Matcher`] selector against a list (data model) type.
     /// todo could probably use a collection trait instead of multiple Fns
     pub fn match_list<const C: u64, U, I, T2, F1, F2, F3>(
@@ -164,6 +201,10 @@ where
 
         // select against each child
         for idx in 0usize.. {
+            // FIXME:
+            // i think we do want to control the seed, ask to descend and ascend
+            // i think we can make this function support select, patch and flush
+
             // TODO: should be iter.next_element_seed(self.to_field_select_seed())
             if self.select_index::<C, U>(
                 idx,
@@ -246,6 +287,60 @@ where
 mod iterators {
     use super::*;
 
+    /*
+    // /// A [`Select`]able list iterator over a serde sequence representation.
+    // #[doc(hidden)]
+    // #[derive(Debug)]
+    // struct SerdeListIterator2<'de, const C: u64, A, T = IgnoredAny, S = DeserializeWrapper<C, T>> {
+    //     seq: A,
+    //     seed: S,
+    //     _de: PhantomData<&'de T>,
+    // }
+
+    // impl<'de, const C: u64, A> SerdeListIterator2<'de, C, A> {
+    //     pub const fn ignored(seq: A) -> Self {
+    //         SerdeListIterator2 {
+    //             seq,
+    //             seed: DeserializeWrapper::<C, IgnoredAny>::new(),
+    //             _de: PhantomData,
+    //         }
+    //     }
+    // }
+
+    // impl<'de, const C: u64, A, T, S> SerdeListIterator2<'de, C, A, T, S> {
+    //     pub const fn from(seq: A) -> SerdeListIterator2<'de, C, A, T> {
+    //         SerdeListIterator2 {
+    //             seq,
+    //             seed: DeserializeWrapper::<C, T>::new(),
+    //             _de: PhantomData,
+    //         }
+    //     }
+
+    //     pub fn take(self) -> (S, SerdeListIterator2<'de, C, A, IgnoredAny>) {
+    //         SerdeListIterator2 {
+    //             seq: self.seq,
+    //             seed: DeserializeWrapper::<C, IgnoredAny>::new(),
+    //             _de: PhantomData,
+    //         }
+    //     }
+    // }
+
+    // impl<'de, const C: u64, A, T, S> Iterator for SerdeListIterator2<'de, C, A, T, S>
+    // where
+    //     A: SeqAccess<'de>,
+    //     S: DeserializeSeed<'de, Value = T>,
+    // {
+    //     type Item = Result<T, A::Error>;
+    //     fn next(&mut self) -> Option<Self::Item> {
+    //         match self.seq.next_element_seed(seed) {
+    //             Ok(Some(val)) => Some(Ok(val)),
+    //             Ok(None) => None,
+    //             Err(err) => Some(Err(err)),
+    //         }
+    //     }
+    // }
+     */
+
     /// A [`Select`]able list iterator over a serde sequence representation.
     #[doc(hidden)]
     #[derive(Debug)]
@@ -301,7 +396,7 @@ mod iterators {
         {
             let dag = self
                 .inner
-                .next_element_seed(DeserializeWrapper::<C, T>::default())
+                .next_element_seed(DeserializeWrapper::<C, T>::new())
                 .map_err(|_| Error::explore_index_failure::<T>(self.index))?;
 
             if dag.is_none() {

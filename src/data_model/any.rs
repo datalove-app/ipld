@@ -4,7 +4,6 @@ use macros::{
     repr_serde,
 };
 use maybestd::{fmt, rc::Rc};
-use std::path::Path;
 
 // ///
 // #[derive(Clone, Debug, IsVariant, Unwrap)]
@@ -47,17 +46,9 @@ schema! {
     } representation kinded;
 }
 
-// repr_serde! { @visitor T T { type_kinds::Any }
-//     { T: TryFrom<Any> + 'static } {}
-// {
-//     #[inline]
-//     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         write!(f, "{}, a boolean type", Bool::NAME)
-//     }
-// }}
+// impl FromIterator for Any, (T: StringRepresentation, Any)
 
-// repr_serde! { @visitor_ext T T { type_kinds::Any } { T: TryFrom<Any> + 'static } {} {}}
-
+/*
 /// TODO: convert these to a Node trait, that all types implement
 impl Any {
     /// LookupByString looks up a child object in this node and returns it.
@@ -191,3 +182,4 @@ impl Any {
     // Calling this method should not cause an allocation.
     // Prototype() NodePrototype
 }
+ */

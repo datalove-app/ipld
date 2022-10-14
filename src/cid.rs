@@ -1,4 +1,4 @@
-use crate::dev::{macros::*, *};
+use crate::dev::*;
 use cid::Error as CidError;
 use maybestd::{cmp, convert::TryFrom, fmt, hash, io, str::FromStr};
 use multibase::Error as MultibaseError;
@@ -6,7 +6,7 @@ use multibase::Error as MultibaseError;
 ///
 #[derive(Copy, Clone, Debug, Eq)]
 pub struct Cid {
-    inner: cid::CidGeneric<{ Self::SIZE }>,
+    pub(crate) inner: cid::CidGeneric<{ Self::SIZE }>,
     multibase: Multibase,
 }
 
@@ -144,11 +144,15 @@ impl Cid {
 }
 
 impl Representation for Cid {
+    type DataModelKind = type_kinds::Link;
+    type SchemaKind = type_kinds::Link;
     type ReprKind = type_kinds::Link;
 
     const NAME: &'static str = "Cid";
     const SCHEMA: &'static str = "type Cid &Any";
     const DATA_MODEL_KIND: Kind = Kind::Link;
+    const SCHEMA_KIND: Kind = Kind::Link;
+    const REPR_KIND: Kind = Kind::Link;
 
     ///
     #[inline]
@@ -156,16 +160,7 @@ impl Representation for Cid {
     where
         S: Serializer,
     {
-        #[cfg(feature = "dag-json")]
-        if C == DagJson::CODE {
-            return DagJson::serialize_cid(self, serializer);
-        }
-        #[cfg(feature = "dag-cbor")]
-        if C == DagCbor::CODE {
-            return DagCbor::serialize_cid(self, serializer);
-        }
-
-        Serialize::serialize(&self.inner, serializer)
+        Multicodec::serialize_link::<C, S>(self, serializer)
     }
 
     ///
@@ -181,8 +176,22 @@ impl Representation for Cid {
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "a Cid containing a Multihash of max {} bytes", Cid::SIZE)
             }
+            #[inline]
+            fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_link_bytes(bytes)
+            }
+            #[inline]
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_link_str(s)
+            }
         }
-        impl<'de> IpldVisitorExt<'de> for CidVisitor {
+        impl<'de> LinkVisitor<'de> for CidVisitor {
             #[inline]
             fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
             where
@@ -192,16 +201,11 @@ impl Representation for Cid {
             }
         }
 
-        #[cfg(feature = "dag-json")]
-        if C == DagJson::CODE {
-            return DagJson::deserialize_cid(deserializer, CidVisitor);
+        if Multicodec::is_known::<C>() {
+            Multicodec::deserialize_link::<C, _, _>(deserializer, CidVisitor)
+        } else {
+            Ok(Self::from(Deserialize::deserialize(deserializer)?))
         }
-        #[cfg(feature = "dag-cbor")]
-        if C == DagCbor::CODE {
-            return DagCbor::deserialize_cid(deserializer, CidVisitor);
-        }
-
-        Ok(Self::from(Deserialize::deserialize(deserializer)?))
     }
 }
 

@@ -6,7 +6,7 @@ use crate::{
     },
     schema::SchemaKind,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::{parse_quote, Type};
 
@@ -29,7 +29,12 @@ impl ExpandBasicRepresentation for ListpairsStructReprDefinition {
         TokenStream::default()
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        super::expand::impl_repr(self, meta, &SchemaKind::List.data_model_kind())
+        super::expand::impl_repr(
+            self,
+            meta,
+            &SchemaKind::List.data_model_kind(),
+            Some(Ident::new("ListPairs", Span::call_site())),
+        )
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()

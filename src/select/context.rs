@@ -114,7 +114,7 @@ impl Context for () {
     type Writer = Sink;
 
     fn block_reader(&mut self, _: &Cid) -> Result<Self::Reader, Error> {
-        Ok(empty())
+        Err(Error::Context(anyhow::Error::msg("empty block")))
     }
 }
 

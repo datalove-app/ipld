@@ -1,6 +1,6 @@
 use crate::dev::*;
 use macros::derive_more::{AsMut, AsRef, From};
-use std::{
+use maybestd::{
     boxed::Box,
     fmt,
     path::{Path, PathBuf},
@@ -203,6 +203,36 @@ mod callbacks {
     }
 
     ///
+    pub trait PatchDagOp<T, C>: FnMut(&mut T, &mut C) -> Result<bool, Error> {
+        ///
+        fn clone_box<'a>(&self) -> Box<dyn PatchDagOp<T, C> + 'a>
+        where
+            Self: 'a;
+    }
+
+    impl<T, C, F> PatchDagOp<T, C> for F
+    where
+        F: FnMut(&mut T, &mut C) -> Result<bool, Error> + Clone,
+    {
+        fn clone_box<'a>(&self) -> Box<dyn PatchDagOp<T, C> + 'a>
+        where
+            Self: 'a,
+        {
+            Box::new(self.clone())
+        }
+    }
+
+    impl<'a, T, C> Clone for Box<dyn PatchDagOp<T, C> + 'a>
+    where
+        T: 'a,
+        C: 'a,
+    {
+        fn clone(&self) -> Self {
+            (**self).clone_box()
+        }
+    }
+
+    ///
     #[doc(hidden)]
     pub enum Callback<'a, C, T> {
         SelectNode {
@@ -215,15 +245,16 @@ mod callbacks {
         },
         MatchDag {
             cb: Box<dyn MatchDagOp<T, C> + 'a>,
-        }, // Patch {
-           //     /// current dag we're selecting against
-           //     /// if none, then load and store while patching
-           //     current: &'a mut T,
-           //     flush: bool,
-           //     // op to perform on matching dags, allowing update-inplace
-           //     // op: Box<dyn PatchOp<C, U> + 'a>,
-           //     // op: PatchFn<C, U>,
-           // }
+        },
+        Patch {
+            /// current dag we're selecting against
+            /// if none, then load and store while patching
+            //    current: &'a mut T,
+            //    flush: bool,
+            // op to perform on matching dags, allowing update-inplace
+            cb: Box<dyn PatchDagOp<T, C> + 'a>,
+            // op: PatchFn<C, U>,
+        },
     }
 
     impl<'a, C, T> fmt::Debug for Callback<'a, C, T>
@@ -246,6 +277,7 @@ mod callbacks {
                     .debug_struct("SelectionParams::MatchDag")
                     .field("source", &T::NAME)
                     .finish(),
+                _ => unimplemented!(),
                 // Self::Patch { current, flush, .. } => f
                 //     .debug_struct("SelectionParams::Patch")
                 //     .field("current", &current)
@@ -268,6 +300,7 @@ mod callbacks {
                 },
                 Self::SelectDag { cb } => Self::SelectDag { cb: cb.clone() },
                 Self::MatchDag { cb } => Self::MatchDag { cb: cb.clone() },
+                _ => unimplemented!(),
             }
         }
     }
@@ -328,7 +361,8 @@ mod callbacks {
                 Self::MatchDag { mut cb } => {
                     let cb = Box::new(move |dag: U, ctx: &mut C| cb(conv(dag), ctx));
                     Callback::MatchDag { cb }
-                } // _ => unimplemented!(),
+                }
+                _ => unimplemented!(),
             }
         }
 

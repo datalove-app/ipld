@@ -13,10 +13,10 @@ path = "src/lib.rs"
 [dependencies]
 # core
 bytes = "1.2"
-cid = { version = "0.8", features = ["alloc", "serde-codec"] }
+cid = { version = "0.8", features = ["serde-codec"] }
 ipld-macros = { path = "./macros" }
 ipld-macros-internals = { path = "./macros-internals" }
-multibase = "0.9"
+multibase = { version = "0.9", default-features = false }
 multihash = { version = "0.16", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive", "rc"] }
 # serde_repr = "0.1"
@@ -34,7 +34,7 @@ serde_json = { version = "1.0", optional = true, features = ["float_roundtrip"] 
 anyhow = "1.0"
 # const-str = "0.3"
 # const_format = "0.2"
-core2 = { version = "0.4", optional = true }
+core2 = { version = "0.4", default-features = false, optional = true }
 delegate = { version = "0.8", optional = true }
 downcast-rs = "1.2"
 
@@ -43,8 +43,9 @@ downcast-rs = "1.2"
 # proptest = "1.0"
 
 [features]
-default = ["multicodec", "std", "dev"]
-std = ["cid/std", "core2/std", "multihash/std"]
+default = ["multicodec", "alloc", "std", "dev"]
+std = ["cid/std", "core2/std", "multibase/std", "multihash/std", "serde/std"]
+alloc = ["cid/alloc", "serde/alloc"]
 # activate dev docs
 dev = []
 

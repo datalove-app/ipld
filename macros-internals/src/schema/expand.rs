@@ -305,11 +305,12 @@ macro_rules! derive_newtype {
         $crate::dev::impl_repr(
             $meta,
             quote::quote! {
+                type DataModelKind = <#$inner_ty as Representation>::DataModelKind;
+                type SchemaKind = <#$inner_ty as Representation>::SchemaKind;
                 type ReprKind = <#$inner_ty as Representation>::ReprKind;
 
                 const DATA_MODEL_KIND: Kind = <#$inner_ty>::DATA_MODEL_KIND;
                 const SCHEMA_KIND: Kind = <#$inner_ty>::SCHEMA_KIND;
-                // const REPR_KIND: Kind = <#$inner_ty>::REPR_KIND;
                 const IS_LINK: bool = <#$inner_ty>::IS_LINK;
                 const HAS_LINKS: bool = <#$inner_ty>::HAS_LINKS;
 
@@ -339,15 +340,17 @@ macro_rules! derive_newtype {
         let lib = &$meta.lib;
         let name = &$meta.name;
         quote::quote! {
-            // #lib::dev::macros::impl_selector_seed_serde! { @selector_seed_codec_deseed_newtype {} {} #name as #$inner_ty
+            // #lib::dev::macros::repr_serde! { @selector_seed_codec_deseed_newtype {} {} #name as #$inner_ty
             // }
-            // #lib::dev::macros::impl_selector_seed_serde! {
+            // #lib::dev::macros::repr_serde! {
             //     @selector_seed_select {} {} #name
             // }
 
-            #lib::dev::macros::impl_selector_seed_serde! {
+            #lib::dev::macros::repr_serde! {
                 @select_newtype {} {} #name { #name => #$inner_ty }
             }
+
+
         }
     }};
     (@conv @has_constructor $def:ident, $meta:ident =>

@@ -21,7 +21,6 @@ pub(crate) mod attr {
     pub(crate) const IPLD_CRATE_NAME: &'static str = "ipld";
     pub(crate) const ATTR: &'static str = "ipld_attr";
 
-    pub(crate) const INTERNAL: &'static str = "internal";
     pub(crate) const TRY_FROM: &'static str = "try_from";
     pub(crate) const WRAPPER: &'static str = "wrapper";
     pub(crate) const SERDE: &'static str = "serde";

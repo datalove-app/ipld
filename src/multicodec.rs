@@ -1,5 +1,5 @@
 use crate::dev::*;
-use std::{
+use maybestd::{
     convert::TryFrom,
     io::{Read, Write},
 };
@@ -10,6 +10,12 @@ pub use multicodec::Multicodec;
 /// [Codec](https://github.com/ipld/specs/blob/master/block-layer/codecs/README.dsmd)s,
 /// providing methods for reading and writing blocks.
 pub trait Codec: TryFrom<u64, Error = Error> {
+    /// The standardized [`Multicodec`] name for this IPLD codec.
+    const NAME: &'static str;
+
+    /// The standardized [`Multicodec`] code that identifies this IPLD codec.
+    const CODE: u64;
+
     /// Given a dag, serialize it to a `Vec<u8>`.
     fn encode<T>(&mut self, dag: &T) -> Result<Vec<u8>, Error>
     where
@@ -48,7 +54,7 @@ mod multicodec {
     ($(
         #[cfg(feature = $feature:expr)]
         $(#[$meta:meta])*
-        $variant:ident -> $ty:ty as $name:expr,
+        $variant:ident -> $ty:ty,
     )*) => {
         /// A generic [multicodec]() enum.
         #[derive(Clone, Debug)]
@@ -62,13 +68,24 @@ mod multicodec {
         }
 
         impl Multicodec {
+            #[inline]
+            pub const fn is_known<const C: u64>() -> bool {
+                match C {
+                    $(
+                        #[cfg(feature = $feature)]
+                        <$ty>::CODE => true,
+                    )*
+                    _ => false,
+                }
+            }
+
             /// The standardized name of the given codec.
             #[inline]
             pub const fn name(&self) -> &'static str {
                 match self {
                     $(
                         #[cfg(feature = $feature)]
-                        Self::$variant(_) => $name,
+                        Self::$variant(_) => <$ty>::NAME,
                     )*
                     // _ => unimplemented!()
                 }
@@ -92,7 +109,7 @@ mod multicodec {
                 match name {
                     $(
                         #[cfg(feature = $feature)]
-                        $name => Ok(Self::$variant(<$ty>::new())),
+                        <$ty>::NAME => Ok(Self::$variant(<$ty>::new())),
                     )*
                     name => Err(Error::UnknownMulticodecName(name.to_string()))
                 }
@@ -107,6 +124,64 @@ mod multicodec {
                         <$ty>::CODE => Ok(Self::$variant(<$ty>::new())),
                     )*
                     code => Err(Error::UnknownMulticodecCode(code))
+                }
+            }
+
+            ///
+            pub fn encode<T>(&mut self, dag: &T) -> Result<Vec<u8>, Error>
+            where
+                T: Representation,
+            {
+                match self {
+                    $(
+                        #[cfg(feature = $feature)]
+                        Self::$variant(inner) => inner.encode(dag),
+                    )*
+                    // _ => unimplemented!()
+                }
+            }
+
+            ///
+            pub fn write<T, W>(&mut self, dag: &T, writer: W) -> Result<(), Error>
+            where
+                T: Representation,
+                W: Write,
+            {
+                match self {
+                    $(
+                        #[cfg(feature = $feature)]
+                        Self::$variant(inner) => inner.write(dag, writer),
+                    )*
+                    // _ => unimplemented!()
+                }
+            }
+
+            ///
+            pub fn decode<'de, T>(&mut self, bytes: &'de [u8]) -> Result<T, Error>
+            where
+                T: Representation,
+            {
+                match self {
+                    $(
+                        #[cfg(feature = $feature)]
+                        Self::$variant(inner) => inner.decode(bytes),
+                    )*
+                    // _ => unimplemented!()
+                }
+            }
+
+            ///
+            pub fn read<T, R>(&mut self, reader: R) -> Result<T, Error>
+            where
+                T: Representation,
+                R: Read,
+            {
+                match self {
+                    $(
+                        #[cfg(feature = $feature)]
+                        Self::$variant(inner) => inner.read(reader),
+                    )*
+                    // _ => unimplemented!()
                 }
             }
 
@@ -127,6 +202,101 @@ mod multicodec {
                         Self::$variant(_) => <$ty>::read_with_seed(seed, reader),
                     )*
                 }
+            }
+
+            #[inline]
+            #[doc(hidden)]
+            pub fn serialize_bytes<const C: u64, S>(
+                dag: impl AsRef<[u8]>,
+                serializer: S,
+            ) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                #[cfg(feature = "dag-json")]
+                if C == DagJson::CODE {
+                    return DagJson::serialize_bytes(dag, serializer);
+                }
+                serializer.serialize_bytes(dag.as_ref())
+            }
+
+            #[inline]
+            #[doc(hidden)]
+            pub fn serialize_link<const C: u64, S>(
+                cid: &Cid,
+                serializer: S,
+            ) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                #[cfg(feature = "dag-json")]
+                if C == DagJson::CODE {
+                    return DagJson::serialize_link(cid, serializer);
+                }
+                #[cfg(feature = "dag-cbor")]
+                if C == DagCbor::CODE {
+                    return DagCbor::serialize_link(cid, serializer);
+                }
+                Serialize::serialize(&cid.inner, serializer)
+            }
+
+            #[inline]
+            #[doc(hidden)]
+            pub fn deserialize_any<'de, const C: u64, D, V>(
+                deserializer: D,
+                visitor: V,
+            ) -> Result<V::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+                V: LinkVisitor<'de>,
+            {
+                #[cfg(feature = "dag-json")]
+                if C == DagJson::CODE {
+                    return DagJson::deserialize_any(deserializer, visitor);
+                }
+                #[cfg(feature = "dag-cbor")]
+                if C == DagCbor::CODE {
+                    return DagCbor::deserialize_any(deserializer, visitor);
+                }
+                deserializer.deserialize_any(visitor)
+            }
+
+            #[inline]
+            #[doc(hidden)]
+            pub fn deserialize_bytes<'de, const C: u64, D, V>(
+                deserializer: D,
+                visitor: V,
+            ) -> Result<V::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+                V: LinkVisitor<'de>,
+            {
+                #[cfg(feature = "dag-json")]
+                if C == DagJson::CODE {
+                    return DagJson::deserialize_bytes(deserializer, visitor);
+                }
+                deserializer.deserialize_bytes(visitor)
+            }
+
+            #[inline]
+            #[doc(hidden)]
+            pub fn deserialize_link<'de, const C: u64, D, V>(
+                deserializer: D,
+                visitor: V,
+            ) -> Result<V::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+                V: LinkVisitor<'de>,
+            {
+                #[cfg(feature = "dag-json")]
+                if C == DagJson::CODE {
+                    return DagJson::deserialize_link(deserializer, visitor);
+                }
+                #[cfg(feature = "dag-cbor")]
+                if C == DagCbor::CODE {
+                    return DagCbor::deserialize_link(deserializer, visitor);
+                }
+                deserializer.deserialize_any(visitor)
             }
         }
 
@@ -151,67 +321,21 @@ mod multicodec {
                 match s {
                     $(
                         #[cfg(feature = $feature)]
-                        $name => Ok(Self::$variant(<$ty>::new())),
+                        <$ty>::NAME => Ok(Self::$variant(<$ty>::new())),
                     )*
                     _ => Err(Error::UnknownMulticodecName(s.into())),
-                }
-            }
-        }
-
-        impl Codec for Multicodec {
-            fn write<T, W>(&mut self, dag: &T, writer: W) -> Result<(), Error>
-            where
-                T: Representation,
-                W: Write,
-            {
-                match self {
-                    $(
-                        #[cfg(feature = $feature)]
-                        Self::$variant(inner) => inner.write(dag, writer),
-                    )*
-                    // _ => unimplemented!()
-                }
-            }
-
-            fn decode<'de, T>(&mut self, bytes: &'de [u8]) -> Result<T, Error>
-            where
-                T: Representation,
-            {
-                match self {
-                    $(
-                        #[cfg(feature = $feature)]
-                        Self::$variant(inner) => inner.decode(bytes),
-                    )*
-                    // _ => unimplemented!()
-                }
-            }
-
-            fn read<T, R>(&mut self, reader: R) -> Result<T, Error>
-            where
-                T: Representation,
-                R: Read,
-            {
-                match self {
-                    $(
-                        #[cfg(feature = $feature)]
-                        Self::$variant(inner) => inner.read(reader),
-                    )*
-                    // _ => unimplemented!()
                 }
             }
         }
     }}
 
     impl_multicodec! {
-        // Raw -> Raw as "raw",
         #[cfg(feature = "dag-cbor")]
         ///
-        DagCbor -> DagCbor as "dag-cbor",
+        DagCbor -> DagCbor,
         #[cfg(feature = "dag-json")]
         ///
-        DagJson -> DagJson as "dag-json",
-        // DagJose -> DagJose as "dag-jose",
-        // DagBipf -> DagBipf as "dag-bipf",
+        DagJson -> DagJson,
         // Custom(Box<dyn Codec>),
     }
 

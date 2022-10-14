@@ -19,7 +19,7 @@ pub enum Link<T: Representation = Any> {
 
     ///
     #[from(ignore)]
-    Inner {
+    Resolved {
         ///
         cid: Cid,
         ///
@@ -35,7 +35,7 @@ impl<T: Representation> Link<T> {
     pub const fn cid(&self) -> &Cid {
         match self {
             Self::Cid(cid) => cid,
-            Self::Inner { cid, .. } => cid,
+            Self::Resolved { cid, .. } => cid,
         }
     }
 
@@ -44,7 +44,7 @@ impl<T: Representation> Link<T> {
     pub const fn is_dirty(&self) -> bool {
         match self {
             Self::Cid(_) => false,
-            Self::Inner { dirty, .. } => *dirty,
+            Self::Resolved { dirty, .. } => *dirty,
         }
     }
 
@@ -53,7 +53,7 @@ impl<T: Representation> Link<T> {
     pub const fn as_ref(&self) -> Option<&T> {
         match self {
             Self::Cid(_) => None,
-            Self::Inner { t, .. } => Some(t),
+            Self::Resolved { t, .. } => Some(t),
         }
     }
 
@@ -74,23 +74,27 @@ impl<T: Representation> Link<T> {
 }
 
 impl<T: Representation> Representation for Link<T> {
+    type DataModelKind = type_kinds::Link;
+    type SchemaKind = type_kinds::Link;
     type ReprKind = type_kinds::Link;
 
     const NAME: &'static str = "Link";
-    const SCHEMA: &'static str = concat!("type Link &", stringify!(T::NAME));
+    const SCHEMA: &'static str = "type Link &Any";
     const DATA_MODEL_KIND: Kind = Kind::Link;
+    const SCHEMA_KIND: Kind = Kind::Link;
+    const REPR_KIND: Kind = Kind::Link;
 
     fn name(&self) -> &'static str {
         match self {
             Self::Cid(_) => Self::NAME,
-            Self::Inner { t, .. } => t.name(),
+            Self::Resolved { t, .. } => t.name(),
         }
     }
 
     fn has_links(&self) -> bool {
         match self {
             Self::Cid(_) => T::HAS_LINKS,
-            Self::Inner { t, .. } => t.has_links(),
+            Self::Resolved { t, .. } => t.has_links(),
         }
     }
 
@@ -119,30 +123,44 @@ impl<T: Representation> Representation for Link<T> {
     }
 }
 
-repr_serde! { @visitor S T { type_kinds::Link } { S, T }
-    { S: 'static, T: Select<Ctx> + 'static }
-{
-    #[inline]
-    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "A link of type {} to a {}", S::NAME, T::NAME)
+repr_serde! { @select_for Link<T> => T
+    { @dk (type_kinds::Link) @sk (type_kinds::Link) @rk (type_kinds::Link) }
+    { T } { T: Select<Ctx> + 'static }
+}
+repr_serde! { @visitors for S => T
+    { @dk (type_kinds::Link) @sk (type_kinds::Link) @rk (type_kinds::Link) }
+    { S, T }  { S: 'static, T: Select<Ctx> + 'static }
+    @serde {
+        #[inline]
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "A link of type {} to a {}", S::NAME, T::NAME)
+        }
+        #[inline]
+        fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            self.visit_link_bytes(bytes)
+        }
+        #[inline]
+        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            self.visit_link_str(s)
+        }
     }
-}}
-
-// ? impl From<T>?
-repr_serde! { @visitor_ext S T { type_kinds::Link } { S, T }
-    { S: 'static, T: Select<Ctx> + 'static }
-{
-    #[inline]
-    fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        // self.0.select_link::<C>(cid).map_err(E::custom)
-        unimplemented!()
+    @link {
+        #[inline]
+        fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            // self.0.select_link::<C>(cid).map_err(E::custom)
+            unimplemented!()
+        }
     }
-}}
-
-repr_serde! { @select Link<T> => T { T } { T: Select<Ctx> + 'static } }
+}
 
 impl<'a, Ctx, T> SelectorSeed<'a, Ctx, Link<T>>
 where
@@ -171,7 +189,7 @@ impl<T: Representation> Into<Cid> for Link<T> {
     fn into(self) -> Cid {
         match self {
             Self::Cid(cid) => cid,
-            Self::Inner { cid, .. } => cid,
+            Self::Resolved { cid, .. } => cid,
         }
     }
 }
@@ -225,7 +243,7 @@ impl<T: Representation> Into<Cid> for Link<T> {
 //     fn from(link: Link<T>) -> Self {
 //         match link {
 //             Link::Cid(Cid::Generic(inner)) => inner,
-//             Link::Inner { cid, .. } => cid,
+//             Link::Resolved { cid, .. } => cid,
 //         }
 //     }
 // }

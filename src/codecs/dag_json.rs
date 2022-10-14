@@ -4,10 +4,10 @@ use crate::dev::*;
 use delegate::delegate;
 use serde::{de, ser};
 #[cfg(not(feature = "simd"))]
-use serde_json::{de::IoRead, Deserializer as JsonDeserializer, Serializer as JsonSerializer};
+use serde_json::{Deserializer as JsonDeserializer, Serializer as JsonSerializer};
 // #[cfg(feature = "simd")]
 // use simd_json::{Serializer as JsonSerializer, Deserializer as JsonDeserializer, Error as JsonError};
-use std::{
+use maybestd::{
     borrow::Cow,
     convert::TryFrom,
     fmt,
@@ -21,12 +21,9 @@ use std::{
 pub struct DagJson;
 
 impl DagJson {
-    /// The multicodec code that identifies this IPLD Codec.
-    pub const CODE: u64 = 0x0129;
-
     /// All bytes are encoded with the multibase `base64` w/o padding, resulting
     /// in the prefix `"m"`.
-    pub const DEFAULT_MULTIBASE: Multibase = Multibase::Base64;
+    pub const MB_BYTES: Multibase = Multibase::Base64;
 
     /// The map key marking the map value as IPLD bytes or an IPLD link.
     pub const IPLD_KEY: &'static str = "/";
@@ -37,8 +34,8 @@ impl DagJson {
         Self
     }
 
-    /// Serializes bytes as a struct variant, e.g.
-    /// `{ "/": { "base64": <some base64-encoded string> } }`.
+    /// Serializes bytes as a struct variant, e.g. `{ "/": { "bytes":
+    /// <base64-encoded string> } }`.
     #[inline]
     pub(crate) fn serialize_bytes<S: Serializer>(
         bytes: impl AsRef<[u8]>,
@@ -47,13 +44,14 @@ impl DagJson {
         use ser::SerializeStructVariant;
 
         let mut sv = serializer.serialize_struct_variant("", 0, Self::IPLD_KEY, 1)?;
-        sv.serialize_field("bytes", &multibase::encode(Self::DEFAULT_MULTIBASE, bytes))?;
+        sv.serialize_field("bytes", &multibase::encode(Self::MB_BYTES, bytes))?;
         sv.end()
     }
 
-    /// Serializes links as a newtype variant, e.g.  `{ "/": "Qm..." }`.
+    /// Serializes links as a newtype variant, e.g. `{ "/": <base*-encoded Cid>
+    /// }`.
     #[inline]
-    pub(crate) fn serialize_cid<S: Serializer>(
+    pub(crate) fn serialize_link<S: Serializer>(
         cid: &Cid,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
@@ -70,9 +68,9 @@ impl DagJson {
     ) -> Result<V::Value, D::Error>
     where
         D: Deserializer<'de>,
-        V: IpldVisitorExt<'de>,
+        V: LinkVisitor<'de>,
     {
-        deserializer.deserialize_any(visitor::DagJsonVisitor::<'a', _>(visitor))
+        deserializer.deserialize_any(visitor::DagJsonVisitor(visitor))
     }
 
     ///
@@ -82,23 +80,23 @@ impl DagJson {
         visitor: V,
     ) -> Result<V::Value, D::Error>
     where
-        V: Visitor<'de>,
         D: Deserializer<'de>,
+        V: LinkVisitor<'de>,
     {
-        deserializer.deserialize_map(visitor::DagJsonVisitor::<'b', _>(visitor))
+        deserializer.deserialize_any(visitor::DagJsonVisitor(visitor))
     }
 
     ///
     #[inline]
-    pub(crate) fn deserialize_cid<'de, D, V>(
+    pub(crate) fn deserialize_link<'de, D, V>(
         deserializer: D,
         visitor: V,
     ) -> Result<V::Value, D::Error>
     where
         D: Deserializer<'de>,
-        V: IpldVisitorExt<'de>,
+        V: LinkVisitor<'de>,
     {
-        deserializer.deserialize_map(visitor::DagJsonVisitor::<'l', _>(visitor))
+        deserializer.deserialize_any(visitor::DagJsonVisitor(visitor))
     }
 
     #[doc(hidden)]
@@ -115,6 +113,9 @@ impl DagJson {
 }
 
 impl Codec for DagJson {
+    const NAME: &'static str = "dag-json";
+    const CODE: u64 = 0x0129;
+
     fn write<T, W>(&mut self, dag: &T, writer: W) -> Result<(), Error>
     where
         T: Representation,
@@ -156,10 +157,10 @@ mod visitor {
     use super::*;
 
     #[derive(Debug)]
-    pub(crate) struct DagJsonVisitor<const T: char, V>(pub(crate) V);
+    pub(crate) struct DagJsonVisitor<V>(pub(crate) V);
 
     // visitor for any
-    impl<'de, V: IpldVisitorExt<'de>> Visitor<'de> for DagJsonVisitor<'a', V> {
+    impl<'de, V: LinkVisitor<'de>> Visitor<'de> for DagJsonVisitor<V> {
         type Value = V::Value;
         #[inline]
         fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -213,62 +214,6 @@ mod visitor {
                 ) -> Result<Self::Value, D::Error>;
                 fn visit_seq<A: de::SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error>;
                 fn visit_enum<A: de::EnumAccess<'de>>(self, data: A) -> Result<Self::Value, A::Error>;
-            }
-        }
-    }
-
-    // visitor for bytes
-    impl<'de, V: Visitor<'de>> Visitor<'de> for DagJsonVisitor<'b', V> {
-        type Value = V::Value;
-
-        #[inline]
-        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.write_str("a map containing a byte string")
-        }
-
-        #[inline]
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: de::MapAccess<'de>,
-        {
-            map.next_key::<Cow<'_, str>>()?
-                .filter(|key| key == DagJson::IPLD_KEY)
-                .ok_or_else(|| A::Error::custom("expected a \"/\" map key"))?;
-
-            match map.next_value::<MapLikeVisitor<'de>>()? {
-                MapLikeVisitor::Bytes(b) => self.0.visit_byte_buf(b),
-                _ => Err(A::Error::custom("expected a byte string")),
-            }
-        }
-    }
-
-    // visitor for links
-    impl<'de, V: IpldVisitorExt<'de>> Visitor<'de> for DagJsonVisitor<'l', V> {
-        type Value = V::Value;
-
-        #[inline]
-        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.write_str("a map containing a Cid")
-        }
-
-        #[inline]
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: de::MapAccess<'de>,
-        {
-            map.next_key::<Cow<'_, str>>()?
-                .filter(|key| key == DagJson::IPLD_KEY)
-                .ok_or_else(|| {
-                    A::Error::custom(format!(
-                        "expected the special IPLD map key {}",
-                        DagJson::IPLD_KEY
-                    ))
-                })?;
-
-            match map.next_value::<MapLikeVisitor<'de>>()? {
-                MapLikeVisitor::CidStr(s) => self.0.visit_link_str(s),
-                MapLikeVisitor::CidString(s) => self.0.visit_link_str(&s),
-                _ => Err(A::Error::custom("expected a Cid")),
             }
         }
     }
@@ -347,7 +292,7 @@ mod visitor {
             //     .next_value_seed(DeserializeWrapper::<{ DagJson::CODE }, IpldString>::default())?;
             let byte_str = map.next_value::<Cow<'_, str>>()?;
             match multibase::decode(byte_str) {
-                Ok((DagJson::DEFAULT_MULTIBASE, bytes)) => Ok(MapLikeVisitor::Bytes(bytes)),
+                Ok((DagJson::MB_BYTES, bytes)) => Ok(MapLikeVisitor::Bytes(bytes)),
                 // Ok((mb, _)) => Err(de::Error::custom(format!(
                 //     "DagJSON only supports bytes as base64-encoded strings, found multibase {:?}",
                 //     mb
@@ -394,7 +339,8 @@ mod visitor {
 
 #[cfg(test)]
 mod tests {
-    use crate::{codecs_::test_utils::*, prelude::*};
+    use super::super::test_utils::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_null() {
@@ -402,23 +348,42 @@ mod tests {
         roundtrip_str_codec::<Null>(DagJson::CODE, cases);
         let cases = &[(None as Option<Int>, "null")];
         roundtrip_str_codec::<Option<Int>>(DagJson::CODE, cases);
+
+        let cases = &[(Any::Null(Null), "null")];
+        roundtrip_str_codec::<Any>(DagJson::CODE, cases);
     }
 
     #[test]
     fn test_bool() {
         let cases = &[(true, "true"), (false, "false")];
         roundtrip_str_codec::<Bool>(DagJson::CODE, cases);
+
+        let cases = &[(Any::Bool(true), "true"), (Any::Bool(false), "false")];
+        roundtrip_str_codec::<Any>(DagJson::CODE, cases);
     }
 
     #[test]
     fn test_number() {
         // ints
-        let cases = &[(123, "123"), (65535, "65535")];
+        let cases = &[
+            (123, "123"),
+            (65535, "65535"),
+            (i64::MAX, &i64::MAX.to_string()),
+        ];
         roundtrip_str_codec::<Int>(DagJson::CODE, cases);
 
         // floats
         let cases = &[(123.123, "123.123")];
         roundtrip_str_codec::<Float>(DagJson::CODE, cases);
+
+        // any
+        let cases = &[
+            (Any::Int(123), "123"),
+            (Any::Int(65535), "65535"),
+            (Any::Int(Int::MAX), &Int::MAX.to_string()),
+            (Any::Float(123.123), "123.123"),
+        ];
+        roundtrip_str_codec::<Any>(DagJson::CODE, cases);
     }
 
     #[test]
@@ -426,53 +391,71 @@ mod tests {
         let cases = &[
             // standard string
             (IpldString::from("hello world"), "\"hello world\""),
-            // empty string TODO:
             (IpldString::default(), "\"\""),
             // non-standard UTF-8 string TODO:
             // (IpldString::from("ÅΩ"), "\"ÅΩ\""),
+        ];
+        roundtrip_str_codec::<_>(DagJson::CODE, cases);
+
+        let cases = &[
+            // standard string
+            (
+                Any::String(IpldString::from("hello world")),
+                "\"hello world\"",
+            ),
+            (Any::String(IpldString::default()), "\"\""),
+            // non-standard UTF-8 string TODO:
+            // (Any::String(IpldString::from("ÅΩ")), "\"ÅΩ\""),
         ];
         roundtrip_str_codec::<_>(DagJson::CODE, cases);
     }
 
     #[test]
     fn test_bytes() {
-        let cases = &[(
-            Bytes::from(vec![0x01, 0x02, 0x03]),
-            r#"{"/":{"bytes":"mAQID"}}"#,
-        )];
+        let cases = &[
+            (
+                Bytes::from([1u8, 2, 3].as_ref()),
+                r#"{"/":{"bytes":"mAQID"}}"#,
+            ),
+            // TODO: empty bytes
+            // (Bytes::from(&[]), r#"{"/":{"bytes":"m"}}"#),
+        ];
         roundtrip_str_codec::<Bytes>(DagJson::CODE, cases);
+
+        let cases = &[
+            (
+                Any::Bytes(Bytes::from([1u8, 2, 3].as_ref())),
+                r#"{"/":{"bytes":"mAQID"}}"#,
+            ),
+            // TODO: empty bytes
+            // (Bytes::from(&[]), r#"{"/":{"bytes":"m"}}"#),
+        ];
+        roundtrip_str_codec::<Any>(DagJson::CODE, cases);
     }
 
     #[test]
-    fn test_link() {
-        type TestLink = Link<Any>;
-
-        let s = String::from("QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n");
-        let json = format!("{{\"/\":\"{}\"}}", s);
-
-        let cases = &[(
-            TestLink::from(Cid::try_from(s.as_str()).unwrap()),
-            json.as_str(),
-        )];
-        roundtrip_str_codec::<TestLink>(DagJson::CODE, cases);
-    }
-
-    #[test]
-    fn test_seq() {
+    fn test_list() {
         // raw types
         let cases = &[(vec![], "[]"), (vec![1, 2], "[1,2]")];
         roundtrip_str_codec::<List<i64>>(DagJson::CODE, cases);
 
         // any types
         let cases = &[
-            (vec![], "[]"),
-            // (vec![Any::Int(1), Any::Int(2)], "[1,2]"),
-            // // (
-            // //     vec![Any::Link(Link::Cid(Default::default()).into())],
-            // //     "[{\"/\": }]",
-            // // ),
+            (Any::List(vec![]), "[]"),
+            (Any::List(vec![Any::Int(1), Any::Int(2)]), "[1,2]"),
+            // (
+            //     vec![Any::Link(Link::Cid(Default::default()).into())],
+            //     "[{\"/\": }]",
+            // ),
+            (
+                Any::List(vec![
+                    Any::List(vec![]),
+                    Any::List(vec![Any::Int(1), Any::Float(123.123)]),
+                ]),
+                "[[],[1,123.123]]",
+            ),
         ];
-        roundtrip_str_codec::<List>(DagJson::CODE, cases);
+        roundtrip_str_codec::<Any>(DagJson::CODE, cases);
     }
 
     #[test]
@@ -492,7 +475,36 @@ mod tests {
         roundtrip_str_codec::<Map<IpldString, i64>>(DagJson::CODE, cases);
 
         // any types
-        let cases = &[];
-        roundtrip_str_codec::<Map>(DagJson::CODE, cases);
+        let cases = &[
+            (Any::Map(Default::default()), "{}"),
+            (
+                {
+                    let mut map: Map = Default::default();
+                    map.insert("abc".into(), Any::Int(123));
+                    Any::Map(map)
+                },
+                "{\"abc\":123}",
+            ),
+        ];
+        roundtrip_str_codec::<Any>(DagJson::CODE, cases);
+    }
+
+    #[test]
+    fn test_link() {
+        let s = String::from("QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n");
+        let json = format!("{{\"/\":\"{}\"}}", s);
+
+        let cases = &[(
+            Link::from(Cid::try_from(s.as_str()).unwrap()),
+            json.as_str(),
+        )];
+        roundtrip_str_codec::<Link>(DagJson::CODE, cases);
+
+        // any
+        let cases = &[(
+            Any::Link(Link::from(Cid::try_from(s.as_str()).unwrap()).into()),
+            json.as_str(),
+        )];
+        roundtrip_str_codec::<Any>(DagJson::CODE, cases);
     }
 }

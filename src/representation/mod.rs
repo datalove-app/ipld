@@ -9,7 +9,8 @@
 //! type from/to bytes, as well query and mutate a type, while specifically
 //! defining for the type it's `Context` requirements for these operations.
 
-mod strategies;
+#[doc(hidden)]
+pub mod strategies;
 
 use crate::dev::*;
 use downcast_rs::{impl_downcast, Downcast};
@@ -17,9 +18,6 @@ use macros::derive_more::From;
 use maybestd::{fmt, marker::PhantomData, str::FromStr};
 
 pub use ipld_macros_internals::schema::{type_kinds, SchemaKind as Kind, TypedKind};
-
-#[doc(hidden)]
-pub use strategies::*;
 
 // ///
 // #[derive(Debug, Eq, Hash, PartialEq)]
@@ -109,36 +107,38 @@ pub trait Representation: Sized {
     const SCHEMA: &'static str;
 
     /// The IPLD [Data Model Kind](https://ipld.io/docs/data-model/kinds/) of
-    /// the type, which would inform a user of its access patterns.
-    const DATA_MODEL_KIND: Kind; // Self::DATA_MODEL_KIND::KIND
+    /// the type, which denotes the access API and executable [`Selector`]s.
+    const DATA_MODEL_KIND: Kind = Self::DataModelKind::KIND;
 
-    /// The IPLD [Schema
-    /// Kind](https://ipld.io/docs/schemas/features/typekinds/#schema-kinds) of
-    /// the type.
-    const SCHEMA_KIND: Kind = Self::DATA_MODEL_KIND;
+    /// The IPLD [Schema Kind](https://ipld.io/docs/schemas/features/typekinds/)
+    /// of the type, which denotes how the type is defined by its schema.
+    const SCHEMA_KIND: Kind = Self::SchemaKind::KIND;
 
-    /// The IPLD [Representation Kind]() of the type, which would inform a user of how the type is represented when encoded.
-    // const REPR_KIND: Kind = Self::DATA_MODEL_KIND;
+    /// The IPLD [Representation Kind]() of the type, which, in combination with
+    /// the [`Representation::REPR_STRATEGY`], denotes how the type is
+    /// represented on-disk by any given codec.
     const REPR_KIND: Kind = Self::ReprKind::KIND;
 
-    // const IS_ADL: bool = false;
+    /// The IPLD specific [Representation]() [`Strategy`] used to encode this
+    /// type.
+    const REPR_STRATEGY: Strategy = Strategy::DataModel;
 
     /// Marker for types that can have any representation *and* should be
     /// ignored entirely during selection/deserialization.
     #[doc(hidden)]
     const __IGNORED: bool = false;
 
-    // /// Marker type for exact `u32` value of the type's
-    // /// [`Representation::DATA_MODEL_KIND`], needed for internal blanket
-    // /// implementations of various traits.
-    // #[doc(hidden)]
-    // type DATA_MODEL_KIND: TypedKind;
+    /// Marker type for exact `u32` value of the type's
+    /// [`Representation::DATA_MODEL_KIND`], needed for internal blanket
+    /// implementations of various traits.
+    #[doc(hidden)]
+    type DataModelKind: TypedKind;
 
-    // /// Marker type for exact `u32` value of the type's
-    // /// [`Representation::SCHEMA_KIND`], needed for internal blanket
-    // /// implementations of various traits.
-    // #[doc(hidden)]
-    // type SCHEMA_KIND: TypedKind;
+    /// Marker type for exact `u32` value of the type's
+    /// [`Representation::SCHEMA_KIND`], needed for internal blanket
+    /// implementations of various traits.
+    #[doc(hidden)]
+    type SchemaKind: TypedKind;
 
     /// Marker type for exact `u32` value of the type's
     /// [`Representation::REPR_KIND`], needed for internal blanket
@@ -154,7 +154,8 @@ pub trait Representation: Sized {
     const HAS_LINKS: bool = Self::IS_LINK;
 
     /// The type's `Select`able static field names and their IPLD Schema kinds.
-    const FIELDS: &'static [()] = &[];
+    #[doc(hidden)]
+    const FIELDS: &'static [&'static str] = &[];
 
     ///
     /// for unions, this ?should delegate to the variant's type name'
@@ -324,25 +325,24 @@ pub trait Representation: Sized {
 }
 
 ///
-pub trait StringRepresentation
+pub trait StringRepresentation: Representation<ReprKind = type_kinds::String>
 where
-    Self: Representation<ReprKind = type_kinds::String>
-        + Clone
-        + fmt::Display
-        + FromStr<Err = Error>
-        + Ord,
+    Self: Clone + FromStr + fmt::Display + Ord,
+    <Self as FromStr>::Err: fmt::Display,
 {
 }
-impl<T> StringRepresentation for T where
-    T: Representation<ReprKind = type_kinds::String>
-        + Clone
-        + fmt::Display
-        + FromStr<Err = Error>
-        + Ord
+impl<T> StringRepresentation for T
+where
+    T: Representation<ReprKind = type_kinds::String> + Clone + FromStr + fmt::Display + Ord,
+    <T as FromStr>::Err: fmt::Display,
 {
 }
 
-trait AdvancedRepresentation<Ctx: Context>: Representation + Select<Ctx> {}
+///
+pub trait BytesRepresentation: Representation<ReprKind = type_kinds::Bytes> {}
+
+///
+pub trait AdvancedRepresentation<Ctx: Context>: Representation + Select<Ctx> {}
 
 ///
 /// TODO: possibly look at erased-serde to complete this "hack"

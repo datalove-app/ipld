@@ -33,7 +33,7 @@ use std::{
 ///
 /// TODO: + 'static?
 ///     - Selectable?
-pub trait Select<Ctx: Context>: Representation {
+pub trait Select<Ctx: Context = ()>: Representation {
     // ///
     // #[doc(hidden)]
     // type Seed<'a, 'de, const C: u64>: From<SelectorSeed<'a, Ctx, Self>> + DeserializeSeed<'de> = CodedSelectorSeed<'a, C, false, Ctx, Self>;
@@ -67,9 +67,7 @@ pub trait Select<Ctx: Context>: Representation {
     }
 
     #[doc(hidden)]
-    fn __select<'a>(
-        seed: SelectorSeed<'a, Ctx, Self>,
-    ) -> Result<(), Error> {
+    fn __select<'a>(seed: SelectorSeed<'a, Ctx, Self>) -> Result<(), Error> {
         let cid = &seed.state.current_block;
         let block = seed.ctx.block_reader(cid)?;
         cid.multicodec()?.read_with_seed(seed, block)
@@ -191,12 +189,12 @@ pub trait Select<Ctx: Context>: Representation {
     }
 
     /// Patches the dag according to the selector, loading more blocks from
-    /// `Ctx` if required. Returns `true` it a patch was performed somewhere
-    /// within the dag.
+    /// `Ctx` if required. Returns `true` if any patch operation was executed
+    /// and subsequently mutated a part of the dag.
     ///
     /// TODO
     #[doc(hidden)]
-    fn patch_in(&mut self, params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<bool, Error> {
+    fn patch(&mut self, params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<bool, Error> {
         unimplemented!()
     }
 
@@ -551,51 +549,51 @@ mod selection {
 
         ///
         #[serde(rename = "int8")]
-        Int8(Int8),
+        Int8(i8),
 
         ///
         #[serde(rename = "int16")]
-        Int16(Int16),
+        Int16(i16),
 
         ///
         #[serde(rename = "int32")]
-        Int32(Int32),
+        Int32(i32),
 
         ///
         #[serde(rename = "int64")]
-        Int64(Int64),
+        Int64(i64),
 
         ///
         #[serde(rename = "int")]
-        Int128(Int128),
+        Int128(i128),
 
         ///
         #[serde(rename = "uint8")]
-        Uint8(Uint8),
+        Uint8(u8),
 
         ///
         #[serde(rename = "uint16")]
-        Uint16(Uint16),
+        Uint16(u16),
 
         ///
         #[serde(rename = "uint32")]
-        Uint32(Uint32),
+        Uint32(u32),
 
         ///
         #[serde(rename = "uint64")]
-        Uint64(Uint64),
+        Uint64(u64),
 
         ///
         #[serde(rename = "uint128")]
-        Uint128(Uint128),
+        Uint128(u128),
 
         ///
         #[serde(rename = "float32")]
-        Float32(Float32),
+        Float32(f32),
 
         ///
         #[serde(rename = "float64")]
-        Float64(Float64),
+        Float64(f64),
 
         ///
         #[serde(skip)] // TODO
@@ -745,7 +743,7 @@ mod field {
             }
         }
 
-        pub(crate) fn as_key(&self) -> Option<&str> {
+        pub(crate) fn as_key(&'a self) -> Option<&'a str> {
             match self {
                 Self::Key(s) => Some(s.as_ref()),
                 Self::Index(_) => None,

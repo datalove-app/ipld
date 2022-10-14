@@ -76,12 +76,15 @@ impl ExpandBasicRepresentation for KeyedUnionReprDefinition {
         expand::impl_repr(
             meta,
             quote! {
+                type DataModelKind = type_kinds::Map;
+                type SchemaKind = type_kinds::Union;
                 type ReprKind = type_kinds::Map;
 
                 const SCHEMA: &'static str = "";
                 const DATA_MODEL_KIND: Kind = Kind::Map;
                 const SCHEMA_KIND: Kind = Kind::Union;
-                // const REPR_KIND: Kind = unimplemented!();
+                const REPR_KIND: Kind = Kind::Map;
+                const REPR_STRATEGY: Strategy = Strategy::Keyed;
                 // const FIELDS: Fields = Fields::Keyed(&[#(#fields,)*]);
 
                 #[inline]

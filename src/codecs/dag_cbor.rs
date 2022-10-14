@@ -17,7 +17,7 @@ use serde_cbor::{
 //     serde::{Deserializer as CborDeserializer, Serializer as CborSerializer},
 // };
 use delegate::delegate;
-use std::{
+use maybestd::{
     borrow::Cow,
     convert::TryFrom,
     fmt,
@@ -29,9 +29,6 @@ use std::{
 pub struct DagCbor;
 
 impl DagCbor {
-    /// The multicodec code that identifies this IPLD Codec.
-    pub const CODE: u64 = 0x71;
-
     /// The special tag signifying an IPLD link.
     pub const LINK_TAG: u64 = 42;
 
@@ -43,7 +40,7 @@ impl DagCbor {
 
     ///
     #[inline]
-    pub(crate) fn serialize_cid<S: Serializer>(
+    pub(crate) fn serialize_link<S: Serializer>(
         cid: &Cid,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
@@ -60,7 +57,7 @@ impl DagCbor {
     ) -> Result<V::Value, D::Error>
     where
         D: Deserializer<'de>,
-        V: IpldVisitorExt<'de>,
+        V: LinkVisitor<'de>,
     {
         // deserializer.deserialize_any(DagCborVisitor::<'a', _>(visitor))
         unimplemented!()
@@ -68,13 +65,13 @@ impl DagCbor {
 
     ///
     #[inline]
-    pub(crate) fn deserialize_cid<'de, D, V>(
+    pub(crate) fn deserialize_link<'de, D, V>(
         deserializer: D,
         visitor: V,
     ) -> Result<V::Value, D::Error>
     where
         D: Deserializer<'de>,
-        V: IpldVisitorExt<'de>,
+        V: LinkVisitor<'de>,
     {
         match Tagged::<&'de [u8]>::deserialize(deserializer)? {
             Tagged {
@@ -145,6 +142,9 @@ impl DagCbor {
 }
 
 impl Codec for DagCbor {
+    const NAME: &'static str = "dag-cbor";
+    const CODE: u64 = 0x71;
+
     fn write<T, W>(&mut self, dag: &T, writer: W) -> Result<(), Error>
     where
         T: Representation,
@@ -286,7 +286,7 @@ mod tag {
 
     // visitor for links
     // TODO: does not work, as Cids are tagged differently than bytes
-    impl<'de, V: IpldVisitorExt<'de>> Visitor<'de> for DagCborVisitor<'l', V> {
+    impl<'de, V: LinkVisitor<'de>> Visitor<'de> for DagCborVisitor<'l', V> {
         type Value = V::Value;
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "A tagged Cid")
@@ -313,7 +313,8 @@ mod tag {
 
 #[cfg(test)]
 mod tests {
-    use crate::{codecs_::test_utils::*, prelude::*};
+    use super::super::test_utils::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_null() {
@@ -345,7 +346,7 @@ mod tests {
 
         // floats
         let cases = &[(4000.5f32, b"\xfb\x40\xaf\x41\x00\x00\x00\x00\x00".as_ref())];
-        roundtrip_bytes_codec::<Float32>(DagCbor::CODE, cases);
+        roundtrip_bytes_codec::<f32>(DagCbor::CODE, cases);
         let cases = &[(12.3f64, b"\xfb@(\x99\x99\x99\x99\x99\x9a".as_ref())];
         roundtrip_bytes_codec::<Float>(DagCbor::CODE, cases);
     }

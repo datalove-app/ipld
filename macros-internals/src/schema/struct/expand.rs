@@ -3,7 +3,7 @@ use crate::dev::{
     schema::expand::{self, ExpandAdvancedRepresentation, ExpandBasicRepresentation},
     SchemaKind, SchemaMeta,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::{parse_quote, Type};
 
@@ -93,7 +93,7 @@ impl ExpandBasicRepresentation for BasicStructReprDefinition {
         }
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        impl_repr(self, meta, &Self::dm_kind())
+        impl_repr(self, meta, &Self::dm_kind(), None)
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
@@ -113,9 +113,12 @@ pub(super) fn impl_repr<'a, D: Deref<Target = StructFields>>(
     fields: &D,
     meta: &SchemaMeta,
     repr_kind: &Ident,
+    repr_strategy: Option<Ident>,
 ) -> TokenStream {
     let lib = &meta.lib;
     let name = &meta.name;
+    let repr_strategy =
+        repr_strategy.map(|strategy| quote!(const REPR_STRATEGY: Strategy = Strategy::#strategy;));
     // let fields = iter.map(|f| {
     //     let key = f.key.to_string();
     //     let val = &f.value;
@@ -132,12 +135,15 @@ pub(super) fn impl_repr<'a, D: Deref<Target = StructFields>>(
     let repr_body = expand::impl_repr(
         meta,
         quote! {
+            type DataModelKind = type_kinds::Map;
+            type SchemaKind = type_kinds::Struct;
             type ReprKind = type_kinds::#repr_kind;
 
             const SCHEMA: &'static str = "";
             const DATA_MODEL_KIND: Kind = Kind::Map;
             const SCHEMA_KIND: Kind = Kind::Struct;
-            // const REPR_KIND: Kind = Kind::#repr_kind;
+            const REPR_KIND: Kind = Kind::#repr_kind;
+            #repr_strategy
             // const FIELDS: Fields = Fields::Struct(&[#(#fields,)*]);
         },
     );

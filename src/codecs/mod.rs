@@ -8,20 +8,7 @@ pub mod dag_json;
 // pub mod dag_pb;
 
 use crate::dev::*;
-use serde::{de, ser};
-use std::{
-    convert::TryFrom,
-    io::{Read, Write},
-};
-
-// pub trait CodecExt<'de>: Codec {
-//     type Encoder: Encoder;
-//     type Decoder: Decoder<'de>;
-//
-//     fn encoder<W: Write>(writer: W) -> Result<Self::Encoder, Error>;
-//
-//     fn decoder<R: Read>(reader: R) -> Result<Self::Decoder, Error>;
-// }
+use maybestd::convert::TryFrom;
 
 //
 // pub trait Transcoder<'de> {
@@ -32,16 +19,17 @@ use std::{
 //     fn deserializer(&mut self) -> &mut Self::Deserializer;
 // }
 
-/// A helper trait for visiting special and recursive IPLD types.
+/// An extension to the [`serde::de::Visitor`] trait for visiting
+/// [`Representation`]s that contain IPLD links.
 ///
-/// Should be implemented by any types representing IPLD links and maps.
-pub trait IpldVisitorExt<'de>: Visitor<'de> {
+/// [`Representation`]: crate::prelude::Representation
+pub trait LinkVisitor<'de>: Visitor<'de> {
     /// The input contains the string of a [`Cid`].
     ///
     /// The default implementation fails with a type error.
     fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
     where
-        E: de::Error,
+        E: serde::de::Error,
     {
         let cid = Cid::try_from(cid_str).map_err(E::custom)?;
         self.visit_cid(cid)
@@ -53,7 +41,7 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
     #[inline]
     fn visit_link_borrowed_str<E>(self, cid_str: &'de str) -> Result<Self::Value, E>
     where
-        E: de::Error,
+        E: serde::de::Error,
     {
         self.visit_link_str(cid_str)
     }
@@ -64,7 +52,7 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
     #[inline]
     fn visit_link_bytes<E>(self, cid_bytes: &[u8]) -> Result<Self::Value, E>
     where
-        E: de::Error,
+        E: serde::de::Error,
     {
         let cid = Cid::try_from(cid_bytes).map_err(E::custom)?;
         self.visit_cid(cid)
@@ -76,15 +64,15 @@ pub trait IpldVisitorExt<'de>: Visitor<'de> {
     #[inline]
     fn visit_link_borrowed_bytes<E>(self, cid_bytes: &'de [u8]) -> Result<Self::Value, E>
     where
-        E: de::Error,
+        E: serde::de::Error,
     {
         self.visit_link_bytes(cid_bytes)
     }
 
     /// The input contains an already parsed [`Cid`].
-    fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
+    fn visit_cid<E>(self, _: Cid) -> Result<Self::Value, E>
     where
-        E: de::Error,
+        E: serde::de::Error,
     {
         Err(E::invalid_type(de::Unexpected::Other("Cid"), &self))
     }
@@ -105,7 +93,7 @@ pub(crate) mod test_utils {
             // writing
             let bytes = write_to_bytes::<T>(&mut codec, dag).expect(&format!(
                 "Failed to encode `{}` {:?} into {:?}",
-                dag.name(),
+                T::NAME,
                 dag,
                 expected,
             ));
@@ -114,7 +102,7 @@ pub(crate) mod test_utils {
             // decoding
             let v = decode_from_bytes::<T>(&mut codec, expected).expect(&format!(
                 "Failed to decode `{}` from {:?}",
-                dag.name(),
+                T::NAME,
                 expected,
             ));
             assert_eq!(dag, &v, "Decoding failure");
@@ -122,7 +110,7 @@ pub(crate) mod test_utils {
             // reading
             let v = codec.read(*expected).expect(&format!(
                 "Failed to read `{}` from {:?}",
-                dag.name(),
+                T::NAME,
                 expected,
             ));
             assert_eq!(dag, &v, "Reading failure");
@@ -139,7 +127,7 @@ pub(crate) mod test_utils {
             // writing
             let string = write_to_str::<T>(&mut codec, dag).expect(&format!(
                 "Failed to encode `{}` {:?} into {}",
-                dag.name(),
+                T::NAME,
                 dag,
                 expected,
             ));
@@ -148,7 +136,7 @@ pub(crate) mod test_utils {
             // decoding
             let v = decode_from_str::<T>(&mut codec, expected).expect(&format!(
                 "Failed to decode `{}` from {}",
-                dag.name(),
+                T::NAME,
                 expected,
             ));
             assert_eq!(dag, &v, "Decoding failure");
@@ -156,7 +144,7 @@ pub(crate) mod test_utils {
             // reading
             let v = codec.read(expected.as_bytes()).expect(&format!(
                 "Failed to read `{}` from {}",
-                dag.name(),
+                T::NAME,
                 expected,
             ));
             assert_eq!(dag, &v, "Reading failure");

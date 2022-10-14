@@ -41,8 +41,8 @@ where
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct DeserializeWrapper<const C: u64, T>(std::marker::PhantomData<T>);
-impl<const C: u64, T> Default for DeserializeWrapper<C, T> {
-    fn default() -> Self {
+impl<const C: u64, T> DeserializeWrapper<C, T> {
+    pub const fn new() -> Self {
         Self(std::marker::PhantomData)
     }
 }

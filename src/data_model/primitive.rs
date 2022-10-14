@@ -3,12 +3,7 @@ use macros::{
     derive_more::{AsMut, AsRef, Deref, DerefMut, From, Index, IndexMut, Into, IntoIterator},
     repr_serde,
 };
-use maybestd::{
-    borrow::Cow,
-    fmt,
-    ops::{self, RangeBounds},
-    str::FromStr,
-};
+use maybestd::{borrow::Cow, fmt, ops::RangeBounds, str::FromStr};
 
 pub use self::bool::Bool;
 pub use self::bytes::Bytes;
@@ -16,26 +11,32 @@ pub use self::null::Null;
 pub use self::num::*;
 pub use self::string::IpldString;
 
-/// Type alias for integers, which are represented as `i128`s.
-pub type Int = Int64;
-/// Type alias for floats, which are represented as `f64`s.
-pub type Float = Float64;
+/// Default type for IPLD integers, which aliases to [`i64`].
+pub type Int = i64;
+
+/// Default type for IPLD floats, which aliases to [`f64`].
+pub type Float = f64;
 
 mod null {
     use super::*;
 
     /// A nothing type.
-    #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, Deserialize, Serialize)]
+    #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
     pub struct Null;
 
     impl Representation for Null {
+        type DataModelKind = type_kinds::Null;
+        type SchemaKind = type_kinds::Null;
         type ReprKind = type_kinds::Null;
 
         const NAME: &'static str = "Null";
         const SCHEMA: &'static str = "type Null null";
         const DATA_MODEL_KIND: Kind = Kind::Null;
+        const SCHEMA_KIND: Kind = Kind::Null;
+        const REPR_KIND: Kind = Kind::Null;
 
         #[doc(hidden)]
+        #[inline]
         fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -44,6 +45,7 @@ mod null {
         }
 
         #[doc(hidden)]
+        #[inline]
         fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
@@ -52,22 +54,21 @@ mod null {
         }
     }
 
-    repr_serde! { @visitor T T { type_kinds::Null }
-        { T } { T: From<Null> + 'static }
-    {
+    repr_serde! { @select_for Null }
+    repr_serde! { @visitors for T => T
+        { @dk (type_kinds::Null) @sk (type_kinds::Null) @rk (type_kinds::Null) }
+        { T } { T: From<()> + 'static } @serde {
         #[inline]
-        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "A nothing type {}", T::NAME)
         }
-
         #[inline]
         fn visit_none<E>(self) -> Result<Self::Value, E>
         where
             E: de::Error,
         {
-            self.0.select_scalar::<C>(T::from(Null)).map_err(E::custom)
+            self.0.select_scalar::<C>(T::from(())).map_err(E::custom)
         }
-
         #[inline]
         fn visit_unit<E>(self) -> Result<Self::Value, E>
         where
@@ -76,12 +77,6 @@ mod null {
             self.visit_none()
         }
     }}
-
-    repr_serde! { @visitor_ext T T { type_kinds::Null }
-        { T } { T: From<Null> + 'static } {}
-    }
-
-    repr_serde! { @select Null => Null {} {} }
 
     impl From<()> for Null {
         #[inline]
@@ -94,17 +89,24 @@ mod null {
 mod bool {
     use super::*;
 
-    /// A boolean type.
+    /// A boolean type, represented as a [`bool`].
+    ///
+    /// [`bool`]: crate::maybestd::primitive::bool
     pub type Bool = bool;
 
     impl Representation for bool {
+        type DataModelKind = type_kinds::Bool;
+        type SchemaKind = type_kinds::Bool;
         type ReprKind = type_kinds::Bool;
 
         const NAME: &'static str = "Bool";
         const SCHEMA: &'static str = "type Bool bool";
         const DATA_MODEL_KIND: Kind = Kind::Bool;
+        const SCHEMA_KIND: Kind = Kind::Bool;
+        const REPR_KIND: Kind = Kind::Bool;
 
         #[doc(hidden)]
+        #[inline]
         fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -113,6 +115,7 @@ mod bool {
         }
 
         #[doc(hidden)]
+        #[inline]
         fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
@@ -121,9 +124,11 @@ mod bool {
         }
     }
 
-    repr_serde! { @visitor T T { type_kinds::Bool }
-        { T } { T: From<Bool> + 'static }
-    {
+    repr_serde! { @select_for bool }
+    repr_serde! { @visitors for T => T
+        { @dk (type_kinds::Bool) @sk (type_kinds::Bool) @rk (type_kinds::Bool) }
+        { T } { T: TryFrom<bool> + 'static,
+                <T as TryFrom<bool>>::Error: fmt::Display } @serde {
         #[inline]
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "A boolean type {}", T::NAME)
@@ -134,15 +139,10 @@ mod bool {
         where
             E: de::Error,
         {
-            self.0.select_scalar::<C>(T::from(v)).map_err(E::custom)
+            let b = T::try_from(v).map_err(E::custom)?;
+            self.0.select_scalar::<C>(b).map_err(E::custom)
         }
     }}
-
-    repr_serde! { @visitor_ext T T { type_kinds::Bool }
-        { T } { T: From<Bool> + 'static } {}
-    }
-
-    repr_serde! { @select Bool => Bool {} {} }
 }
 
 mod num {
@@ -156,20 +156,27 @@ mod num {
                 @conv { $($other_ty:ty : $other_visit_fn:ident)* }
             }
         ) => {
-            #[doc = concat!("a fixed-length number type represented as a(n)", stringify!($ty))]
-            pub type $name = $ty;
+            // #[doc = concat!("Type alias for [`", stringify!($ty), "`]s.")]
+            // ///
+            // #[doc = concat!("[`", stringify!($ty), "`]: ")]
+            // #[doc = concat!("crate::maybestd::primitive::", stringify!($ty))]
+            // pub type $name = $ty;
 
             impl Representation for $ty {
+                type DataModelKind = type_kinds::$dm_kind;
+                type SchemaKind = type_kinds::$name;
                 type ReprKind = type_kinds::$name;
 
                 const NAME: &'static str = stringify!($name);
                 const SCHEMA: &'static str = concat!("type ", stringify!($name), " int");
                 const DATA_MODEL_KIND: Kind = Kind::$dm_kind;
                 const SCHEMA_KIND: Kind = Kind::$name;
+                const REPR_KIND: Kind = Kind::$name;
 
                 impl_ipld_num!(@field $dm_kind $ty);
 
                 #[doc(hidden)]
+                #[inline]
                 fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                 where
                     S: Serializer,
@@ -178,6 +185,7 @@ mod num {
                 }
 
                 #[doc(hidden)]
+                #[inline]
                 fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
                 where
                     D: Deserializer<'de>,
@@ -186,27 +194,27 @@ mod num {
                 }
             }
 
-            repr_serde! { @visitor T T { type_kinds::$name }
-                { T } { T: From<$ty> + 'static }
-            {
+            repr_serde! { @select_for $ty }
+            repr_serde! { @visitors for T => T
+                { @dk (type_kinds::$dm_kind) @sk (type_kinds::$name) @rk (type_kinds::$name) }
+                { T } { T: TryFrom<$ty> + 'static,
+                        <T as TryFrom<$ty>>::Error: fmt::Display } @serde {
                 #[inline]
-                fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                     write!(f,
                         "{}, a fixed-length number type represented as a(n) {}",
                         <$ty>::NAME, stringify!($ty),
                     )
                 }
-
                 #[inline]
                 fn $visit_fn<E>(self, v: $ty) -> Result<Self::Value, E>
                 where
                     E: de::Error,
                 {
-                    self.0.select_scalar::<C>(T::from(v)).map_err(E::custom)
+                    let n = T::try_from(v).map_err(E::custom)?;
+                    self.0.select_scalar::<C>(n).map_err(E::custom)
                 }
-
-                $(
-                    #[inline]
+                $(  #[inline]
                     fn $other_visit_fn<E>(self, v: $other_ty) -> Result<Self::Value, E>
                     where
                         E: de::Error,
@@ -216,12 +224,6 @@ mod num {
                     }
                 )*
             }}
-
-            repr_serde! { @visitor_ext T T { type_kinds::$name }
-                { T } { T: From<$ty> + 'static } {}
-            }
-
-            repr_serde! { @select $ty => $ty {} {} }
         };
         (@field Int $ty:ty) => {
             fn as_field(&self) -> Option<Field<'_>> {
@@ -278,7 +280,15 @@ mod num {
 // TODO: unicode normalization? https://ipld.io/docs/data-model/kinds/#string-kind
 mod string {
     use super::*;
-    use unicode_normalization::UnicodeNormalization;
+    use unicode_normalization::*;
+
+    // struct NfcChars<'a>(Recompositions<Chars<'a>>);
+    // impl<'a> ToOwned for <'a> {
+    //     type Owned = String;
+    //     fn to_owned(&self) -> Self::Owned {
+
+    //     }
+    // }
 
     ///
     #[derive(
@@ -313,17 +323,22 @@ mod string {
     }
 
     impl Representation for IpldString {
+        type DataModelKind = type_kinds::String;
+        type SchemaKind = type_kinds::String;
         type ReprKind = type_kinds::String;
 
         const NAME: &'static str = "String";
         const SCHEMA: &'static str = "type String string";
         const DATA_MODEL_KIND: Kind = Kind::String;
+        const SCHEMA_KIND: Kind = Kind::String;
+        const REPR_KIND: Kind = Kind::String;
 
         fn as_field(&self) -> Option<Field<'_>> {
             Some(self.0.as_str().into())
         }
 
         #[doc(hidden)]
+        #[inline]
         fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -332,6 +347,7 @@ mod string {
         }
 
         #[doc(hidden)]
+        #[inline]
         fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
@@ -340,11 +356,13 @@ mod string {
         }
     }
 
-    repr_serde! { @visitor T T { type_kinds::String }
-        { T } { T: From<IpldString> + 'static }
-    {
+    repr_serde! { @select_for IpldString }
+    repr_serde! { @visitors for T => T
+        { @dk (type_kinds::String) @sk (type_kinds::String) @rk (type_kinds::String) }
+        { T } { T: TryFrom<IpldString> + 'static,
+                <T as TryFrom<IpldString>>::Error: fmt::Display } @serde {
         #[inline]
-        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "A string of type {}", T::NAME)
         }
 
@@ -353,7 +371,8 @@ mod string {
         where
             E: de::Error,
         {
-            self.0.select_scalar::<C>(T::from(IpldString::from(s))).map_err(E::custom)
+            let s = T::try_from(IpldString::from(s)).map_err(E::custom)?;
+            self.0.select_scalar::<C>(s).map_err(E::custom)
         }
 
         #[inline]
@@ -364,12 +383,6 @@ mod string {
             self.visit_str(s.as_ref())
         }
     }}
-
-    repr_serde! { @visitor_ext T T { type_kinds::String }
-        { T } { T: From<IpldString> + 'static } {}
-    }
-
-    repr_serde! { @select IpldString => IpldString {} {} }
 
     impl From<&str> for IpldString {
         #[inline]
@@ -433,6 +446,7 @@ mod bytes {
         From,
         Hash,
         // Index,
+        Into,
         IntoIterator,
         Ord,
         PartialOrd,
@@ -440,7 +454,6 @@ mod bytes {
     )]
     #[as_ref(forward)]
     #[deref(forward)]
-    #[from(forward)]
     pub struct Bytes(crate::dev::bytes::Bytes);
 
     impl Bytes {
@@ -475,6 +488,17 @@ mod bytes {
         }
     }
 
+    impl From<&[u8]> for Bytes {
+        fn from(bytes: &[u8]) -> Self {
+            Self::copy_from_slice(bytes)
+        }
+    }
+    impl From<Vec<u8>> for Bytes {
+        fn from(bytes: Vec<u8>) -> Self {
+            Self(crate::dev::bytes::Bytes::from(bytes))
+        }
+    }
+
     // impl<R: ops::RangeBounds<usize>> ops::Index<R> for Bytes {
     //     type Output = Self;
     //     fn index(&self, index: R) -> &Self::Output {
@@ -483,11 +507,15 @@ mod bytes {
     // }
 
     impl Representation for Bytes {
+        type DataModelKind = type_kinds::Bytes;
+        type SchemaKind = type_kinds::Bytes;
         type ReprKind = type_kinds::Bytes;
 
         const NAME: &'static str = "Bytes";
         const SCHEMA: &'static str = "type Bytes bytes";
         const DATA_MODEL_KIND: Kind = Kind::Bytes;
+        const SCHEMA_KIND: Kind = Kind::Bytes;
+        const REPR_KIND: Kind = Kind::Bytes;
 
         #[doc(hidden)]
         fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -511,8 +539,8 @@ mod bytes {
             impl<'de> Visitor<'de> for BytesVisitor {
                 type Value = Bytes;
                 #[inline]
-                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    write!(formatter, "A slice of bytes")
+                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    write!(f, "A slice of bytes of type {}", Self::Value::NAME)
                 }
                 #[inline]
                 fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
@@ -529,56 +557,50 @@ mod bytes {
                     Ok(Self::Value::from(bytes))
                 }
             }
+            impl<'de> LinkVisitor<'de> for BytesVisitor {}
 
-            #[cfg(feature = "dag-json")]
-            if C == DagJson::CODE {
-                return DagJson::deserialize_bytes(deserializer, BytesVisitor);
-            }
-
-            deserializer.deserialize_bytes(BytesVisitor)
+            Multicodec::deserialize_bytes::<C, _, _>(deserializer, BytesVisitor)
         }
     }
 
-    repr_serde! { @visitor T T { type_kinds::Bytes } { T }
-        // { T: for<'a> TryFrom<&'a [u8], Error = Error> + 'static }
-        { T: From<Bytes> + 'static }
-    {
+    repr_serde! { @select_for Bytes }
+    repr_serde! { @visitors for T => T
+        { @dk (type_kinds::Bytes) @sk (type_kinds::Bytes) @rk (type_kinds::Bytes) }
+        { T } { T: TryFrom<Vec<u8>> + for<'a> TryFrom<&'a [u8]> + 'static,
+                <T as TryFrom<Vec<u8>>>::Error: fmt::Display,
+                for<'a> <T as TryFrom<&'a [u8]>>::Error: fmt::Display  } @serde {
         #[inline]
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "Bytes of type {}", T::NAME)
         }
-
-        // #[inline]
-        // fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
-        // where
-        //     E: de::Error,
-        // {
-        //     self.0.select_bytes::<C>(Bytes::copy_from_slice(bytes)).map_err(E::custom)
-        // }
-
-        // #[inline]
-        // fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
-        // where
-        //     E: de::Error,
-        // {
-        //     self.0.select_bytes::<C>(Bytes::from(bytes)).map_err(E::custom)
-        // }
+        #[inline]
+        fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            // let bytes = T::try_from(bytes).map_err(E::custom)?;
+            // self.0.select_bytes::<C>(bytes).map_err(E::custom)
+            unimplemented!()
+        }
+        #[inline]
+        fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            // let bytes = T::try_from(bytes).map_err(E::custom)?;
+            // self.0.select_bytes::<C>(bytes).map_err(E::custom)
+            unimplemented!()
+        }
     }}
 
-    repr_serde! { @visitor_ext T T { type_kinds::Bytes } { T }
-        // { T: for<'a> TryFrom<&'a [u8], Error = Error> + 'static } {}
-        { T: From<Bytes> + 'static } {}
-    }
-
-    repr_serde! { @select Bytes => Bytes {} {} }
-
+    // TODO: be generic over T
+    // impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
+    // where
+    //     Ctx: Context,
+    //     T: Select<Ctx>,
     impl<'a, Ctx> SelectorSeed<'a, Ctx, Bytes>
     where
         Ctx: Context,
-        // impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
-        // where
-        //     Ctx: Context,
-        //     T: Select<Ctx>,
     {
         ///
         #[inline]

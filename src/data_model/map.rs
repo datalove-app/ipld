@@ -1,11 +1,15 @@
 use crate::dev::*;
 use macros::repr_serde;
-use maybestd::{cell::RefCell, collections::BTreeMap, fmt, iter, marker::PhantomData};
+use maybestd::{
+    cell::RefCell, collections::BTreeMap, fmt, iter, marker::PhantomData, str::FromStr,
+};
 use serde::de::value::MapAccessDeserializer;
 
 pub use iterators::*;
 
+/// A map type, implemented as a [`BTreeMap`].
 ///
+/// [`BTreeMap`]: crate::maybestd::collections::BTreeMap
 /// TODO: indexmap?
 pub type Map<K = IpldString, V = Any> = BTreeMap<K, V>;
 
@@ -13,20 +17,19 @@ impl<K, V> Representation for Map<K, V>
 where
     // TODO: remove clone requirement by switching up callbacks
     K: StringRepresentation,
+    <K as FromStr>::Err: fmt::Display,
     // K: AsRef<Field<'_>>
     V: Representation,
 {
+    type DataModelKind = type_kinds::Map;
+    type SchemaKind = type_kinds::Map;
     type ReprKind = type_kinds::Map;
 
     const NAME: &'static str = "Map";
-    const SCHEMA: &'static str = concat!(
-        "type Map {",
-        stringify!(K::NAME),
-        ":",
-        stringify!(V::NAME),
-        "}",
-    );
+    const SCHEMA: &'static str = "type Map {String:Any}";
     const DATA_MODEL_KIND: Kind = Kind::Map;
+    const SCHEMA_KIND: Kind = Kind::Map;
+    const REPR_KIND: Kind = Kind::Map;
 
     fn has_links(&self) -> bool {
         self.iter().any(|(k, v)| k.has_links() || v.has_links())
@@ -97,11 +100,18 @@ where
     }
 }
 
-repr_serde! { @visitor T (K, V) { type_kinds::Map } { T, K, V }
-    { T: Default + Extend<(K, V)> +  'static,
-      K: Select<Ctx> + StringRepresentation + 'static,
-      V: Select<Ctx> + 'static }
-{
+repr_serde! { @select_for Map<K, V> => (K, V)
+    { @dk (type_kinds::Map) @sk (type_kinds::Map) @rk (type_kinds::Map) }
+    { K, V } { K: Select<Ctx> + StringRepresentation + 'static,
+               <K as FromStr>::Err: fmt::Display,
+               V: Select<Ctx> + 'static }
+}
+repr_serde! { @visitors for T => (K, V)
+    { @dk (type_kinds::Map) @sk (type_kinds::Map) @rk (type_kinds::Map) }
+    { T, K, V } { T: Default + Extend<(K, V)> +  'static,
+                  K: Select<Ctx> + StringRepresentation + 'static,
+                  <K as FromStr>::Err: fmt::Display,
+                  V: Select<Ctx> + 'static } @serde {
     #[inline]
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "A map of type {} of {} to {}", T::NAME, K::NAME, V::NAME)
@@ -114,6 +124,7 @@ repr_serde! { @visitor T (K, V) { type_kinds::Map } { T, K, V }
     {
         if let Some(s) = self.0.selector.as_explore_union() {
             if s.matches_first() {
+                // TODO: transform the seed to a phantom seed, then recurse
                 let map = T::deserialize::<C, _>(MapAccessDeserializer::new(map))?;
                 return map.__select_in(self.0).map_err(A::Error::custom);
             }
@@ -133,9 +144,11 @@ repr_serde! { @visitor T (K, V) { type_kinds::Map } { T, K, V }
                 ).map_err(A::Error::custom)
             },
             Selector::ExploreFields(_) => self.0
-                .explore_map_fields::<C, K, V, _>(iter).map_err(A::Error::custom),
+                .explore_map_fields::<C, K, V, _>(iter)
+                .map_err(A::Error::custom),
             Selector::ExploreAll(_) => self.0
-                .explore_map_fields::<C, K, V, _>(iter).map_err(A::Error::custom),
+                .explore_map_fields::<C, K, V, _>(iter)
+                .map_err(A::Error::custom),
             _ => Err(A::Error::custom(Error::unsupported_selector::<T>(
                 self.0.selector,
             ))),
@@ -143,17 +156,26 @@ repr_serde! { @visitor T (K, V) { type_kinds::Map } { T, K, V }
     }
 }}
 
-repr_serde! { @visitor_ext T (K, V) { type_kinds::Map } { T, K, V }
-    { T: Default + Extend<(K, V)> +  'static,
-      K: Select<Ctx> + StringRepresentation + 'static,
-      V: Select<Ctx> + 'static }
-    {}
-}
+// repr_serde! { @visitor_ext T (K, V) { type_kinds::Map } { T, K, V }
+//     { T: Default + Extend<(K, V)> +  'static,
+//       K: Select<Ctx> + StringRepresentation + 'static,
+//       <K as FromStr>::Err: fmt::Display,
+//       V: Select<Ctx> + 'static }
+//     {}
+// }
+// repr_serde! { @link_visitor_blanket for T => (K, V) { type_kinds::Map } { T, K, V }
+//     { T: Default + Extend<(K, V)> +  'static,
+//       K: Select<Ctx> + StringRepresentation + 'static,
+//       <K as FromStr>::Err: fmt::Display,
+//       V: Select<Ctx> + 'static }
+//     {}
+// }
 
-repr_serde! { @select Map<K, V> => (K, V) { K, V }
-    { K: Select<Ctx> + StringRepresentation + 'static,
-      V: Select<Ctx> + 'static }
-}
+// repr_serde! { @select Map<K, V> => (K, V) { K, V }
+//     { K: Select<Ctx> + StringRepresentation + 'static,
+//       <K as FromStr>::Err: fmt::Display,
+//       V: Select<Ctx> + 'static }
+// }
 
 impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
 where
@@ -170,6 +192,7 @@ where
     ) -> Result<(), Error>
     where
         K: Select<Ctx> + StringRepresentation,
+        <K as FromStr>::Err: fmt::Display,
         V: Select<Ctx>,
         I: MapIterator<K, V>,
         T2: Default + 'static,
@@ -225,6 +248,7 @@ where
     pub(crate) fn explore_map_fields<const C: u64, K, V, I>(self, mut iter: I) -> Result<(), Error>
     where
         K: Select<Ctx> + StringRepresentation + 'static,
+        <K as FromStr>::Err: fmt::Display,
         V: Select<Ctx> + 'static,
         I: MapIterator<K, V>,
     {
@@ -286,7 +310,7 @@ mod iterators {
         {
             let key = self
                 .inner
-                .next_key_seed(DeserializeWrapper::<C, K>::default())
+                .next_key_seed(DeserializeWrapper::<C, K>::new())
                 .or_else(|_| Err(Error::explore_key_failure::<K>(expected_field_name)))?;
 
             // TODO: assert that key == expected_field_name
@@ -305,7 +329,7 @@ mod iterators {
             V: Representation,
         {
             self.inner
-                .next_value_seed(DeserializeWrapper::<C, V>::default())
+                .next_value_seed(DeserializeWrapper::<C, V>::new())
                 .or_else(|_| Err(Error::explore_value_failure::<V>(field)))
         }
 

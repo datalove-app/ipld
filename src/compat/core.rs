@@ -1,17 +1,20 @@
 use crate::dev::*;
+use macros::repr_serde;
 use maybestd::{fmt, marker::PhantomData};
 
 mod ignored {
     use super::*;
 
     impl Representation for IgnoredAny {
+        type DataModelKind = type_kinds::Null;
+        type SchemaKind = type_kinds::Union;
         type ReprKind = type_kinds::Any;
 
         const NAME: &'static str = "IgnoredAny";
         const SCHEMA: &'static str = "type IgnoredAny = Any";
         const DATA_MODEL_KIND: Kind = Kind::Null;
-        const SCHEMA_KIND: Kind = Kind::Any;
-        // const REPR_KIND: Kind = Kind::Any;
+        const SCHEMA_KIND: Kind = Kind::Union;
+        const REPR_KIND: Kind = Kind::Any;
         const __IGNORED: bool = true;
 
         #[doc(hidden)]
@@ -30,8 +33,74 @@ mod ignored {
             Deserialize::deserialize(deserializer)
         }
     }
+
+    repr_serde! { @select_for IgnoredAny }
+    repr_serde! { @visitors for IgnoredAny => IgnoredAny
+        { @dk (type_kinds::Null) @sk (type_kinds::Union) @rk (type_kinds::Any) }
+        {} {} @serde {
+            #[inline]
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", IgnoredAny::NAME)
+            }
+            #[inline]
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(())
+            }
+        }
+    }
+
+    ///
+    pub type Ignored<T> = PhantomData<T>;
+
+    impl<T: Representation> Representation for Ignored<T> {
+        type DataModelKind = type_kinds::Null;
+        type SchemaKind = type_kinds::Union;
+        type ReprKind = type_kinds::Any;
+
+        const NAME: &'static str = "Ignored";
+        const SCHEMA: &'static str = "type Ignored = IgnoredAny";
+        const DATA_MODEL_KIND: Kind = Kind::Null;
+        const SCHEMA_KIND: Kind = Kind::Union;
+        const REPR_KIND: Kind = Kind::Any;
+        const __IGNORED: bool = true;
+
+        #[doc(hidden)]
+        fn serialize<const C: u64, S>(&self, _: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            Err(S::Error::custom("unimplemented"))
+        }
+
+        #[doc(hidden)]
+        fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            Err(D::Error::custom("unimplemented"))
+        }
+    }
+
+    repr_serde! { @select_for Ignored<T> => Ignored<T>
+        { @dk (type_kinds::Null) @sk (type_kinds::Union) @rk (type_kinds::Any) }
+        { T } { T: Representation }
+    }
+    repr_serde! { @visitors for Ignored<T> => Ignored<T>
+        { @dk (type_kinds::Null) @sk (type_kinds::Union) @rk (type_kinds::Any) }
+        { T } { T: Representation + '_a } @serde {
+            #[inline]
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", T::NAME)
+            }
+            // TODO: delegate
+        }
+    }
 }
 
+// TODO:
 mod option {
     use super::*;
 
@@ -41,6 +110,8 @@ mod option {
     where
         T: Representation,
     {
+        type DataModelKind = T::DataModelKind;
+        type SchemaKind = T::SchemaKind;
         type ReprKind = T::ReprKind;
         // type ReprKind = type_kinds::Optional<<T as Representation>::ReprKind>;
         // type ReprKind = typenum::op!(type_kinds::Null | T::ReprKind);
@@ -50,7 +121,7 @@ mod option {
         const SCHEMA: &'static str = concat!("type ", stringify!(T::NAME), " nullable");
         const DATA_MODEL_KIND: Kind = T::DATA_MODEL_KIND;
         const SCHEMA_KIND: Kind = T::SCHEMA_KIND;
-        // const REPR_KIND: Kind = T::REPR_KIND;
+        const REPR_KIND: Kind = T::REPR_KIND;
         const IS_LINK: bool = T::IS_LINK;
         const HAS_LINKS: bool = T::HAS_LINKS;
 
@@ -142,13 +213,15 @@ mod wrapper {
             where
                 T: Representation,
             {
-                type ReprKind = <T as Representation>::ReprKind;
+                type DataModelKind = T::DataModelKind;
+                type SchemaKind = T::SchemaKind;
+                type ReprKind = T::ReprKind;
 
                 const NAME: &'static str = T::NAME;
                 const SCHEMA: &'static str = T::SCHEMA;
                 const DATA_MODEL_KIND: Kind = T::DATA_MODEL_KIND;
                 const SCHEMA_KIND: Kind = T::SCHEMA_KIND;
-                // const REPR_KIND: Kind = T::REPR_KIND;
+                const REPR_KIND: Kind = T::REPR_KIND;
                 const IS_LINK: bool = T::IS_LINK;
                 const HAS_LINKS: bool = T::HAS_LINKS;
 

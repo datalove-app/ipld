@@ -78,31 +78,80 @@ macro_rules! derive_newtype_select {
 ////////////////////////////////////////////////////////////////////////////////
 
 impl NullReprDefinition {
-    fn inner_ty() -> Type {
-        Type::Verbatim(quote!(Null))
+    fn ty(meta: &SchemaMeta) -> Type {
+        let name = &meta.name;
+        Type::Verbatim(quote!(#name))
     }
 }
 
 impl expand::ExpandBasicRepresentation for NullReprDefinition {
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
-        let inner_ty = Self::inner_ty();
-        derive_newtype!(@typedef self, meta => inner_ty)
+        let attrs = &meta.attrs;
+        let vis = &meta.vis;
+        let name = &meta.name;
+        let generics = &meta
+            .generics
+            .as_ref()
+            .map(|g| quote::quote!(#g))
+            .unwrap_or_default();
+
+        quote::quote! {
+            #(#attrs)*
+            #vis struct #name #generics;
+        }
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         let name = &meta.name;
-        let inner_ty = Self::inner_ty();
-        let schema = quote! {
-            const SCHEMA: &'static str = concat!("type ", stringify!(#name), " null");
-        };
-        derive_newtype!(@repr { schema } meta => inner_ty)
+        crate::dev::impl_repr(
+            meta,
+            quote::quote! {
+                type DataModelKind = <Null as Representation>::DataModelKind;
+                type SchemaKind = <Null as Representation>::SchemaKind;
+                type ReprKind = <Null as Representation>::ReprKind;
+
+                const SCHEMA: &'static str = concat!("type ", stringify!(#name), " null");
+                const DATA_MODEL_KIND: Kind = <Null>::DATA_MODEL_KIND;
+                const SCHEMA_KIND: Kind = <Null>::SCHEMA_KIND;
+                const IS_LINK: bool = <Null>::IS_LINK;
+                const HAS_LINKS: bool = <Null>::HAS_LINKS;
+
+                #[inline]
+                #[doc(hidden)]
+                fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: Serializer,
+                {
+                    Representation::serialize::<C, _>(&Null, serializer)
+                }
+
+                #[inline]
+                #[doc(hidden)]
+                fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: Deserializer<'de>,
+                {
+                    Null::deserialize::<C, _>(deserializer)?;
+                    Ok(Self)
+                }
+            },
+        )
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
-        let inner_ty = Self::inner_ty();
-        derive_newtype!(@select meta => inner_ty)
+        let lib = &meta.lib;
+        let name = &meta.name;
+        quote::quote! {
+            #lib::dev::macros::repr_serde! { @select_for #name {} {} }
+        }
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
         let name = &meta.name;
         quote! {
+            impl From<()> for #name {
+                fn from(_: ()) -> Self {
+                    Self
+                }
+            }
+
             impl From<#name> for SelectedNode {
                 fn from(t: #name) -> Self {
                     Self::Null
@@ -119,7 +168,7 @@ impl expand::ExpandBasicRepresentation for NullReprDefinition {
                 type Error = Error;
                 fn try_from(any: Any) -> Result<Self, Self::Error> {
                     match any {
-                        Any::Null(inner) => Ok(Self(inner)),
+                        Any::Null(inner) => Ok(Self),
                         _ => Err(Error::MismatchedAny)
                     }
                 }
@@ -132,7 +181,7 @@ impl expand::ExpandBasicRepresentation for NullReprDefinition {
 
 impl BoolReprDefinition {
     fn inner_ty() -> Type {
-        Type::Verbatim(quote!(Bool))
+        Type::Verbatim(quote!(bool))
     }
 }
 

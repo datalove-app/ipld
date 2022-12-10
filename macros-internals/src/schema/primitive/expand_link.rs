@@ -1,10 +1,7 @@
 use super::LinkReprDefinition;
 use crate::{
     derive_newtype,
-    dev::{
-        schema::{expand, SchemaKind},
-        SchemaMeta,
-    },
+    dev::{schema::expand, SchemaMeta},
 };
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -18,26 +15,28 @@ impl LinkReprDefinition {
 }
 
 impl expand::ExpandBasicRepresentation for LinkReprDefinition {
+    fn schema(&self, meta: &SchemaMeta) -> TokenStream {
+        let schema = format!("type {} link", meta.name_str());
+        quote!(#schema)
+    }
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
-        let inner_type = self.inner_ty();
-        derive_newtype!(@typedef self, meta => inner_type)
+        let inner_ty = self.inner_ty();
+        derive_newtype!(@typedef self, meta => inner_ty)
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        expand::impl_repr(
-            meta,
-            quote! {
-                const SCHEMA: &'static str = concat!("type ", stringify!(Self::NAME), " link");
-                const DATA_MODEL_KIND: Kind = Kind::Link;
-            },
-        )
+        let inner_ty = self.inner_ty();
+        let consts = quote! {
+            const DATA_MODEL_KIND: Kind = Kind::Link;
+            const SCHEMA_KIND: Kind = Kind::Link;
+            const REPR_KIND: Kind = Kind::Link;
+        };
+        derive_newtype!(@repr self, meta => inner_ty { consts })
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         let inner_ty = self.inner_ty();
-        derive_newtype!(@select meta => inner_ty)
+        derive_newtype!(@select self, meta => inner_ty)
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        let dm_ty = SchemaKind::Link.data_model_kind();
-        let sn_ty = SchemaKind::Link.selected_node_ident();
-        derive_newtype!(@conv @has_constructor self, meta => dm_ty sn_ty)
+        derive_newtype!(@conv @has_constructor self, meta)
     }
 }

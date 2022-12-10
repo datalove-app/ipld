@@ -19,9 +19,6 @@ impl ExpandBasicRepresentation for EnvelopeUnionReprDefinition {
             }
         }
     }
-    fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
-        TokenStream::default()
-    }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         // impl_repr(self.iter(), meta)
         TokenStream::default()

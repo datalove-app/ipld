@@ -3,6 +3,8 @@ use cid::Error as CidError;
 use maybestd::{
     error::Error as StdError, fmt::Display, num::TryFromIntError, string::FromUtf8Error,
 };
+#[cfg(feature = "multiaddr")]
+use multiaddr::Error as MultiaddrError;
 use multibase::Error as MultibaseError;
 use multihash::Error as MultihashError;
 use serde::{de, ser};
@@ -10,14 +12,18 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Cid error: {0}")]
-    Cid(#[from] CidError),
+    #[cfg(feature = "multiaddr")]
+    #[error("Multiaddr error: {0}")]
+    Multiaddr(#[from] MultiaddrError),
+
+    #[error("Multibase error: {0}")]
+    Multibase(#[from] MultibaseError),
 
     #[error("Multihash error: {0}")]
     Multihash(#[from] MultihashError),
 
-    #[error("Multibase error: {0}")]
-    Multibase(#[from] MultibaseError),
+    #[error("Cid error: {0}")]
+    Cid(#[from] CidError),
 
     #[error("Mismatched `Any` data model type")]
     MismatchedAny,
@@ -128,7 +134,8 @@ pub enum Error {
 }
 
 impl Error {
-    pub(crate) fn failed_any_conversion<T>(any_variant: &'static str) -> Self
+    #[doc(hidden)]
+    pub fn failed_any_conversion<T>(any_variant: &'static str) -> Self
     where
         T: Representation,
     {
@@ -138,7 +145,8 @@ impl Error {
         }
     }
 
-    pub(crate) fn unsupported_selector<T>(selector: &Selector) -> Self
+    #[doc(hidden)]
+    pub fn unsupported_selector<T>(selector: &Selector) -> Self
     where
         T: Representation,
     {
@@ -149,14 +157,13 @@ impl Error {
         }
     }
 
-    pub(crate) fn missing_next_selector(selector: &Selector) -> Self {
+    #[doc(hidden)]
+    pub fn missing_next_selector(selector: &Selector) -> Self {
         Self::MissingNextSelector(Representation::name(selector))
     }
 
-    pub(crate) fn explore_list_failure<E: Representation>(
-        selector: &Selector,
-        index: usize,
-    ) -> Self {
+    #[doc(hidden)]
+    pub fn explore_list_failure<E: Representation>(selector: &Selector, index: usize) -> Self {
         match selector {
             Selector::ExploreIndex(_) => Self::ExploreIndexFailure {
                 type_name: E::NAME,
@@ -172,7 +179,8 @@ impl Error {
         }
     }
 
-    pub(crate) fn explore_map_failure(selector: &Selector) -> Self {
+    #[doc(hidden)]
+    pub fn explore_map_failure(selector: &Selector) -> Self {
         match selector {
             // Selector::ExploreIndex(s) => Self::ExploreIndexFailure(current_index),
             // Selector::ExploreRange(s) => Self::ExploreRangeFailure(current_index, s.start, s.end),
@@ -180,28 +188,32 @@ impl Error {
         }
     }
 
-    pub(crate) fn explore_index_failure<E: Representation>(index: usize) -> Self {
+    #[doc(hidden)]
+    pub fn explore_index_failure<E: Representation>(index: usize) -> Self {
         Self::ExploreIndexFailure {
             type_name: E::NAME,
             index,
         }
     }
 
-    pub(crate) fn explore_key_failure<K: Representation>(field_name: Option<&'static str>) -> Self {
+    #[doc(hidden)]
+    pub fn explore_key_failure<K: Representation>(field_name: Option<&'static str>) -> Self {
         Self::ExploreFieldKeyFailure {
             key_type_name: K::NAME,
             field_name: field_name.unwrap_or("anonymous key"),
         }
     }
 
-    pub(crate) fn explore_value_failure<V: Representation>(field: impl Display) -> Self {
+    #[doc(hidden)]
+    pub fn explore_value_failure<V: Representation>(field: impl Display) -> Self {
         Self::ExploreFieldValueFailure {
             value_type_name: V::NAME,
             key: field.to_string(),
         }
     }
 
-    pub(crate) fn downcast_failure<T: Representation>(msg: &'static str) -> Self {
+    #[doc(hidden)]
+    pub fn downcast_failure<T: Representation>(msg: &'static str) -> Self {
         Self::DowncastFailure {
             type_name: T::NAME,
             msg,

@@ -5,7 +5,7 @@ use macros::{
 };
 use maybestd::{fmt, marker::PhantomData, str::FromStr};
 
-const STRATEGY: Strategy = Strategy::ListPairs;
+const STRATEGY: Strategy = Strategy::Listpairs;
 
 /*
 // Blanket impl for maps.
@@ -62,218 +62,233 @@ repr_serde! { @visitors for T => (K, V)
 }}
  */
 
-// ///
-// #[derive(
-//     AsRef,
-//     AsMut,
-//     Clone,
-//     Debug,
-//     Deref,
-//     // DerefMut,
-//     Eq,
-//     Hash,
-//     Index,
-//     IndexMut,
-//     IntoIterator,
-//     Ord,
-//     PartialEq,
-//     PartialOrd,
-// )]
-// #[as_ref(forward)]
-// #[deref(forward)]
-// pub struct ListPairsMap<K, V>(Map<K, V>);
+///
+#[derive(
+    AsRef,
+    AsMut,
+    Clone,
+    Debug,
+    Deref,
+    // DerefMut,
+    Eq,
+    Hash,
+    Index,
+    IndexMut,
+    IntoIterator,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+#[as_ref(forward)]
+#[deref(forward)]
+pub struct ListpairsMap<K, V>(Map<K, V>)
+where
+    K: StringRepresentation,
+    <K as FromStr>::Err: fmt::Display,
+    V: Representation;
 
-// impl<K, V> Default for ListPairsMap<K, V> {
-//     fn default() -> Self {
-//         Self(Map::new())
-//     }
-// }
+impl<K, V> Default for ListpairsMap<K, V>
+where
+    K: StringRepresentation,
+    <K as FromStr>::Err: fmt::Display,
+    V: Representation,
+{
+    fn default() -> Self {
+        Self(Map::new())
+    }
+}
 
-// type ListPair<K, V> = StructTuple2<(K, V), K, V>;
-// type ListPairRef<'a, K, V> = StructTupleRef2<'a, (K, V), K, V>;
+type ListpairRef<'a, K, V> = TupleRef2<'a, ListpairsMap<K, V>, K, V>;
 
-// impl<K, V> Representation for ListPairsMap<K, V>
-// where
-//     // TODO: remove clone requirement by switching up callbacks
-//     K: Representation + AsRef<str> + Clone + Ord,
-//     V: Representation,
-// {
-//     type ReprKind = type_kinds::List;
+impl<K, V> Representation for ListpairsMap<K, V>
+where
+    K: StringRepresentation,
+    <K as FromStr>::Err: fmt::Display,
+    V: Representation,
+{
+    const NAME: &'static str = "Map";
+    const SCHEMA: &'static str = concat!(
+        "type Map {",
+        stringify!(K::NAME),
+        ":",
+        stringify!(V::NAME),
+        "} representation listpairs",
+    );
+    const DATA_MODEL_KIND: Kind = Kind::Map;
+    const SCHEMA_KIND: Kind = Kind::Map;
+    const REPR_KIND: Kind = Kind::List;
+    const REPR_STRATEGY: Strategy = Strategy::Listpairs;
 
-//     const NAME: &'static str = "Map";
-//     const SCHEMA: &'static str = concat!(
-//         "type Map {",
-//         stringify!(K::NAME),
-//         ":",
-//         stringify!(V::NAME),
-//         "} representation listpairs",
-//     );
-//     const DATA_MODEL_KIND: Kind = Kind::Map;
-//     // const REPR_KIND: Kind = Kind::List;
+    #[inline]
+    #[doc(hidden)]
+    fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use ser::SerializeSeq;
 
-//     fn has_links(&self) -> bool {
-//         self.0.has_links()
-//     }
+        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+        for listpair in self.0.iter().map(ListpairRef::<'_, K, V>::from) {
+            seq.serialize_element(&SerializeRepr::<'_, C, _>(&listpair))?;
+        }
+        seq.end()
+    }
 
-//     #[inline]
-//     #[doc(hidden)]
-//     fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         use ser::SerializeSeq;
+    #[inline]
+    #[doc(hidden)]
+    fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ListpairsMapVisitor<const C: u64, K, V>(PhantomData<(K, V)>);
+        impl<'de, const C: u64, K, V> Visitor<'de> for ListpairsMapVisitor<C, K, V>
+        where
+            K: StringRepresentation,
+            <K as FromStr>::Err: fmt::Display,
+            V: Representation,
+        {
+            type Value = ListpairsMap<K, V>;
+            #[inline]
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "A map of `{}` to `{}` listpairs", K::NAME, V::NAME)
+            }
+            #[inline]
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut map = ListpairsMap::default();
+                while let Some((key, val)) =
+                    seq.next_element_seed(DeserializeRepr::<C, (K, V)>::new())?
+                {
+                    map.0.insert(key, val);
+                }
+                Ok(map)
+            }
+        }
 
-//         let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
-//         for listpair in self.0.iter().map(ListPairRef::<K, V>::from) {
-//             seq.serialize_element(&SerializeWrapper::<'_, C, _>(&listpair))?;
-//         }
-//         seq.end()
-//     }
+        deserializer.deserialize_seq(ListpairsMapVisitor::<C, K, V>(PhantomData))
+    }
+}
 
-//     #[inline]
-//     #[doc(hidden)]
-//     fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         struct ListPairsMapVisitor<const C: u64, K, V>(PhantomData<(K, V)>);
-//         impl<'de, const C: u64, K, V> Visitor<'de> for ListPairsMapVisitor<C, K, V>
-//         where
-//             K: Representation + Ord,
-//             V: Representation,
-//         {
-//             type Value = ListPairsMap<K, V>;
-//             #[inline]
-//             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//                 write!(f, "A map of `{}` to `{}` listpairs", K::NAME, V::NAME)
-//             }
-//             #[inline]
-//             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-//             where
-//                 A: SeqAccess<'de>,
-//             {
-//                 let mut map = ListPairsMap::default();
-//                 while let Some(listpair) =
-//                     seq.next_element_seed(DeserializeWrapper::<C, ListPair<K, V>>::new())?
-//                 {
-//                     map.0.insert(listpair.0, listpair.1);
-//                 }
-//                 Ok(map)
+repr_serde! { @select for ListpairsMap<K, V>
+    { K, V } { K: Select<Ctx> + StringRepresentation + 'static,
+               <K as FromStr>::Err: fmt::Display,
+               V: Select<Ctx> + 'static }
+}
+repr_serde! { @visitors for ListpairsMap<K, V>
+    { K, V } { K: Select<Ctx> + StringRepresentation + 'static,
+               <K as FromStr>::Err: fmt::Display,
+               V: Select<Ctx> + 'static } @serde {
+    #[inline]
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "A map of type {} of {} to {}", <ListpairsMap<K, V>>::NAME, K::NAME, V::NAME)
+    }
+    #[inline]
+    fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+    where
+    A: SeqAccess<'de>,
+    {
+        /*
+        if let Some(s) = self.as_ref().selector.as_explore_union() {
+            if s.matches_first() {
+                // TODO: transform the seed to a phantom seed, then recurse
+                let map = <ListpairsMap<K, V>>::deserialize::<MC, _>(SeqAccessDeserializer::new(map))?;
+                return map.__select_in(self.into_inner()).map_err(A::Error::custom);
+            }
+        }
 
-//                 // let mut new_map = Map::new();
-//                 // let mut iter = SerdeListPairsIterator::<'de, A>::from(map);
-//                 // while let Some(key) =
-//                 //     <SerdeListPairsIterator<'de, A> as MapIterator<K, V>>::next_key::<C>(&mut iter, None)
-//                 //         .map_err(A::Error::custom)?
-//                 // {
-//                 //     let val = key
-//                 //         .as_field()
-//                 //         .ok_or_else(|| Error::explore_key_failure::<K>(None))
-//                 //         .and_then(|field| {
-//                 //             <SerdeListPairsIterator<'de, A> as MapIterator<K, V>>::next_value::<C>(
-//                 //                 &mut iter, &field,
-//                 //             )
-//                 //         })
-//                 //         .map_err(A::Error::custom)?;
-//                 //     new_map.insert(key, val);
-//                 // }
-//                 // Ok(new_map)
-//             }
-//         }
+        self.into_inner()
+            .select_map::<MC, false, K, V, _>(SerdeMapIterator::from(map))
+            .map_err(A::Error::custom)
+        match self.as_ref().selector {
+            Selector::Matcher(_) => {
+                self.into_inner().match_map::<C, K, V, _, _, _, _, _>(
+                    iter,
+                    |_| RefCell::default(),
+                    |key, dag| Box::new(|child, _| {
+                        dag.borrow_mut().extend(iter::once((key.clone(), child)));
+                        Ok(())
+                    }),
+                    RefCell::into_inner,
+                ).map_err(A::Error::custom)
+            },
+            Selector::ExploreFields(_) => self.into_inner()
+                .explore_map_fields::<C, K, V, _>(iter)
+                .map_err(A::Error::custom),
+            Selector::ExploreAll(_) => self.into_inner()
+                .explore_map_fields::<C, K, V, _>(iter)
+                .map_err(A::Error::custom),
+            _ => Err(A::Error::custom(Error::unsupported_selector::<Map<K, V>>(
+                self.as_ref().selector,
+            ))),
+        }
+        */
 
-//         deserializer.deserialize_seq(ListPairsMapVisitor::<C, K, V>(PhantomData))
-//     }
-// }
+        unimplemented!()
+    }
+}}
 
 mod iterators {
     use super::*;
     use de::value::SeqAccessDeserializer;
 
-    // /// An iterator over a key-value pair represented as a serde list.
-    // #[derive(Debug)]
-    // pub struct SerdeListPairIterator<'de, A>
-    // where
-    //     A: SeqAccess<'de>,
-    // {
-    //     inner: A,
-    //     _t: PhantomData<&'de ()>,
-    // }
-
-    // impl<'de, T, A> ListIterator<T> for SerdeListPairIterator<'de, A> where A: SeqAccess<'de> {}
-
     ///
     #[doc(hidden)]
-    #[derive(Debug)]
-    pub struct SerdeListPairsIterator<'de, A>
+    // #[derive(Debug)]
+    pub struct SerdeListpairsIterator<'de, A>
     where
         A: SeqAccess<'de>,
     {
         inner: A,
+        index: usize,
         // key: Option<Cow<'de, str>>,
-        // pair_de: Option<SerdeListPairIterator<'de, A>>,
+        // value_de: Option<Box<dyn erased_serde::Deserializer<'de>>>,
         _t: PhantomData<&'de ()>,
     }
 
-    impl<'de, A> From<A> for SerdeListPairsIterator<'de, A>
+    impl<'de, A> SerdeListpairsIterator<'de, A>
     where
         A: SeqAccess<'de>,
     {
-        fn from(inner: A) -> Self {
+        pub fn new(inner: A) -> Self {
             Self {
                 inner,
+                index: 0,
                 // key: None,
-                // pair_de: None,
+                // value_de: None,
                 _t: PhantomData,
             }
         }
     }
 
-    impl<'de, K, V, A> MapIterator<K, V> for SerdeListPairsIterator<'de, A>
+    ///
+    /// call to next_key:
+    ///     - next_element -> (key(_str), Box<dyn SeqAccessDe>)
+    /// call to next_value:
+    ///     - creates Visitor.visit_seq that plucks one V from the seq
+    ///     - value_de.deserialize_seq ->
+    impl<'de, K, V, A> MapIterator<K, V> for SerdeListpairsIterator<'de, A>
     where
+        K: StringRepresentation,
+        <K as FromStr>::Err: fmt::Display,
+        V: Representation,
         A: SeqAccess<'de>,
     {
         fn size_hint(&self) -> Option<usize> {
             self.inner.size_hint()
         }
 
-        fn field(&self) -> Field<'_> {
-            unimplemented!()
-        }
-
         ///
-        /// pass a visitor that deserializes the key, and if the field_name matches, deserializes the value
+        /// if name is provided
         fn next_key<const C: u64>(
             &mut self,
             expected_field_name: Option<&'static str>,
-        ) -> Result<Option<K>, Error>
-        where
-            K: Representation,
-        {
-            // let key = self
-            //     .inner
-            //     .next_key_seed(DeserializeWrapper::<C, K>::default())
-            //     .or_else(|_| Err(Error::explore_key_failure::<K>(expected_field_name)))?;
-
-            // // TODO: assert that key == expected_field_name
-            // Ok(key)
+        ) -> Result<Option<K>, Error> {
             unimplemented!()
         }
 
         fn next_value_ignored(&mut self, field: &Field<'_>) -> Result<(), Error> {
-            // self.inner
-            //     .next_value::<IgnoredAny>()
-            //     .or_else(|_| Err(Error::explore_value_failure::<IgnoredAny>(field)))?;
-            // Ok(())
-            unimplemented!()
-        }
-
-        fn next_value<const C: u64>(&mut self, field: &Field<'_>) -> Result<V, Error>
-        where
-            V: Representation,
-        {
-            // self.inner
-            //     .next_value_seed(DeserializeWrapper::<C, V>::default())
-            //     .or_else(|_| Err(Error::explore_value_failure::<V>(field)))
             unimplemented!()
         }
 
@@ -283,9 +298,22 @@ mod iterators {
             // field: &Field<'_>,
         ) -> Result<(), Error>
         where
-            K: Representation,
             V: Select<Ctx>,
         {
+            unimplemented!()
+        }
+
+        fn next_entry_seed<'a, const C: u64, Ctx: Context + 'a, F>(
+            &mut self,
+            seeder: F,
+        ) -> Result<bool, Error>
+        where
+            V: Select<Ctx>,
+            F: FnOnce(&str) -> Result<Option<SelectorSeed<'a, Ctx, V>>, Error>,
+        {
+            //
+
+            unimplemented!()
             // let key = <Self as MapIterator<K, V>>::key(self);
             // let field = Representation::as_field(key);
             // let field = self.field();
@@ -295,7 +323,59 @@ mod iterators {
             //     .ok()
             //     .flatten()
             //     .ok_or_else(|| Error::explore_value_failure::<V>(field))
+        }
+    }
+
+    struct EntryVisitor<const C: u64, K, V> {
+        expected_field_name: Option<&'static str>,
+        _t: PhantomData<(K, V)>,
+    }
+    impl<const C: u64, K, V> EntryVisitor<C, K, V> {
+        fn new(expected_field_name: Option<&'static str>) -> Self {
+            Self {
+                expected_field_name,
+                _t: PhantomData,
+            }
+        }
+    }
+    impl<'de, const C: u64, K, V> Visitor<'de> for EntryVisitor<C, K, V>
+    where
+        K: StringRepresentation,
+        <K as FromStr>::Err: fmt::Display,
+        V: Representation,
+    {
+        // type Value = (K, Box<dyn erased_serde::Deserializer<'de>>);
+        type Value = ();
+        #[inline]
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(
+                f,
+                "A listpairs map key-value pair of {} to {}",
+                K::NAME,
+                V::NAME
+            )
+        }
+        #[inline]
+        fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
             unimplemented!()
+        }
+    }
+    impl<'de, const C: u64, K, V> DeserializeSeed<'de> for EntryVisitor<C, K, V>
+    where
+        K: StringRepresentation,
+        <K as FromStr>::Err: fmt::Display,
+        V: Representation,
+    {
+        // type Value = (K, Box<dyn erased_serde::Deserializer<'de>>);
+        type Value = ();
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            deserializer.deserialize_seq(self)
         }
     }
 }

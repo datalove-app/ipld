@@ -1,6 +1,6 @@
 use crate::dev::*;
 
-const STRATEGY: Strategy = Strategy::StringJoin;
+const STRATEGY: Strategy = Strategy::Stringjoin;
 
 /*
 // Blanket impl for structs.

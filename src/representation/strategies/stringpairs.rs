@@ -1,7 +1,7 @@
 use crate::dev::*;
 use maybestd::{borrow::Cow, fmt, str::FromStr};
 
-const STRATEGY: Strategy = Strategy::StringPairs;
+const STRATEGY: Strategy = Strategy::Stringpairs;
 
 /*
 // Blanket impl for maps.

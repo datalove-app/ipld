@@ -1,18 +1,22 @@
-use crate::dev::*;
+use crate::dev::{macros::*, *};
+use arrayvec::ArrayVec;
 use cid::Error as CidError;
 use maybestd::{cmp, convert::TryFrom, fmt, hash, io, str::FromStr};
 use multibase::Error as MultibaseError;
 
 ///
+pub const DEFAULT_CID_SIZE: usize = 64;
+
+///
 #[derive(Copy, Clone, Debug, Eq)]
-pub struct Cid {
-    pub(crate) inner: cid::CidGeneric<{ Self::SIZE }>,
+pub struct Cid<const S: usize = DEFAULT_CID_SIZE> {
+    pub(crate) inner: cid::CidGeneric<S>,
     multibase: Multibase,
 }
 
-impl Cid {
+impl<const S: usize> Cid<S> {
     /// Allocated size of the [`Cid`]'s underlying [`Multihash`], in bytes.
-    pub const SIZE: usize = 64;
+    pub const SIZE: usize = S;
 
     /// The default [`Multibase`] to use when encoding a non-v0 [`Cid`] as a
     /// string.
@@ -49,20 +53,37 @@ impl Cid {
 
     ///
     #[inline]
-    pub fn multicodec(&self) -> Result<Multicodec, Error> {
-        Multicodec::try_from(self.multicodec_code())
-    }
-
-    ///
-    #[inline]
     pub const fn multihash(&self) -> &DefaultMultihash {
-        self.inner.hash()
+        // self.inner.hash()
+        unimplemented!()
     }
 
     ///
     #[inline]
     pub const fn multibase(&self) -> Multibase {
         self.multibase
+    }
+
+    ///
+    #[inline]
+    pub fn multicodec(&self) -> Result<Multicodec, Error> {
+        Multicodec::try_from(self.multicodec_code())
+    }
+
+    ///
+    #[inline]
+    pub fn multihasher(&self) -> Result<Multihasher, Error> {
+        Multihasher::try_from(self.multihash_code())
+    }
+
+    ///
+    #[inline]
+    pub fn generator(&self) -> Result<CidGenerator, Error> {
+        Ok(CidGenerator::new(
+            self.version(),
+            self.multicodec_code(),
+            self.multihasher()?,
+        ))
     }
 
     ///
@@ -81,6 +102,20 @@ impl Cid {
     //     unimplemented!()
     // }
 
+    // #[inline]
+    // const fn len(version: Version, mc: u64, mh: u64, digest_len: usize) -> usize {
+    //     // len( varints for version, mc, mh ) + len(digest)
+    //     unimplemented!()
+    // }
+
+    ///
+    pub fn to_writer<W: io::Write>(writer: W) -> Result<(), Error> {
+        // calculate total len
+        // write varints for cid version, mc, mh
+        // write digest
+        unimplemented!()
+    }
+
     ///
     #[inline]
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -97,24 +132,31 @@ impl Cid {
     ///
     #[inline]
     pub const fn from(inner: DefaultCid) -> Self {
-        let multibase = Self::default_multibase(&inner);
-        Self { inner, multibase }
+        // let multibase = Self::default_multibase(&inner);
+        // Self { inner, multibase }
+        unimplemented!()
     }
 
-    /// Generates an [`Cid`] from a [`BufRead`] of a block's bytes.
-    pub fn new<R: io::Read>(
+    /// Generates an [`Cid`] from a [`io::Read`] of a block's bytes.
+    pub fn from_reader<R: io::Read>(
         cid_version: Version,
         multicodec_code: u64,
         multihash_code: u64,
-        block: R,
+        mut block: R,
     ) -> Result<Self, Error> {
-        let hasher = Multihash::try_from(multihash_code)?;
-        CidGenerator::new(cid_version, multicodec_code, hasher).derive(block)
+        let mut generator = CidGenerator::new(
+            cid_version,
+            multicodec_code,
+            Multihasher::try_from(multihash_code)?,
+        );
+        // io::copy(&mut block, &mut generator).map_err(CidError::Io)?;
+        // generator.try_finalize()
+        unimplemented!()
     }
 
     ///
-    pub fn derive_new<R: io::Read>(&self, block: R) -> Result<Self, Error> {
-        Self::new(
+    pub fn derive_from_reader<R: io::Read>(&self, block: R) -> Result<Self, Error> {
+        Self::from_reader(
             self.version(),
             self.multicodec_code(),
             self.multihash_code(),
@@ -135,7 +177,7 @@ impl Cid {
         }
     }
 
-    const fn default_multibase<const S: usize>(cid: &CidGeneric<S>) -> Multibase {
+    const fn default_multibase<const Sb: usize>(cid: &CidGeneric<S>) -> Multibase {
         match cid.version() {
             Version::V0 => Multibase::Base58Btc,
             _ => Self::DEFAULT_MULTIBASE,
@@ -143,29 +185,28 @@ impl Cid {
     }
 }
 
-impl Representation for Cid {
-    type DataModelKind = type_kinds::Link;
-    type SchemaKind = type_kinds::Link;
-    type ReprKind = type_kinds::Link;
-
+/*
+impl<const S: usize> Representation for CidGeneric<S> {
     const NAME: &'static str = "Cid";
     const SCHEMA: &'static str = "type Cid &Any";
     const DATA_MODEL_KIND: Kind = Kind::Link;
-    const SCHEMA_KIND: Kind = Kind::Link;
-    const REPR_KIND: Kind = Kind::Link;
 
-    ///
-    #[inline]
-    fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        Multicodec::serialize_link::<C, S>(self, serializer)
+    fn to_selected_node(&self) -> SelectedNode {
+        SelectedNode::Link(*self)
     }
 
     ///
     #[inline]
-    fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+    fn serialize<const MC: u64, Se>(&self, serializer: Se) -> Result<Se::Ok, Se::Error>
+    where
+        Se: Serializer,
+    {
+        Multicodec::serialize_link::<MC, Se>(self, serializer)
+    }
+
+    ///
+    #[inline]
+    fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -174,7 +215,11 @@ impl Representation for Cid {
             type Value = Cid;
             #[inline]
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "a Cid containing a Multihash of max {} bytes", Cid::SIZE)
+                write!(
+                    f,
+                    "a Cid containing a Multihash of max {} bytes",
+                    S
+                )
             }
             #[inline]
             fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
@@ -201,8 +246,77 @@ impl Representation for Cid {
             }
         }
 
-        if Multicodec::is_known::<C>() {
-            Multicodec::deserialize_link::<C, _, _>(deserializer, CidVisitor)
+        if Multicodec::is_known::<MC>() {
+            Multicodec::deserialize_link::<MC, _, _>(deserializer, CidVisitor)
+        } else {
+            Ok(Self::from(Deserialize::deserialize(deserializer)?))
+        }
+    }
+}
+ */
+
+impl Representation for Cid {
+    const NAME: &'static str = "Cid";
+    const SCHEMA: &'static str = "type Cid &Any";
+    const DATA_MODEL_KIND: Kind = Kind::Link;
+
+    fn to_selected_node(&self) -> SelectedNode {
+        SelectedNode::Link(*self)
+    }
+
+    ///
+    #[inline]
+    fn serialize<const MC: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Multicodec::serialize_link::<MC, S>(self, serializer)
+    }
+
+    ///
+    #[inline]
+    fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CidVisitor<const MC: u64>;
+        impl<'de, const MC: u64> Visitor<'de> for CidVisitor<MC> {
+            type Value = Cid;
+            #[inline]
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(
+                    f,
+                    "a Cid containing a Multihash of max {} bytes",
+                    <Cid>::SIZE
+                )
+            }
+            #[inline]
+            fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_link_bytes(bytes)
+            }
+            #[inline]
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_link_str(s)
+            }
+        }
+        impl<'de, const MC: u64> LinkVisitor<'de, MC> for CidVisitor<MC> {
+            // #[inline]
+            // fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
+            // where
+            //     E: de::Error,
+            // {
+            //     Ok(cid)
+            // }
+        }
+
+        if Multicodec::is_known::<MC>() {
+            Multicodec::deserialize_link::<MC, _, _>(deserializer, CidVisitor)
         } else {
             Ok(Self::from(Deserialize::deserialize(deserializer)?))
         }
@@ -220,21 +334,21 @@ impl Representation for Cid {
 //
 // impl_selector_seed_serde! { @selector_seed_codec_deseed {} {} Cid {
 //     #[inline]
-//     fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
+//     fn deserialize<const MC: u64, D>(self, deserializer: D) -> Result<(), D::Error>
 //     where
 //         D: Deserializer<'de>,
 //     {
 //         cfg_if::cfg_if! {
 //             if #[cfg(feature = "dag-json")] {
-//                 if C == DagJson::CODE {
-//                     DagJson::deserialize_link(deserializer, CodecSeed::<C, _>(self))
+//                 if MC == DagJson::CODE {
+//                     DagJson::deserialize_link(deserializer, CodecSeed::<MC, _>(self))
 //                 } else {
 //                     // Deserialize::deserialize(deserializer)
 //                     unimplemented!()
 //                 }
 //             } else if #[cfg(feature = "dag-cbor")] {
-//                 if C == DagJson::CODE {
-//                     DagCbor::deserialize_link(deserializer, CodecSeed::<C, _>(self))
+//                 if MC == DagJson::CODE {
+//                     DagCbor::deserialize_link(deserializer, CodecSeed::<MC, _>(self))
 //                 } else {
 //                     // Deserialize::deserialize(deserializer)
 //                     unimplemented!()
@@ -279,18 +393,19 @@ impl PartialOrd<DefaultCid> for Cid {
     }
 }
 
-impl PartialEq for Cid {
-    fn eq(&self, other: &Self) -> bool {
-        self.eq(&other.inner)
-    }
-}
-
-impl<const S: usize> PartialEq<CidGeneric<S>> for Cid {
+impl<const Sa: usize, const Sb: usize> PartialEq<CidGeneric<Sb>> for Cid<Sa> {
     #[inline]
-    fn eq(&self, other: &CidGeneric<S>) -> bool {
+    fn eq(&self, other: &CidGeneric<Sb>) -> bool {
         self.version() == other.version()
             && self.multicodec_code() == other.codec()
             && self.digest() == other.hash().digest()
+    }
+}
+
+impl<const Sa: usize, const Sb: usize> PartialEq<Cid<Sb>> for Cid<Sa> {
+    #[inline]
+    fn eq(&self, other: &Cid<Sb>) -> bool {
+        self.eq(&other.inner)
     }
 }
 
@@ -354,7 +469,7 @@ impl fmt::Display for Cid {
 //         self.inner.serialize(serializer)
 //     }
 // }
-
+//
 // impl<'de> Deserialize<'de> for Cid {
 //     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
 //     where
@@ -364,55 +479,161 @@ impl fmt::Display for Cid {
 //     }
 // }
 
-/// A generator of [`Cid`]s.
-#[derive(Debug)]
-pub struct CidGenerator {
-    version: Version,
-    mc_code: u64,
-    hasher: Multihash,
+/// A wrapper around an [`io::Write`] that can produce a [`Cid`] of the written
+/// block bytes.
+#[derive(
+    // Builder,
+    Debug,
+)]
+// #[builder(pattern = "owned")]
+pub struct BlockWriter<W> {
+    generator: CidGenerator,
+    writer: W,
 }
 
-impl CidGenerator {
+impl<W: io::Write> BlockWriter<W> {
     ///
-    pub fn new(version: Version, multicodec_code: u64, hasher: Multihash) -> Self {
+    #[inline]
+    pub const fn new(generator: CidGenerator, writer: W) -> Self {
+        Self { generator, writer }
+    }
+
+    /// Tap the [`BlockWriter`] to generate a [`Cid`] from the current
+    /// [`Multihasher`], resetting it.
+    pub fn tap(&mut self) -> Result<Cid, Error> {
+        Ok(self.generator.try_finalize()?)
+    }
+
+    // ///
+    // pub fn into_inner(self) -> impl io::Write {
+    //     self.writer
+    // }
+}
+
+impl<W: io::Write> io::Write for BlockWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let len = self.writer.write(buf)?;
+        self.generator.multihasher.update(&buf[..len]);
+        Ok(len)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.writer.flush()
+    }
+}
+
+/// A wrapper around an [`io::Read`] that can produce a [`Cid`] of the read
+/// block bytes, useful for pass-through verification.
+#[derive(
+    // Builder,
+    Debug,
+)]
+// #[builder(pattern = "owned")]
+pub struct BlockReader<R, const S: usize> {
+    buf: ArrayVec<u8, S>,
+    generator: CidGenerator,
+    reader: R,
+}
+
+impl<const S: usize, R: io::Read> BlockReader<R, S> {
+    ///
+    #[inline]
+    pub const fn new(generator: CidGenerator, reader: R) -> Self {
         Self {
-            version,
-            mc_code: multicodec_code,
-            hasher,
+            buf: ArrayVec::new_const(),
+            generator,
+            reader,
         }
     }
 
-    fn derive<R: io::Read>(mut self, mut block: R) -> Result<Cid, Error> {
-        io::copy(&mut block, &mut self).map_err(CidError::Io)?;
-        let inner = DefaultCid::new(self.version, self.mc_code, self.hasher.try_finalize()?)?;
+    /// Tap the [`BlockReader`] to generate a [`Cid`] from the current
+    /// [`Multihasher`], resetting it.
+    pub fn tap(&mut self) -> Result<Cid, Error> {
+        Ok(self.generator.try_finalize()?)
+    }
+
+    // ///
+    // pub fn into_inner(self) -> impl io::Read {
+    //     self.reader
+    // }
+}
+
+impl<const S: usize, R: io::Read> io::Read for BlockReader<R, S> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        // let len = self.reader.read(buf)?;
+        // // FIXME: not recommend to read from buf
+        // self.generator.multihasher.update(&buf[..len]);
+        // Ok(len)
+        unimplemented!()
+    }
+}
+
+impl<const S: usize, R: io::Read> io::BufRead for BlockReader<R, S> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        // io::BufRead::fill_buf(&mut self.reader)
+        unimplemented!()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        // io::BufRead::consume(&mut self.reader, amt)
+        unimplemented!()
+    }
+}
+
+/// A generator of [`Cid`]s.
+#[derive(
+    // Builder,
+    Debug,
+)]
+// #[builder(pattern = "owned")]
+pub struct CidGenerator {
+    pub version: Version,
+    pub mc_code: u64,
+    // #[builder(field(type = "u64", build = "self.multihasher.try_into()?"))]
+    pub(crate) multihasher: Multihasher,
+}
+
+// impl From<Error>
+
+impl CidGenerator {
+    ///
+    #[inline]
+    pub const fn new(version: Version, multicodec_code: u64, multihasher: Multihasher) -> Self {
+        Self {
+            version,
+            mc_code: multicodec_code,
+            multihasher,
+        }
+    }
+
+    // pub const fn with_multihasher(self, multihasher: Multihasher) -> Self {
+    //     self.multihasher = multihasher;
+    //     self
+    // }
+
+    ///
+    #[inline]
+    pub fn try_finalize(&mut self) -> Result<Cid, Error> {
+        let inner = DefaultCid::new(self.version, self.mc_code, self.multihasher.try_finalize()?)?;
         Ok(Cid::from(inner))
     }
 }
 
-impl multihash::Hasher for CidGenerator {
+impl io::Write for CidGenerator {
     #[inline]
-    fn update(&mut self, input: &[u8]) {
-        self.hasher.update(input)
-    }
-    #[inline]
-    fn finalize(&mut self) -> &[u8] {
-        self.hasher.finalize()
-    }
-    #[inline]
-    fn reset(&mut self) {
-        self.hasher.reset()
-    }
-}
-
-impl std::io::Write for CidGenerator {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.hasher.write(buf)
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.multihasher.update(buf);
+        Ok(buf.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    #[inline]
+    fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 }
+
+#[cfg(feature = "dep:rkyv")]
+mod rkyv {}
 
 #[cfg(test)]
 mod tests {

@@ -16,12 +16,9 @@ use serde_cbor::{
 //     },
 //     serde::{Deserializer as CborDeserializer, Serializer as CborSerializer},
 // };
-use delegate::delegate;
 use maybestd::{
-    borrow::Cow,
     convert::TryFrom,
-    fmt,
-    io::{BufReader, Read, Write},
+    io::{Read, Write},
 };
 
 /// The [DagCBOR](https://github.com/ipld/specs/blob/master/block-layer/codecs/dag-cbor.md) codec, that delegates to `serde_cbor`.
@@ -51,13 +48,13 @@ impl DagCbor {
     ///
     /// TODO:
     #[inline]
-    pub(crate) fn deserialize_any<'de, D, V>(
+    pub(crate) fn deserialize_any<'de, const MC: u64, D, V>(
         deserializer: D,
         visitor: V,
     ) -> Result<V::Value, D::Error>
     where
         D: Deserializer<'de>,
-        V: LinkVisitor<'de>,
+        V: LinkVisitor<'de, MC>,
     {
         // deserializer.deserialize_any(DagCborVisitor::<'a', _>(visitor))
         unimplemented!()
@@ -65,13 +62,13 @@ impl DagCbor {
 
     ///
     #[inline]
-    pub(crate) fn deserialize_link<'de, D, V>(
+    pub(crate) fn deserialize_link<'de, const MC: u64, D, V>(
         deserializer: D,
         visitor: V,
     ) -> Result<V::Value, D::Error>
     where
         D: Deserializer<'de>,
-        V: LinkVisitor<'de>,
+        V: LinkVisitor<'de, MC>,
     {
         match Tagged::<&'de [u8]>::deserialize(deserializer)? {
             Tagged {
@@ -97,7 +94,7 @@ impl DagCbor {
         R: Read,
     {
         let mut de = CborDeserializer::from_reader(reader);
-        T::__select_de::<{ Self::CODE }, _>(seed, &mut de).map_err(Error::decoder)
+        T::__select_de::<{ <Self as Codec>::CODE }, _>(seed, &mut de).map_err(Error::decoder)
     }
 
     // pub(crate) fn deserializer_from_reader<R: Read>(
@@ -118,7 +115,7 @@ impl DagCbor {
     // {
     //     let mut de = CborDeserializer::from_reader(reader);
     //     // let mut de = CborDeserializer::new(IoReader::new(BufReader::new(reader)));
-    //     seed.deserialize::<{ Self::CODE }, _>(&mut de)
+    //     seed.deserialize::<{ <Self as Codec>::CODE }, _>(&mut de)
     //         .map_err(Error::decoder)
     // }
 
@@ -126,52 +123,48 @@ impl DagCbor {
     //     &mut self,
     //     seed: T,
     //     reader: R,
-    // ) -> Result<<CodecSeed<{ Self::CODE }, D, T> as DeserializeSeed<'de>>::Value, Error>
+    // ) -> Result<<CodecSeed<{ <Self as Codec>::CODE }, D, T> as DeserializeSeed<'de>>::Value, Error>
     // where
     //     // S: CodecDeserializeSeed<'de>,
-    //     CodecSeed<{ Self::CODE }, D, T>: DeserializeSeed<'de>,
+    //     CodecSeed<{ <Self as Codec>::CODE }, D, T>: DeserializeSeed<'de>,
     //     R: Read,
     // {
     //     let mut de = CborDeserializer::from_reader(reader);
-    //     // seed.deserialize::<{ Self::CODE }, _>(&mut de)
+    //     // seed.deserialize::<{ <Self as Codec>::CODE }, _>(&mut de)
     //     // .map_err(Error::decoder)
-    //     CodecSeed::<{ Self::CODE }, D, T>(seed)
+    //     CodecSeed::<{ <Self as Codec>::CODE }, D, T>(seed)
     //         .deserialize(&mut de)
     //         .map_err(Error::decoder)
     // }
 }
 
-impl Codec for DagCbor {
+impl<T: Representation> Codec<T> for DagCbor {
     const NAME: &'static str = "dag-cbor";
     const CODE: u64 = 0x71;
 
-    fn write<T, W>(&mut self, dag: &T, writer: W) -> Result<(), Error>
+    fn write<W>(&mut self, dag: &T, writer: W) -> Result<(), Error>
     where
-        T: Representation,
         W: Write,
     {
         let mut ser = CborSerializer::new(IoWrite::new(writer));
         // let mut ser = CborSerializer::new(IoWriter::new(writer));
-        Representation::serialize::<{ Self::CODE }, _>(dag, &mut ser).map_err(Error::encoder)
+        Representation::serialize::<{ <Self as Codec>::CODE }, _>(dag, &mut ser)
+            .map_err(Error::encoder)
     }
 
-    fn decode<'de, T>(&mut self, bytes: &'de [u8]) -> Result<T, Error>
-    where
-        T: Representation,
-    {
+    fn decode<'de>(&mut self, bytes: &'de [u8]) -> Result<T, Error> {
         let mut de = CborDeserializer::new(SliceRead::new(bytes));
         // let mut de = CborDeserializer::new(SliceReader::new(bytes));
-        Representation::deserialize::<{ Self::CODE }, _>(&mut de).map_err(Error::decoder)
+        Representation::deserialize::<{ <Self as Codec>::CODE }, _>(&mut de).map_err(Error::decoder)
     }
 
-    fn read<T, R>(&mut self, reader: R) -> Result<T, Error>
+    fn read<R>(&mut self, reader: R) -> Result<T, Error>
     where
-        T: Representation,
         R: Read,
     {
         let mut de = CborDeserializer::new(IoRead::new(reader));
         // let mut de = CborDeserializer::new(IoReader::new(BufReader::new(reader)));
-        Representation::deserialize::<{ Self::CODE }, _>(&mut de).map_err(Error::decoder)
+        Representation::deserialize::<{ <Self as Codec>::CODE }, _>(&mut de).map_err(Error::decoder)
     }
 }
 
@@ -179,7 +172,7 @@ impl TryFrom<u64> for DagCbor {
     type Error = Error;
     fn try_from(code: u64) -> Result<Self, Self::Error> {
         match code {
-            Self::CODE => Ok(Self),
+            <Self as Codec>::CODE => Ok(Self),
             _ => Err(Error::UnknownMulticodecCode(code)),
         }
     }
@@ -313,13 +306,14 @@ mod tag {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_utils::*;
-    use crate::prelude::*;
+    use crate::{codecs_::test_utils::*, *};
+
+    const C: u64 = <DagCbor as Codec>::CODE;
 
     #[test]
     fn test_null() {
         // let tests = &[(Null, "null")];
-        // roundtrip_bytes_codec::<Null>(DagJson::CODE, tests);
+        // roundtrip_bytes_codec::<C, Null>(tests);
     }
 
     #[test]
@@ -345,16 +339,16 @@ mod tests {
         // assert_eq!(vec, b"\x1b\xff\xff\xff\xff\xff\xff\xff\xff");
 
         // floats
-        let cases = &[(4000.5f32, b"\xfb\x40\xaf\x41\x00\x00\x00\x00\x00".as_ref())];
-        roundtrip_bytes_codec::<f32>(DagCbor::CODE, cases);
-        let cases = &[(12.3f64, b"\xfb@(\x99\x99\x99\x99\x99\x9a".as_ref())];
-        roundtrip_bytes_codec::<Float>(DagCbor::CODE, cases);
+        let cases = &[(4000.5, b"\xfb\x40\xaf\x41\x00\x00\x00\x00\x00".as_ref())];
+        roundtrip_bytes_codec::<C, f32>(cases);
+        let cases = &[(12.3, b"\xfb@(\x99\x99\x99\x99\x99\x9a".as_ref())];
+        roundtrip_bytes_codec::<C, Float>(cases);
     }
 
     #[test]
     fn test_string() {
-        let cases = &[(IpldString::from("foobar"), b"ffoobar".as_ref())];
-        roundtrip_bytes_codec::<IpldString>(DagCbor::CODE, cases);
+        let cases = &[(String::from("foobar"), b"ffoobar".as_ref())];
+        roundtrip_bytes_codec::<C, String>(cases);
     }
 
     #[test]
@@ -366,7 +360,7 @@ mod tests {
     #[test]
     fn test_seq() {
         let cases = &[(vec![1, 2, 3], b"\x83\x01\x02\x03".as_ref())];
-        roundtrip_bytes_codec::<List<Int>>(DagCbor::CODE, cases)
+        roundtrip_bytes_codec::<C, List<Int>>(cases)
     }
 
     #[test]

@@ -10,26 +10,25 @@
 //! defining for the type it's `Context` requirements for these operations.
 
 #[doc(hidden)]
-pub mod strategies;
+mod strategies;
 
 use crate::dev::*;
 use downcast_rs::{impl_downcast, Downcast};
 use macros::derive_more::From;
 use maybestd::{fmt, marker::PhantomData, str::FromStr};
 
-pub use ipld_macros_internals::schema::{type_kinds, SchemaKind as Kind, TypedKind};
+pub use ipld_macros_internals::schema::SchemaKind as Kind;
+#[doc(hidden)]
+pub use strategies::*;
 
 // ///
 // #[derive(Debug, Eq, Hash, PartialEq)]
-// pub struct Field<A> {
+// pub struct Field<T, I = ()> {
 //     /// Name of the `Representation` type contained within this field.
 //     pub type_name: &'static str,
 //
 //     /// `Representation::Kind` of the field type.
-//     pub value: Kind,
-//
-//     /// The serialized field name of this type.
-//     pub alias: A,
+//     pub ty: PhantomData<T>
 // }
 //
 // impl<A> Field<A> {
@@ -46,7 +45,7 @@ pub use ipld_macros_internals::schema::{type_kinds, SchemaKind as Kind, TypedKin
 // #[derive(Debug, Eq, Hash, PartialEq)]
 // pub enum Fields {
 //     None,
-//     List(Field<()>),
+//     List,
 //     Map {
 //         key: Field<()>,
 //         value: Field<()>,
@@ -69,18 +68,6 @@ pub use ipld_macros_internals::schema::{type_kinds, SchemaKind as Kind, TypedKin
 //     Kinded(&'static [Field<&'static str>]),
 //     Byteprefix(&'static [Field<&'static [u8; 1]>]),
 // }
-
-// trait IsAny<const K: u16> {}
-// impl IsAny<{ Kind::Any.bits() }> for Kind {}
-// impl IsAny<{ Kind::Null.bits() }> for Kind {}
-// impl IsAny<{ Kind::Bool.bits() }> for Kind {}
-// impl IsAny<{ Kind::Int.bits() }> for Kind {}
-// impl IsAny<{ Kind::Float.bits() }> for Kind {}
-// impl IsAny<{ Kind::String.bits() }> for Kind {}
-// impl IsAny<{ Kind::Bytes.bits() }> for Kind {}
-// impl IsAny<{ Kind::List.bits() }> for Kind {}
-// impl IsAny<{ Kind::Map.bits() }> for Kind {}
-// impl IsAny<{ Kind::Link.bits() }> for Kind {}
 
 #[doc(hidden)]
 pub struct Label<T: Representation> {
@@ -108,80 +95,66 @@ pub trait Representation: Sized {
 
     /// The IPLD [Data Model Kind](https://ipld.io/docs/data-model/kinds/) of
     /// the type, which denotes the access API and executable [`Selector`]s.
-    const DATA_MODEL_KIND: Kind = Self::DataModelKind::KIND;
+    const DATA_MODEL_KIND: Kind;
 
     /// The IPLD [Schema Kind](https://ipld.io/docs/schemas/features/typekinds/)
     /// of the type, which denotes how the type is defined by its schema.
-    const SCHEMA_KIND: Kind = Self::SchemaKind::KIND;
+    const SCHEMA_KIND: Kind = Self::DATA_MODEL_KIND;
 
     /// The IPLD [Representation Kind]() of the type, which, in combination with
     /// the [`Representation::REPR_STRATEGY`], denotes how the type is
     /// represented on-disk by any given codec.
-    const REPR_KIND: Kind = Self::ReprKind::KIND;
+    const REPR_KIND: Kind = Self::DATA_MODEL_KIND;
 
     /// The IPLD specific [Representation]() [`Strategy`] used to encode this
     /// type.
-    const REPR_STRATEGY: Strategy = Strategy::DataModel;
+    const REPR_STRATEGY: Strategy = Strategy::Basic;
 
-    /// Marker for types that can have any representation *and* should be
-    /// ignored entirely during selection/deserialization.
-    #[doc(hidden)]
-    const __IGNORED: bool = false;
+    /// Whether or not the type contains IPLD links.
+    const HAS_LINKS: bool = Self::DATA_MODEL_KIND.contains(Kind::Link);
 
-    /// Marker type for exact `u32` value of the type's
-    /// [`Representation::DATA_MODEL_KIND`], needed for internal blanket
-    /// implementations of various traits.
-    #[doc(hidden)]
-    type DataModelKind: TypedKind;
+    // /// Marker type for exact `u32` value of the type's
+    // /// [`Representation::DATA_MODEL_KIND`], needed for internal blanket
+    // /// implementations of various traits.
+    // #[doc(hidden)]
+    // type DataModelKind: TypedKind;
 
-    /// Marker type for exact `u32` value of the type's
-    /// [`Representation::SCHEMA_KIND`], needed for internal blanket
-    /// implementations of various traits.
-    #[doc(hidden)]
-    type SchemaKind: TypedKind;
+    // /// Marker type for exact `u32` value of the type's
+    // /// [`Representation::SCHEMA_KIND`], needed for internal blanket
+    // /// implementations of various traits.
+    // #[doc(hidden)]
+    // type SchemaKind: TypedKind;
 
-    /// Marker type for exact `u32` value of the type's
-    /// [`Representation::REPR_KIND`], needed for internal blanket
-    /// implementations of various traits.
-    #[doc(hidden)]
-    type ReprKind: TypedKind;
-
-    ///
-    /// todo deprecate
-    const IS_LINK: bool = Self::DATA_MODEL_KIND.is_link();
-
-    /// todo deprecate
-    const HAS_LINKS: bool = Self::IS_LINK;
+    // /// Marker type for exact `u32` value of the type's
+    // /// [`Representation::REPR_KIND`], needed for internal blanket
+    // /// implementations of various traits.
+    // #[doc(hidden)]
+    // type ReprKind: TypedKind;
 
     /// The type's `Select`able static field names and their IPLD Schema kinds.
     #[doc(hidden)]
     const FIELDS: &'static [&'static str] = &[];
 
     ///
+    #[doc(hidden)]
+    const __SERDE_SCHEMA_KIND: Kind = match Self::SCHEMA_KIND.is_copy() {
+        Some(raw_sk) => raw_sk,
+        None => Self::SCHEMA_KIND,
+    };
+
+    ///
+    #[doc(hidden)]
+    const __SERDE_REPR_KIND: Kind = match Self::REPR_KIND {
+        Kind::Int => Int::REPR_KIND,
+        Kind::Float => Float::REPR_KIND,
+        rk => rk,
+    };
+
+    ///
+    /// ? The name of the reified type?
     /// for unions, this ?should delegate to the variant's type name'
-    /// TODO what is this really for
     fn name(&self) -> &'static str {
         Self::NAME
-    }
-
-    ///
-    fn data_model_kind(&self) -> Kind {
-        Self::DATA_MODEL_KIND
-    }
-
-    ///
-    fn schema_kind(&self) -> Kind {
-        Self::SCHEMA_KIND
-    }
-
-    ///
-    fn repr_kind(&self) -> Kind {
-        Self::REPR_KIND
-    }
-
-    ///
-    fn is_link(&self) -> bool {
-        Self::IS_LINK
     }
 
     ///
@@ -194,6 +167,7 @@ pub trait Representation: Sized {
         None
     }
 
+    ///
     fn to_selected_node(&self) -> SelectedNode {
         unimplemented!()
     }
@@ -207,7 +181,7 @@ pub trait Representation: Sized {
     /// TODO: rename to encode? as in, just encode this type (up to links)
     #[inline]
     #[doc(hidden)]
-    fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<const MC: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -224,12 +198,37 @@ pub trait Representation: Sized {
     /// TODO: rename to decode? as in, just decode this type (up to links)
     #[inline]
     #[doc(hidden)]
-    fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         // <Self as Deserialize<'de>>::deserialize(deserializer)
+        // <Self as Select>::__select_de::<MC, D>(EmptySeed, deserializer)
+
+        // deserialize_with_visitor::<MC, D, _, Self>(
+        //     deserializer,
+        //     Self::Walker::<'de, '_, MC>::default(),
+        // )
+
         unimplemented!()
+    }
+
+    // AstWalk<'a, Ctx, Self>
+    // ///
+    // #[doc(hidden)]
+    // type Walker<'de, 'a: 'de, const MC: u64>: Walk<'de, 'a, MC, Self>;
+
+    #[inline]
+    #[doc(hidden)]
+    fn deserialize_with_visitor<'de, const MC: u64, D, V>(
+        deserializer: D,
+        visitor: V,
+    ) -> Result<V::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+        V: LinkVisitor<'de, MC>,
+    {
+        deserialize_with_visitor::<MC, D, V, Self>(deserializer, visitor)
     }
 
     // ///
@@ -324,22 +323,86 @@ pub trait Representation: Sized {
     // fn links<R: Read + Seek>(c: Codec, reader: &mut R, )
 }
 
-///
-pub trait StringRepresentation: Representation<ReprKind = type_kinds::String>
+#[inline]
+#[doc(hidden)]
+fn deserialize_with_visitor<'de, const MC: u64, D, V, T>(
+    deserializer: D,
+    visitor: V,
+) -> Result<V::Value, D::Error>
 where
+    D: Deserializer<'de>,
+    V: LinkVisitor<'de, MC>,
+    T: Representation,
+{
+    match (T::__SERDE_SCHEMA_KIND, T::__SERDE_REPR_KIND) {
+        _ if T::REPR_STRATEGY.is_ignored() => deserializer.deserialize_ignored_any(visitor),
+        _ if T::DATA_MODEL_KIND.is_option() => deserializer.deserialize_option(visitor),
+
+        // union keyed (ref), envelope (tag + ref), inline (tag + inline)
+        (Kind::Union, Kind::Map) => deserializer.deserialize_enum(T::NAME, T::FIELDS, visitor),
+        // union (kinded => any, stringprefix => str, bytesprefix => bytes)
+
+        // struct map
+        (Kind::Struct, Kind::Map) => deserializer.deserialize_struct(T::NAME, T::FIELDS, visitor),
+        // struct tuple, listpairs
+        (Kind::Struct, Kind::List) => {
+            deserializer.deserialize_tuple_struct(T::NAME, T::FIELDS.len(), visitor)
+        }
+        // structs stringpair, stringjoin => Kind::String
+
+        // enum
+        (Kind::Enum, _) => deserializer.deserialize_identifier(visitor),
+
+        // basic
+        (_, Kind::Null) => deserializer.deserialize_unit(visitor),
+        (_, Kind::Bool) => deserializer.deserialize_bool(visitor),
+        (_, Kind::Int8) => deserializer.deserialize_i8(visitor),
+        (_, Kind::Int16) => deserializer.deserialize_i16(visitor),
+        (_, Kind::Int32) => deserializer.deserialize_i32(visitor),
+        (_, Kind::Int64) => deserializer.deserialize_i64(visitor),
+        (_, Kind::Int128) => deserializer.deserialize_i128(visitor),
+        (_, Kind::Uint8) => deserializer.deserialize_u8(visitor),
+        (_, Kind::Uint16) => deserializer.deserialize_u16(visitor),
+        (_, Kind::Uint32) => deserializer.deserialize_u32(visitor),
+        (_, Kind::Uint64) => deserializer.deserialize_u64(visitor),
+        (_, Kind::Uint128) => deserializer.deserialize_u128(visitor),
+        (_, Kind::Float32) => deserializer.deserialize_f32(visitor),
+        (_, Kind::Float64) => deserializer.deserialize_f64(visitor),
+        (_, Kind::String) => deserializer.deserialize_str(visitor),
+        (_, Kind::Bytes) => Multicodec::deserialize_bytes::<MC, _, _>(deserializer, visitor),
+        (_, Kind::List) => deserializer.deserialize_seq(visitor),
+        (_, Kind::Map) => deserializer.deserialize_map(visitor),
+        (_, Kind::Link) => Multicodec::deserialize_link::<MC, _, _>(deserializer, visitor),
+        // anything else
+        _ => Multicodec::deserialize_any::<MC, _, _>(deserializer, visitor),
+    }
+}
+
+///
+pub trait StringRepresentation
+where
+    // Self: Representation<ReprKind = type_kinds::String>,
+    Self: Representation,
     Self: Clone + FromStr + fmt::Display + Ord,
     <Self as FromStr>::Err: fmt::Display,
 {
 }
 impl<T> StringRepresentation for T
 where
-    T: Representation<ReprKind = type_kinds::String> + Clone + FromStr + fmt::Display + Ord,
+    // T: Representation<ReprKind = type_kinds::String>,
+    Self: Representation,
+    T: Clone + FromStr + fmt::Display + Ord,
     <T as FromStr>::Err: fmt::Display,
 {
 }
 
 ///
-pub trait BytesRepresentation: Representation<ReprKind = type_kinds::Bytes> {}
+pub trait BytesRepresentation
+where
+    // Self: Representation<ReprKind = type_kinds::Bytes>
+    Self: Representation,
+{
+}
 
 ///
 pub trait AdvancedRepresentation<Ctx: Context>: Representation + Select<Ctx> {}
@@ -354,15 +417,6 @@ pub(crate) trait ErasedRepresentation: Downcast {
     fn name(&self) -> &'static str;
 
     ///
-    fn data_model_kind(&self) -> Kind;
-
-    ///
-    fn schema_kind(&self) -> Kind;
-
-    ///
-    fn repr_kind(&self) -> Kind;
-
-    ///
     fn has_links(&self) -> bool;
 }
 
@@ -375,23 +429,11 @@ where
     T: Representation + 'static,
 {
     fn name(&self) -> &'static str {
-        T::NAME
-    }
-
-    fn data_model_kind(&self) -> Kind {
-        T::DATA_MODEL_KIND
-    }
-
-    fn schema_kind(&self) -> Kind {
-        T::SCHEMA_KIND
-    }
-
-    fn repr_kind(&self) -> Kind {
-        T::REPR_KIND
+        Representation::name(self)
     }
 
     fn has_links(&self) -> bool {
-        T::HAS_LINKS
+        Representation::has_links(self)
     }
 }
 
@@ -598,21 +640,21 @@ pub(crate) fn type_cast_mut<T: Sized + 'static, U: Sized + 'static, E, F>(inner:
 }
  */
 
-/// Helper fn for constraining and safely transmuting a generic selection output
-pub(crate) fn type_cast_selection<T: Sized + 'static, U: Sized + 'static, E, F>(
-    inner: F,
-) -> Result<Option<U>, E>
-where
-    F: FnOnce() -> Result<Option<T>, E>,
-{
-    // if !type_eq::<T, U>() {
-    //     unreachable!("should only do this for types known to be identical")
-    // }
-
-    let mut inner = inner()?;
-    let outer = (&mut inner as &mut dyn std::any::Any)
-        .downcast_mut::<Option<U>>()
-        .unwrap()
-        .take();
-    Ok(outer)
-}
+// /// Helper fn for constraining and safely transmuting a generic selection output
+// pub(crate) fn type_cast_selection<T: Sized + 'static, U: Sized + 'static, E, F>(
+//     inner: F,
+// ) -> Result<Option<U>, E>
+// where
+//     F: FnOnce() -> Result<Option<T>, E>,
+// {
+//     // if !type_eq::<T, U>() {
+//     //     unreachable!("should only do this for types known to be identical")
+//     // }
+//
+//     let mut inner = inner()?;
+//     let outer = (&mut inner as &mut dyn std::any::Any)
+//         .downcast_mut::<Option<U>>()
+//         .unwrap()
+//         .take();
+//     Ok(outer)
+// }

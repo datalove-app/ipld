@@ -1,11 +1,16 @@
 use crate::dev::*;
 use macros::derive_more::{AsMut, AsRef, From, TryInto};
 use maybestd::{
+    boxed::Box,
     fmt,
     ops::{Bound, Range, RangeBounds, RangeFrom, RangeInclusive},
     rc::Rc,
     str::FromStr,
 };
+
+///
+#[cfg_attr(feature = "dev", doc(hidden))]
+pub static DEFAULT_SELECTOR: Selector = Selector::DEFAULT;
 
 schema! {
     /// SelectorEnvelope is the recommended top-level value for serialized
@@ -33,29 +38,29 @@ schema! {
         ///
         | Matcher "."
         ///
-        #[ipld_attr(wrapper = "Rc")]
+        #[ipld_attr(wrapper = "Box")]
         | ExploreAll "a"
         ///
         | ExploreFields "f"
         ///
-        #[ipld_attr(wrapper = "Rc")]
+        #[ipld_attr(wrapper = "Box")]
         | ExploreIndex "i"
         ///
-        #[ipld_attr(wrapper = "Rc")]
+        #[ipld_attr(wrapper = "Box")]
         | ExploreRange "r"
         ///
-        #[ipld_attr(wrapper = "Rc")]
+        #[ipld_attr(wrapper = "Box")]
         | ExploreRecursive "R"
         ///
-        #[ipld_attr(wrapper = "Rc")]
+        #[ipld_attr(wrapper = "Box")]
         | ExploreUnion "|"
         ///
-        #[ipld_attr(wrapper = "Rc")]
+        #[ipld_attr(wrapper = "Box")]
         | ExploreConditional "&"
         ///
         | ExploreRecursiveEdge "@"
         ///
-        #[ipld_attr(wrapper = "Rc")]
+        #[ipld_attr(wrapper = "Box")]
         | ExploreInterpretAs "~"
     } representation keyed
 }
@@ -80,7 +85,7 @@ schema! {
     /// be represented as a set of three nexted ExploreFields selectors, each
     /// specifying one field.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug, From)]
+    #[derive(Clone, Debug, Default, From)]
     pub type ExploreFields struct {
         // fields {String:Selector} (rename "f>"),
     }
@@ -90,7 +95,7 @@ schema! {
     /// ExploreIndex traverses a specific index in a list, and applies a next
     /// selector to the reached node.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Default)]
     pub type ExploreIndex struct {
         index Int (rename "i")
         next Selector (rename ">")
@@ -101,7 +106,7 @@ schema! {
     /// ExploreRange traverses a list, and for each element in the range
     /// specified, will apply a next selector to those reached nodes.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Default)]
     pub type ExploreRange struct {
         start Int (rename "^")
         end Int (rename "$")
@@ -151,7 +156,7 @@ schema! {
     /// be used to let the selector know where to stop recursing preventing from
     /// having to traverse the full structure.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Default)]
     pub type ExploreRecursive struct {
         ///
         pub sequence Selector (rename ":>")
@@ -176,13 +181,13 @@ schema! {
 schema! {
     ///
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Default)]
     pub type RecursionLimit_None struct {}
 }
 schema! {
     ///
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug, From)]
+    #[derive(Clone, Debug, Default, From)]
     #[from(forward)]
     pub type RecursionLimit_Depth int
 }
@@ -198,7 +203,7 @@ schema! {
     /// ExploreRecursiveEdge is valid. An ExploreRecursiveEdge without an
     /// enclosing ExploreRecursive is an error.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Default)]
     pub type ExploreRecursiveEdge struct {}
 }
 
@@ -211,11 +216,11 @@ schema! {
     /// simultaneously continuing to explore deeper parts of the tree with
     /// another selector, for example.
     #[ipld_attr(internal)]
-    #[derive(Clone, Debug
+    #[derive(Clone, Debug, Default,
         // From
     )]
-    pub type ExploreUnion null;
-    // pub type ExploreUnion [Selector];
+    pub type ExploreUnion null
+    // pub type ExploreUnion [Selector]
 }
 
 schema! {
@@ -515,6 +520,7 @@ impl Selector {
     /// Attempts to produce the next selector to apply, given an optional field
     /// (key or index).
     /// TODO: matcher is infinite; need to distinguish link boundaries
+    /// TODO: should return Option<&Selector>
     pub fn try_next<'a>(&self, field: Option<&Field<'_>>) -> Result<&Selector, Error> {
         match (self, field) {
             (Self::Matcher(_), _) => Ok(self),
@@ -526,7 +532,7 @@ impl Selector {
             }
             (Self::ExploreRange(inner), Some(f))
                 if f.as_usize()
-                    .filter(|idx| inner.to_range().contains(idx))
+                    .filter(|idx| inner.contains(&(*idx as Int)))
                     .is_some() =>
             {
                 Ok(&inner.next)
@@ -569,7 +575,7 @@ impl Default for Selector {
     }
 }
 
-// TODO
+// TODO for all
 impl fmt::Display for Selector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         Ok(())
@@ -683,6 +689,12 @@ impl RangeBounds<Int> for ExploreRange {
 impl ExploreRecursive {
     ///
     pub const CODE: char = 'R';
+}
+
+impl Default for RecursionLimit {
+    fn default() -> Self {
+        Self::RecursionLimit_None(RecursionLimit_None {})
+    }
 }
 
 /* ExploreUnion */

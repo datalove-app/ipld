@@ -1,13 +1,13 @@
 use super::*;
 use crate::dev::{
-    common, impl_advanced_parse, parse_kwarg,
+    impl_advanced_parse, parse_kwarg,
     schema::{kw, parse},
     *,
 };
 use syn::{
     braced, bracketed,
     parse::{Parse, ParseStream, Result as ParseResult},
-    LitStr, Path, Token, Type,
+    Path, Token, Type,
 };
 
 impl Parse for ListReprDefinition {

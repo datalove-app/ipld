@@ -1,23 +1,15 @@
 use crate::dev::*;
 use macros::derive_more::From;
-use maybestd::{fmt, marker::PhantomData};
+use maybestd::{cell::RefCell, fmt, marker::PhantomData, mem::MaybeUninit};
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! tuple {
-    ($name:ident $ref_name:ident => $($ty:ident)*) => {
+    ($name:ident $ref_name:ident $suffix:ident => $($ty:ident)*) => {
         /// Type that implements selection against tuple-represented structs.
         #[doc(hidden)]
         #[derive(Clone, Debug, From)]
         pub struct $ref_name<'a, T = Any, $($ty = Any,)*>($(pub &'a $ty,)* PhantomData<T>);
-
-        impl<'a, T, $($ty,)*> $ref_name<'a, T, $($ty,)*>
-        where
-            T: Representation,
-            $($ty: Representation,)*
-        {
-            pub(crate) const LEN: usize = tuple!(@len $($ty)*);
-        }
 
         impl<'a, T, $($ty,)*> From<&'a ($($ty,)*)>
             for $ref_name<'a, T, $($ty,)*>
@@ -52,14 +44,6 @@ macro_rules! tuple {
         #[derive(Clone, Debug, From)]
         pub struct $name<T = Any, $($ty = Any,)*>($(pub $ty,)* PhantomData<T>);
 
-        impl<T, $($ty,)*> $name<T, $($ty,)*>
-        where
-            T: Representation,
-            $($ty: Representation,)*
-        {
-            pub(crate) const LEN: usize = tuple!(@len $($ty)*);
-        }
-
         impl<T, $($ty,)*> From<($($ty,)*)> for $name<T, $($ty,)*> {
             fn from(($($ty,)*): ($($ty,)*)) -> Self {
                 Self($($ty,)* PhantomData)
@@ -67,25 +51,15 @@ macro_rules! tuple {
         }
 
         const _: () = {
+            const LEN: usize = tuple!(@len $($ty)*);
             tuple!(@tuple $name $ref_name => $($ty)*);
         };
         const _: () = {
-            tuple!(@struct_tuple $name $ref_name => $($ty)*);
-        };
-        const _: () = {
-            // tuple!(listpairs! $name $ref_name => $($ty)*);
-        };
-        const _: () = {
-            // tuple!(stringjoin! $name $ref_name => $($ty)*);
-        };
-        const _: () = {
-            // tuple!(stringpairs! $name $ref_name => $($ty)*);
-        };
-        const _: () = {
-            // tuple!(stringprefix! $name $ref_name => $($ty)*);
+            const LEN: usize = tuple!(@len $($ty)*);
+            tuple!(@struct_tuple $name $ref_name $suffix => $($ty)*);
         };
     };
-    (@repr_ext $name:ident $repr:ident => $($ty:ident)*) => {
+    (@repr_methods $name:ident $repr:ident => $($ty:ident)*) => {
         fn has_links(&self) -> bool {
             // let ($($ty,)*) = self;
             // false $(| $ty.has_links())*
@@ -98,25 +72,23 @@ macro_rules! tuple {
     //     $macro_name!($name $ref_name => $($ty)*);
     // };
     (@tuple $name:ident $ref_name:ident => $($ty:ident)*) => {
-        const LEN: usize = $crate::tuple!(@len $($ty)*);
-
         impl<$($ty,)*> Representation for ($($ty,)*)
         where
             $($ty: Representation,)*
         {
-            type DataModelKind = type_kinds::List;
-            type SchemaKind = type_kinds::Struct;
-            type ReprKind = type_kinds::List;
-
             const NAME: &'static str = stringify!($name);
-            const SCHEMA: &'static str = "";
+            const SCHEMA: &'static str = concat!(
+                "type ", stringify!($name), " struct { ",
+                    $(stringify!($ty), stringify!($ty),)*
+                " } representation tuple"
+            );
             const DATA_MODEL_KIND: Kind = Kind::List;
             const SCHEMA_KIND: Kind = Kind::Struct;
             const REPR_KIND: Kind = Kind::List;
             const REPR_STRATEGY: Strategy = Strategy::Tuple;
             const HAS_LINKS: bool = false $(| $ty::HAS_LINKS )*;
 
-            $crate::tuple!(@repr_ext $name List => $($ty)*);
+            $crate::tuple!(@repr_methods $name List => $($ty)*);
 
             fn serialize<const MC: u64, Se>(&self, serializer: Se) -> Result<Se::Ok, Se::Error>
             where
@@ -149,7 +121,7 @@ macro_rules! tuple {
                     {
                         Ok((
                             $(seq
-                                .next_element_seed(DeserializeWrapper::<MC, $ty>::new())?
+                                .next_element_seed(DeserializeRepr::<MC, $ty>::new())?
                                 .ok_or_else(|| Ac::Error::missing_field(""))?
                             ,)*
                         ))
@@ -160,18 +132,19 @@ macro_rules! tuple {
             }
         }
     };
-    (@struct_tuple $name:ident $ref_name:ident => $($ty:ident)*) => {
+    // (@alias $name:ident => $($ty:ident)*) => ()
+    (@struct_tuple $name:ident $ref_name:ident $suffix:ident => $($ty:ident)*) => {
         impl<'a, T, $($ty,)*> Representation for $ref_name<'a, T, $($ty,)*>
         where
             T: Representation,
             $($ty: Representation,)*
         {
-            type DataModelKind = type_kinds::Map;
-            type SchemaKind = type_kinds::Struct;
-            type ReprKind = type_kinds::List;
-
             const NAME: &'static str = stringify!($name);
-            const SCHEMA: &'static str = "";
+            const SCHEMA: &'static str = concat!(
+                "type ", stringify!($name), " struct { ",
+                    $(stringify!($ty), stringify!($ty),)*
+                " } representation tuple"
+            );
             const DATA_MODEL_KIND: Kind = Kind::Map;
             const SCHEMA_KIND: Kind = Kind::Struct;
             const REPR_KIND: Kind = Kind::List;
@@ -179,8 +152,10 @@ macro_rules! tuple {
             const FIELDS: &'static [&'static str] = T::FIELDS;
             const HAS_LINKS: bool = false $(| $ty::HAS_LINKS )*;
 
-            $crate::tuple!(@repr_ext $ref_name List => $($ty)*);
+            $crate::tuple!(@repr_methods $ref_name List => $($ty)*);
 
+            #[inline]
+            #[doc(hidden)]
             fn serialize<const MC: u64, Se>(&self, serializer: Se) -> Result<Se::Ok, Se::Error>
             where
                 Se: Serializer,
@@ -188,9 +163,9 @@ macro_rules! tuple {
                 use ser::SerializeSeq;
 
                 let Self($($ty,)* _) = self;
-                let mut seq = serializer.serialize_seq(Some(Self::LEN))?;
+                let mut seq = serializer.serialize_seq(Some(LEN))?;
                 $(
-                    seq.serialize_element(&SerializeWrapper::<'_, MC, $ty>($ty))?;
+                    seq.serialize_element(&SerializeRepr::<'_, MC, $ty>($ty))?;
                 )*
                 seq.end()
             }
@@ -214,12 +189,12 @@ macro_rules! tuple {
             T: Representation,
             $($ty: Representation,)*
         {
-            type DataModelKind = type_kinds::Map;
-            type SchemaKind = type_kinds::Struct;
-            type ReprKind = type_kinds::List;
-
             const NAME: &'static str = stringify!($name);
-            const SCHEMA: &'static str = "";
+            const SCHEMA: &'static str = concat!(
+                "type ", stringify!($name), " struct { ",
+                    $(stringify!($ty), stringify!($ty),)*
+                " } representation tuple"
+            );
             const DATA_MODEL_KIND: Kind = Kind::Map;
             const SCHEMA_KIND: Kind = Kind::Struct;
             const REPR_KIND: Kind = Kind::List;
@@ -227,15 +202,16 @@ macro_rules! tuple {
             const FIELDS: &'static [&'static str] = T::FIELDS;
             const HAS_LINKS: bool = false $(| $ty::HAS_LINKS )*;
 
-            $crate::tuple!(@repr_ext $name List => $($ty)*);
+            $crate::tuple!(@repr_methods $name List => $($ty)*);
 
+            #[inline]
+            #[doc(hidden)]
             fn serialize<const MC: u64, Se>(&self, serializer: Se) -> Result<Se::Ok, Se::Error>
             where
                 Se: Serializer,
             {
                 $ref_name::from(self).serialize::<MC, Se>(serializer)
             }
-
             #[inline]
             #[doc(hidden)]
             fn deserialize<'de, const MC: u64, De>(deserializer: De) -> Result<Self, De::Error>
@@ -247,35 +223,157 @@ macro_rules! tuple {
         }
 
         // // Blanket impls for structs.
-        // repr_serde! { @visitors for T => $name<T, $($ty,)*>
-        //     { @dk type_kinds::Map @sk type_kinds::Struct @rk type_kinds::List }
-        //     { T, $($ty)* }
-        //     { T: Default + TryFrom<($($ty,)*)> + 'static,
-        //       <T as TryFrom<($($ty,)*)>>::Error: fmt::Display,
-        //       $($ty: Select<Ctx> + 'static,)*, } @serde {
-        //     }
-        // };
+        $crate::tuple!(@select $name $suffix => $($ty)* { $($ty)* });
+        $crate::repr_serde! { @visitors for $name<T, $($ty,)*>
+            { T, $($ty,)* } { T: Select<Ctx> + 'static,
+                              $($ty: Select<Ctx> + 'static,)* } @serde {
+            #[inline]
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "A len {}-tuple struct of type {}", LEN, T::NAME)
+            }
+            #[inline]
+            fn visit_seq<Ac>(self, seq: Ac) -> Result<Self::Value, Ac::Error>
+            where
+                Ac: SeqAccess<'de>,
+            { paste::paste! {
+                // self.into_inner()
+                //     .[<select $suffix>]::<MC, false, $($ty,)* _>()
+                unimplemented!()
+            }}
+        }};
+    };
+    (@select $name:ident $suffix:ident => $($ty:ident)* { $($ty2:ident)* }) => {
+        // todo impl MapIterator<String, $ty>
+        // todo     for [<Iter $suffix>]< $name<T, $($ty,)*> >
+        // todo     for [<SerdeIter $suffix>]< $name<T, $($ty,)*> >
+
+        impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
+        where
+            Ctx: Context,
+            T: Select<Ctx> + 'static,
+        { paste::paste! {
+            ///
+            /// todo: only implements matcher
+            pub fn [<select $suffix>]<const MC: u64, $($ty,)* It, Cfn>(
+                mut self,
+                mut iter: It,
+                constructor: Cfn,
+            ) -> Result<(), Error>
+            where
+                $($ty: Select<Ctx> + 'static,)*
+                $(It: MapIterator<String, $ty>,)*
+                Cfn: FnOnce($($ty,)*) -> Result<T, Error>,
+            {
+                // select the matched node, and set up the dag
+                self.handle_node(SelectedNode::Map)?;
+                // FIXME: should maybe just use an option, since idx might get inited
+                $(let [<v_ $ty:lower>] = RefCell::new(MaybeUninit::uninit());)*
+                // create cleanup cb
+                let drop_inited = |idx: usize, err: Error| -> Result<(), Error> {
+                    let mut i = 0usize;
+                    $({ if i < idx {
+                        unsafe {
+                            [<v_ $ty:lower>].borrow_mut().assume_init_drop();
+                        }
+                        i += 1;
+                    }})*
+                    Err(err)
+                };
+
+                //
+                let mut idx = 0usize;
+                $(  if let Err(err) = <_ as MapIterator<String, $ty>>::next_key::<MC>(&mut iter, Some(T::FIELDS[idx]))
+                        .and_then(|_: Option<String>| self.handle_field::<MC, String, $ty>(
+                            &mut iter,
+                            self.is_dag_select().then_some(Box::new(|child, _| {
+                                [<v_ $ty:lower>].borrow_mut().write(child);
+                                Ok(())
+                            })),
+                        ))
+                    {
+                        return drop_inited(idx, err);
+                    }
+
+                    idx += 1;
+                    // if idx < LEN {
+                    //     iter.into_next()
+                    // } else {
+                    //     iter
+                    // }
+                )*
+
+                // match dag
+                if self.is_dag_select() {
+                    $(let [<v_ $ty:lower>] = unsafe {
+                        [<v_ $ty:lower>].into_inner().assume_init()
+                    };)*
+                    self.handle_dag(constructor($([<v_ $ty:lower>],)*)?)?;
+                }
+
+                Ok(())
+            }
+
+            pub fn [<patch $suffix>]<const MC: u64, $($ty,)* It>(
+                mut self,
+                mut iter: It,
+            ) -> Result<(), Error>
+            where
+                $($ty: Select<Ctx> + 'static,)*
+                $(It: MapIterator<String, $ty>,)*
+            {
+                unimplemented!()
+            }
+        }}
     };
 }
 
-tuple!(StructTuple2 StructTupleRef2 => A B);
-tuple!(StructTuple3 StructTupleRef3 => A B C);
-tuple!(StructTuple4 StructTupleRef4 => A B C D);
-tuple!(StructTuple5 StructTupleRef5 => A B C D E);
-tuple!(StructTuple6 StructTupleRef6 => A B C D E F);
-tuple!(StructTuple7 StructTupleRef7 => A B C D E F G);
-tuple!(StructTuple8 StructTupleRef8 => A B C D E F G H);
-tuple!(StructTuple9 StructTupleRef9 => A B C D E F G H I);
-tuple!(StructTuple10 StructTupleRef10 => A B C D E F G H I J);
-tuple!(StructTuple11 StructTupleRef11 => A B C D E F G H I J K);
-tuple!(StructTuple12 StructTupleRef12 => A B C D E F G H I J K L);
-tuple!(StructTuple13 StructTupleRef13 => A B C D E F G H I J K L M);
-tuple!(StructTuple14 StructTupleRef14 => A B C D E F G H I J K L M N);
-tuple!(StructTuple15 StructTupleRef15 => A B C D E F G H I J K L M N O);
-tuple!(StructTuple16 StructTupleRef16 => A B C D E F G H I J K L M N O P);
-tuple!(StructTuple17 StructTupleRef17 => A B C D E F G H I J K L M N O P Q);
-tuple!(StructTuple18 StructTupleRef18 => A B C D E F G H I J K L M N O P Q R);
-tuple!(StructTuple19 StructTupleRef19 => A B C D E F G H I J K L M N O P Q R S);
+struct TupleSerdeIter<const MAX: usize, T, U, Ac> {
+    pub index: usize,
+    inner: Ac,
+    _t: PhantomData<(T, U)>,
+}
+impl<const MAX: usize, T, U, Ac> TupleSerdeIter<MAX, T, U, Ac> {
+    // pub fn into_next<V>(self) -> TupleSerdeIter<MAX, T, V, Ac> {
+    //     TupleSerdeIter {
+    //         index: self.index + 1,
+    //         inner: self.inner,
+    //         _t: PhantomData,
+    //     }
+    // }
+}
+
+tuple!(Tuple2 TupleRef2 _2 => A B);
+tuple!(Tuple3 TupleRef3 _3 => A B C);
+tuple!(Tuple4 TupleRef4 _4 => A B C D);
+tuple!(Tuple5 TupleRef5 _5 => A B C D E);
+tuple!(Tuple6 TupleRef6 _6 => A B C D E F);
+tuple!(Tuple7 TupleRef7 _7 => A B C D E F G);
+tuple!(Tuple8 TupleRef8 _8 => A B C D E F G H);
+tuple!(Tuple9 TupleRef9 _9 => A B C D E F G H I);
+tuple!(Tuple10 TupleRef10 _10 => A B C D E F G H I J);
+tuple!(Tuple11 TupleRef11 _11 => A B C D E F G H I J K);
+tuple!(Tuple12 TupleRef12 _12 => A B C D E F G H I J K L);
+tuple!(Tuple13 TupleRef13 _13 => A B C D E F G H I J K L M);
+tuple!(Tuple14 TupleRef14 _14 => A B C D E F G H I J K L M N);
+tuple!(Tuple15 TupleRef15 _15 => A B C D E F G H I J K L M N O);
+tuple!(Tuple16 TupleRef16 _16 => A B C D E F G H I J K L M N O P);
+tuple!(Tuple17 TupleRef17 _17 => A B C D E F G H I J K L M N O P Q);
+tuple!(Tuple18 TupleRef18 _18 => A B C D E F G H I J K L M N O P Q R);
+tuple!(Tuple19 TupleRef19 _19 => A B C D E F G H I J K L M N O P Q R S);
+
+// impl<const MAX: usize, T, U, Ac> MapIterator<String, U> for TupleSerdeIter<MAX, T, U, Ac> {
+//     fn size_hint(&self) -> Option<usize> {
+//         Some(MAX)
+//     }
+
+//     fn field(&self) -> Field<'_> {
+//         unimplemented!()
+//     }
+
+//     fn next_ignored(&mut self) -> Result<bool, Error> {
+//         Ok(false)
+//     }
+// }
 
 // impl_tuple!(@repr Tuple12 Tuple12RefTuple2Ref => A B C D E F G H I J K L {
 

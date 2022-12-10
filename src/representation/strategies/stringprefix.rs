@@ -1,3 +1,3 @@
 use crate::dev::*;
 
-const STRATEGY: Strategy = Strategy::StringPrefix;
+const STRATEGY: Strategy = Strategy::Stringprefix;

@@ -12,7 +12,7 @@ mod union;
 
 pub use compound::*;
 pub use expand::*;
-pub use kind::{type_kinds, SchemaKind, TypedKind};
+pub use kind::SchemaKind;
 pub use parse::*;
 pub use primitive::*;
 pub use r#enum::*;
@@ -48,6 +48,23 @@ pub struct SchemaMeta {
 
 impl SchemaMeta {
     /// Creates a `TokenStream` of the `ipld` lib used (either `crate` or the `ipld` crate name).
+    pub fn imports(is_internal: bool) -> TokenStream {
+        let lib = Self::lib(is_internal);
+        let r#extern = if is_internal {
+            quote!(use #lib as __ipld;)
+        } else {
+            quote!(extern crate #lib as __ipld;)
+        };
+
+        quote! {
+            #r#extern
+            #[allow(clippy::useless_attribute)]
+            use __ipld::dev::*;
+            __ipld::repr_serde!(@def_seed);
+        }
+    }
+
+    /// Creates a `TokenStream` of the `ipld` lib used (either `crate` or the `ipld` crate name).
     pub fn lib(is_internal: bool) -> TokenStream {
         if is_internal {
             return quote!(crate);
@@ -63,7 +80,6 @@ impl SchemaMeta {
                 .expect("`ipld` is not present in Cargo.toml")
             },
         );
-
         quote!(#path)
     }
 
@@ -72,6 +88,10 @@ impl SchemaMeta {
             .as_ref()
             .map(|g| quote!(#g))
             .unwrap_or(TokenStream::default())
+    }
+
+    pub fn name_str(&self) -> String {
+        self.name.to_string()
     }
 
     // fn to_try_from_meta(&self) -> Self {
@@ -131,11 +151,8 @@ impl ReprDefinition {
 // #[macro_use]
 pub mod kind {
     // use super::*;
-    use std::ops::{BitAnd, BitOr};
-    use type_kinds::*;
-    use typenum::*;
-    use typenum_macro::*;
 
+    /*
     ///
     /// TODO: BitAnd/BitOr dont work without fully-qualified syntax
     pub trait TypedKind<Rhs: TypedKind = Self>
@@ -164,6 +181,7 @@ pub mod kind {
                                                    // + BitOr<Null>,
     {
     }
+     */
 
     macro_rules! def_kind { (
         $($name:ident = $b:expr;)*) => {
@@ -215,17 +233,23 @@ pub mod kind {
                     /// floating-point numbers.
                     const TypedFloat = Self::Float32.bits | Self::Float64.bits;
 
+                    const AnyInt = Self::Int.bits | Self::TypedInt.bits;
+                    const AnyFloat = Self::Float.bits | Self::TypedFloat.bits;
+
+                    const TypedNum = Self::TypedInt.bits | Self::TypedFloat.bits;
+
+                    const Num = Self::AnyInt.bits | Self::AnyFloat.bits;
+
                     ///
-                    const TypedScalar = Self::Scalar.bits
-                        | Self::TypedInt.bits
-                        | Self::TypedFloat.bits;
+                    const TypedScalar = Self::Scalar.bits | Self::TypedNum.bits;
                 }
             }
 
+            /*
             /// [`typenum`] types representing known [`SchemaKind`]s.
             ///
             /// [`typenum`]: typenum
-            pub mod type_kinds {
+            mod type_kinds {
                 use super::*;
 
                 $(pub type $name = tyuint!($b);)*
@@ -251,6 +275,7 @@ pub mod kind {
                 #[doc(hidden)]
                 pub type Empty = U0;
             }
+             */
         };
     }
 
@@ -320,13 +345,48 @@ pub mod kind {
             // }
         }
 
-        pub const fn is_option(&self) -> bool {
-            self.bits.count_ones() == 2 && self.contains(Self::Null)
+        pub const fn is_nary<const N: u32>(&self) -> bool {
+            N == self.bits.count_ones()
         }
+
+        /// dm
+        pub const fn is_option(&self) -> bool {
+            self.is_nary::<2>() && self.contains(Self::Null)
+        }
+
+        // pub const fn is_int(&self) -> bool {
+        //     self.is_nary::<1>() && (Self::Int.eq(self) || Self::TypedInt.contains(*self))
+        // }
+
+        // pub const fn is_num(&self) -> bool {
+        //     self.is_nary::<1>() && Self::Num.contains(*self)
+        // }
+
+        // pub const fn is_typed(&self) -> bool {
+        //     self.is_nary::<1>() && Self::TypedNum.contains(*self)
+        // }
 
         ///
         pub const fn is_link(&self) -> bool {
-            self.contains(Self::Link)
+            self.eq(&Self::Link)
+        }
+
+        // ///
+        // pub const fn is_enum(&self) -> bool {
+        //     match *self {
+        //         Self::Enum | Self::String => true,
+        //         s if s.is_nary::<1>() && Self::TypedInt.contains(s) => true,
+        //         _ => false,
+        //     }
+        //     // self.is_nary::<1>() && (self.eq(&Self::String) || Self::TypedInt.contains(*self))
+        // }
+
+        pub const fn is_copy(&self) -> Option<Self> {
+            if self.contains(Self::Copy) {
+                Some(self.difference(Self::Copy))
+            } else {
+                None
+            }
         }
 
         ///
@@ -342,9 +402,9 @@ pub mod kind {
         // pub const fn is_
     }
 
-    const fn is_unary<T: TypedKind>() -> bool {
-        T::KIND.bits.count_ones() == 1
-    }
+    // const fn is_unary<T: TypedKind>() -> bool {
+    //     T::KIND.is_nary::<1>()
+    // }
 
     // pub trait BitOps<U = Self>: BitAnd<U> + BitOr<U> {}
     // impl<T, U> BitOps<U> for T where T: BitAnd<U> + BitOr<U> {}

@@ -60,55 +60,41 @@ impl ExpandBasicRepresentation for KeyedUnionReprDefinition {
 
         quote! {
             #(#attrs)*
-            // #[derive(Deserialize, Serialize)]
             #vis enum #ident {
                 #(#fields,)*
             }
         }
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        let lib = &meta.lib;
         let name_branches = self.iter().map(UnionStrField::name_branch);
         let kind_branches = self.iter().map(UnionStrField::kind_branch);
         let link_branches = self.iter().map(UnionStrField::link_branch);
         let serialize_branches = self.iter().map(UnionStrField::serialize_branch);
         // let deserialize_branches = self.iter().map(UnionStrField::deserialize_branch);
-        expand::impl_repr(
+        self.impl_repr(
             meta,
             quote! {
-                type DataModelKind = type_kinds::Map;
-                type SchemaKind = type_kinds::Union;
-                type ReprKind = type_kinds::Map;
-
-                const SCHEMA: &'static str = "";
                 const DATA_MODEL_KIND: Kind = Kind::Map;
                 const SCHEMA_KIND: Kind = Kind::Union;
                 const REPR_KIND: Kind = Kind::Map;
                 const REPR_STRATEGY: Strategy = Strategy::Keyed;
+                // TODO
                 // const FIELDS: Fields = Fields::Keyed(&[#(#fields,)*]);
-
+            },
+            quote! {
                 #[inline]
                 fn name(&self) -> &'static str {
                     match self {
                         #(#name_branches,)*
                     }
                 }
-
-                // #[inline]
-                // fn kind(&self) -> Kind {
-                //     match self {
-                //         #(#kind_branches,)*
-                //     }
-                // }
-
                 #[inline]
                 fn has_links(&self) -> bool {
                     match self {
                         #(#link_branches,)*
                     }
                 }
-
-                #[doc(hidden)]
+                #[inline]
                 fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                 where
                     S: Serializer,
@@ -118,8 +104,7 @@ impl ExpandBasicRepresentation for KeyedUnionReprDefinition {
                     // }
                     unimplemented!()
                 }
-
-                #[doc(hidden)]
+                #[inline]
                 fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
                 where
                     D: Deserializer<'de>,
@@ -130,13 +115,38 @@ impl ExpandBasicRepresentation for KeyedUnionReprDefinition {
         )
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
-        // let name = &meta.name;
-        // let lib = &meta.ipld_schema_lib;
-        // quote!(impl_root_select!(#name => Matcher);)
-        TokenStream::default()
+        // self.impl_select(meta, None)
+        Default::default()
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        quote!()
+        let name = &meta.name;
+        quote! {
+            #[automatically_derived]
+            impl From<#name> for SelectedNode {
+                fn from(t: #name) -> Self {
+                    // t.0.into()
+                    unimplemented!()
+                }
+            }
+            #[automatically_derived]
+            impl Into<Any> for #name {
+                fn into(self) -> Any {
+                    // self.0.into()
+                    unimplemented!()
+                }
+            }
+            #[automatically_derived]
+            impl TryFrom<Any> for #name {
+                type Error = Error;
+                fn try_from(any: Any) -> Result<Self, Self::Error> {
+                    // let variant = Representation::name(&any);
+                    // let inner = TryFrom::try_from(any)
+                    //     .map_err(|_| Error::failed_any_conversion::<Self>(variant))?;
+                    // Ok(Self(inner))
+                    unimplemented!()
+                }
+            }
+        }
     }
 }
 

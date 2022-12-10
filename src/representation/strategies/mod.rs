@@ -11,133 +11,149 @@ mod tuple;
 pub use tuple::*;
 
 use crate::dev::*;
-use maybestd::marker::PhantomData;
+use maybestd::{fmt, str::FromStr};
 
 ///
+#[derive(Copy, Clone, Debug)]
 #[repr(u8)]
 pub enum Strategy {
-    DataModel = 'd' as u8,
-    BytesPrefix = 'b' as u8,
+    // map/struct
+    Listpairs = 'l' as u8,
+    Stringjoin = 'j' as u8,
+    Stringpairs = 'p' as u8,
+    Tuple = 't' as u8,
+    // union
     Envelope = 'e' as u8,
     Inline = 'i' as u8,
-    Keyed = 'k' as u8,
-    ListPairs = 'l' as u8,
-    StringJoin = 'j' as u8,
-    StringPairs = 'p' as u8,
-    StringPrefix = 's' as u8,
-    Tuple = 't' as u8,
+    Keyed = 'y' as u8,
+    Kinded = 'k' as u8,
+    Bytesprefix = 'b' as u8,
+    Stringprefix = 's' as u8,
+    // special
+    Basic = '1' as u8,
+    Ignored = '0' as u8,
+    Advanced = 'a' as u8,
 }
 
 impl Strategy {
-    // pub const fn dm_kind<const S: u8>(repr_kind: Kind) -> Kind {
-    //     match repr_kind {
-    //         Kind::Union if S == Self::BytesPrefix as u8 => Kind::Map,
-    //         Kind::Union if S == Self::BytesPrefix as u8 => Kind::Map,
-    //         Kind::Union if S == Self::BytesPrefix as u8 => Kind::Map,
-    //         _ if S == Self::StringPairs as u8 => Kind::String,
-    //         Kind::Union if S == Self::StringPrefix as u8 => Kind::Map,
-    //         _ if S == Self::Tuple as u8 => Kind::List,
-    //         _ => panic!(),
-    //     }
-    // }
+    ///
+    pub const fn is_basic(&self) -> bool {
+        *self as u8 == Self::Basic as u8
+    }
 
-    // pub const fn schema_kind<const S: u8>() -> Kind {
-    //     match S {
-    //         _ if S == Self::BytesPrefix as u8 => Kind::Union,
-    //         _ if S == Self::ListPairs as u8 => Kind::Struct,
-    //         _ if S == Self::StringJoin as u8 => Kind::Struct,
-    //         _ if S == Self::StringPairs as u8 => Kind::Struct,
-    //         _ if S == Self::StringPrefix as u8 => Kind::Union,
-    //         _ if S == Self::Tuple as u8 => Kind::Struct,
-    //         _ => panic!(),
-    //     }
-    // }
+    ///
+    pub const fn is_ignored(&self) -> bool {
+        *self as u8 == Self::Ignored as u8
+    }
 
-    // pub const fn repr_kind<const S: u8>() -> Kind {
-    //     match S {
-    //         _ if S == Self::BytesPrefix as u8 => Kind::Bytes,
-    //         _ if S == Self::ListPairs as u8 => Kind::List,
-    //         _ if S == Self::StringJoin as u8 => Kind::String,
-    //         _ if S == Self::StringPairs as u8 => Kind::String,
-    //         _ if S == Self::StringPrefix as u8 => Kind::String,
-    //         _ if S == Self::Tuple as u8 => Kind::List,
-    //         _ => panic!(),
-    //     }
-    // }
+    ///
+    pub const fn is_advanced(&self) -> bool {
+        *self as u8 == Self::Advanced as u8
+    }
 }
 
 /// An iterator over the elements of a list-like type, whether produced from an
 /// in-memory type or from an underlying [`Representation`].
 #[doc(hidden)]
-pub trait ListIterator<T> {
+pub trait ListIterator<T: Representation> {
     fn size_hint(&self) -> Option<usize>;
 
-    fn field(&self) -> Field<'_>;
+    // fn next_ignored(&mut self) -> Result<bool, Error>;
 
-    fn next_ignored(&mut self) -> Result<bool, Error>;
+    // fn next<const C: u64>(&mut self) -> Result<Option<T>, Error> {
+    //     Err(Error::Custom(anyhow::Error::msg("unimplemented")))
+    // }
 
-    fn next<const C: u64>(&mut self) -> Result<Option<T>, Error>
-    where
-        T: Representation,
-    {
-        Err(Error::Custom(anyhow::Error::msg("unimplemented")))
-    }
+    // fn next_ref<const C: u64>(&mut self) -> Result<Option<&T>, Error> {
+    //     Err(Error::Custom(anyhow::Error::msg("unimplemented")))
+    // }
 
-    fn next_ref<const C: u64>(&mut self) -> Result<Option<&T>, Error>
-    where
-        T: Representation,
-    {
-        Err(Error::Custom(anyhow::Error::msg("unimplemented")))
-    }
+    // fn next_ref_mut<const C: u64>(&mut self) -> Result<Option<&mut T>, Error> {
+    //     Err(Error::Custom(anyhow::Error::msg("unimplemented")))
+    // }
 
-    fn next_ref_mut<const C: u64>(&mut self) -> Result<Option<&mut T>, Error>
-    where
-        T: Representation,
-    {
-        Err(Error::Custom(anyhow::Error::msg("unimplemented")))
-    }
+    // fn next_seed<'a, const C: u64, Ctx: Context>(
+    //     &mut self,
+    //     seed: SelectorSeed<'a, Ctx, T>,
+    // ) -> Result<bool, Error>
+    // where
+    //     T: Select<Ctx>;
 
-    fn next_seed<'a, const C: u64, Ctx: Context>(
+    /// Returns `Ok(true)` if element was found and was successfully
+    /// selected/ignored, and `Ok(false)` if iterator was already empty.
+    fn next_element_seed<'a, const C: u64, Ctx: Context + 'a, F>(
         &mut self,
-        seed: SelectorSeed<'a, Ctx, T>,
+        seeder: F,
     ) -> Result<bool, Error>
     where
-        T: Select<Ctx>;
+        T: Select<Ctx>,
+        F: FnOnce(usize) -> Result<Option<SelectorSeed<'a, Ctx, T>>, Error>,
+    {
+        unimplemented!()
+    }
 }
 
 /// An iterator over the keys and values of a map-like type, whether produced
 /// from an in-memory type or from an underlying [`Representation`].
 #[doc(hidden)]
-pub trait MapIterator<K, V> {
+pub trait MapIterator<K, V>
+where
+    K: StringRepresentation,
+    <K as FromStr>::Err: fmt::Display,
+    V: Representation,
+{
     fn size_hint(&self) -> Option<usize>;
-
-    fn field(&self) -> Field<'_>;
 
     fn next_key<const C: u64>(
         &mut self,
         expected_field_name: Option<&'static str>,
-    ) -> Result<Option<K>, Error>
-    where
-        K: Representation;
+    ) -> Result<Option<K>, Error>;
 
     fn next_value_ignored(&mut self, field: &Field<'_>) -> Result<(), Error>;
 
-    fn next_value<const C: u64>(&mut self, field: &Field<'_>) -> Result<V, Error>
-    where
-        V: Representation,
-    {
+    fn next_value<const C: u64>(&mut self, field: &Field<'_>) -> Result<V, Error> {
         Err(Error::Custom(anyhow::Error::msg("unimplemented")))
     }
 
     fn next_value_seed<'a, const C: u64, Ctx: Context>(
         &mut self,
         seed: SelectorSeed<'a, Ctx, V>,
-        // field: &Field<'_>,
     ) -> Result<(), Error>
     where
-        K: Representation,
         V: Select<Ctx>;
 
+    fn next_entry<const C: u64>(&mut self) -> Result<Option<(K, V)>, Error> {
+        Err(Error::Custom(anyhow::Error::msg("unimplemented")))
+    }
+
+    fn next_entry_seed<'a, const C: u64, Ctx: Context + 'a, F>(
+        &mut self,
+        seeder: F,
+    ) -> Result<bool, Error>
+    where
+        V: Select<Ctx>,
+        F: FnOnce(&str) -> Result<Option<SelectorSeed<'a, Ctx, V>>, Error>,
+    {
+        Err(Error::Custom(anyhow::Error::msg("unimplemented")))
+
+        // let key = if let Some(key) = self.next_key::<C>(None)? {
+        //     key
+        // } else {
+        //     return Ok(true);
+        // };
+
+        // // todo
+        // let include = filter.map(|pred| pred(&key.to_string())).unwrap_or(true);
+        // if include {
+        //     self.next_value_seed::<C, Ctx>(seed)?;
+        //     Ok(false)
+        // } else {
+        //     // self.next_value_ignored(&field)?;
+        //     Ok(false)
+        // }
+    }
+
+    /*
     // fn next_entry<'a, const C: u64>(
     //     &mut self,
     //     // seed: SelectorSeed<'a, Ctx, V>,
@@ -201,6 +217,7 @@ pub trait MapIterator<K, V> {
     //     self.next_value_seed::<C, Ctx>(seeder(key)?)?;
     //     Ok(false)
     // }
+     */
 }
 
 // impl<'a, const C: u64, F, Ctx, T, O> RepresentationIterator<'a, C, F, Ctx, T, O>

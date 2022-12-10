@@ -7,6 +7,10 @@ use proc_macro2::TokenStream;
 use quote::{quote, ToTokens, TokenStreamExt};
 
 impl ExpandBasicRepresentation for EnumReprDefinition {
+    fn schema(&self, meta: &SchemaMeta) -> TokenStream {
+        Default::default()
+    }
+
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
         let lib = &meta.lib;
         let attrs = &meta.attrs;
@@ -35,16 +39,13 @@ impl ExpandBasicRepresentation for EnumReprDefinition {
         }
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        expand::impl_repr(
+        self.impl_repr(
             meta,
             quote! {
-                const KIND: Kind =
-                    Kind::Enum;
+                const KIND: Kind = Kind::Enum;
                 // const FIELDS: Fields = Fields::Keyed(&[#(#fields,)*]);
             },
-            // quote! {
-            //     unimplemented!()
-            // },
+            quote! {},
         )
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {

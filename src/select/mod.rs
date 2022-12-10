@@ -14,16 +14,17 @@ mod selectors;
 mod state;
 
 pub use context::*;
+pub use dag_selection::*;
 pub use field::*;
+pub use node_selection::*;
 pub use params::*;
 pub use seed::*;
-pub use selection::*;
 pub use selectors::*;
 pub use state::*;
 
 use crate::dev::*;
 use macros::derive_more::{Display, From};
-use std::{
+use maybestd::{
     cell::RefCell,
     path::{Path, PathBuf},
     str::FromStr,
@@ -63,6 +64,10 @@ pub trait Select<Ctx: Context = ()>: Representation {
             ctx,
         );
 
+        // TODO: put this block here
+        // let cid = &seed.state.current_block;
+        // let block = seed.ctx.block_reader(cid)?;
+        // cid.multicodec()?.read_with_seed(Self::Walker::from(seed), block)
         Self::__select(seed)
     }
 
@@ -85,81 +90,6 @@ pub trait Select<Ctx: Context = ()>: Representation {
         // TODO: default impl should use GAT for CodedSeed
         // Self::Seed::<'a, 'de, C>::from(seed).deserialize(deserializer)
     }
-
-    #[doc(hidden)]
-    fn __select_seq<'a, 'de, const C: u64, A>(
-        seed: SelectorSeed<'a, Ctx, Self>,
-        mut seq: A, // should be ListIterator<T>
-    ) -> Result<Option<()>, A::Error>
-    where
-        A: SeqAccess<'de>,
-    {
-        // seq.next_element_seed(CodecSeed::from(seed))
-        Err(A::Error::custom("__select_seq not yet implemented"))
-        // TODO: default impl should use GAT for CodedSeed
-        // seq.next_element_seed(Self::Seed::<'a, 'de, C>::from(seed))
-    }
-
-    #[doc(hidden)]
-    fn __select_map<'a, 'de, const C: u64, A>(
-        seed: SelectorSeed<'a, Ctx, Self>,
-        mut map: A, // should be MapIterator<K, v>,
-        is_key: bool,
-    ) -> Result<Option<()>, A::Error>
-    where
-        A: MapAccess<'de>,
-    {
-        Err(A::Error::custom("__select_map not yet implemented"))
-        // TODO: default impl should use GAT for CodedSeed
-        // let seed = Self::Seed::<'a, 'de, C>::from(seed);
-        // if is_key {
-        //     map.next_key_seed(seed)
-        // } else {
-        //     Ok(Some(map.next_value_seed(seed)?))
-        // }
-    }
-
-    // #[doc(hidden)]
-    // fn __select_list<'a, 'de, const C: u64, I, T>(
-    //     seed: SelectorSeed<'a, Ctx, Self>,
-    //     // mut seq: A, // should be ListIterator<T>
-    //     mut iter: I,
-    // ) -> Result<Option<()>, Error>
-    // where
-    //     // A: SeqAccess<'de>,
-    //     I: ListIterator<T>,
-    //     T: Select<Ctx>,
-    // {
-    //     unimplemented!()
-    //     // seq.next_element_seed(CodecSeed::from(seed))
-    //     // Err(Error::Custom("unimplemented"))
-    //     // TODO: default impl should use GAT for CodedSeed
-    //     // seq.next_element_seed(Self::Seed::<'a, 'de, C>::from(seed))
-    // }
-
-    // #[doc(hidden)]
-    // fn __select_map<'a, 'de, const C: u64, I, K, V>(
-    //     seed: SelectorSeed<'a, Ctx, Self>,
-    //     // mut map: A, // should be MapIterator<K, v>,
-    //     // is_key: bool,
-    //     mut iter: I,
-    // ) -> Result<Option<()>, Error>
-    // where
-    //     // A: MapAccess<'de>,
-    //     I: MapIterator<K, V>,
-    //     K: StringRepresentation,
-    //     V: Representation,
-    // {
-    //     unimplemented!()
-    //     // Err(Error::Custom("unimplemented"))
-    //     // TODO: default impl should use GAT for CodedSeed
-    //     // let seed = Self::Seed::<'a, 'de, C>::from(seed);
-    //     // if is_key {
-    //     //     map.next_key_seed(seed)
-    //     // } else {
-    //     //     Ok(Some(map.next_value_seed(seed)?))
-    //     // }
-    // }
 
     /// Selects against the dag, loading more blocks from `Ctx` if required.
     ///
@@ -198,14 +128,14 @@ pub trait Select<Ctx: Context = ()>: Representation {
         unimplemented!()
     }
 
-    /// Flushes the dag according to the selector, writing blocks to `Ctx` if
-    /// flushing linked dags.
-    ///
-    /// TODO
-    #[doc(hidden)]
-    fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Error> {
-        unimplemented!()
-    }
+    // /// Flushes the dag according to the selector, writing blocks to `Ctx` if
+    // /// flushing linked dags.
+    // ///
+    // /// TODO
+    // #[doc(hidden)]
+    // fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Error> {
+    //     unimplemented!()
+    // }
 
     // fn patch<S: Select<C>>(seed: ContextSeed<'_, C, Self, S>) -> Result<(), Error> {
     //     unimplemented!()
@@ -401,7 +331,7 @@ mod params {
     }
 }
 
-mod selection {
+mod node_selection {
     use super::*;
 
     ///
@@ -444,6 +374,10 @@ mod selection {
             }
         }
     }
+}
+
+mod dag_selection {
+    use super::*;
 
     ///
     pub struct DagSelection {
@@ -598,7 +532,7 @@ mod selection {
         ///
         #[serde(skip)] // TODO
         #[serde(rename = "string")]
-        String(IpldString),
+        String(String),
 
         ///
         #[serde(skip)] // TODO
@@ -927,7 +861,7 @@ mod field {
 
 #[cfg(test)]
 mod tests {
-    use crate::prelude::*;
+    use crate::*;
 
     schema! {
         #[ipld_attr(internal)]

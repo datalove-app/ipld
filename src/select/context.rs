@@ -10,25 +10,28 @@
 mod ipfs;
 
 use crate::dev::*;
-use maybestd::io::{empty, Cursor, Empty, Read, Sink, Write};
-use std::collections::HashMap;
+use maybestd::{
+    collections::HashMap,
+    io::{empty, Cursor, Empty, Read, Sink, Write},
+};
 
-trait BlockWriter: Write {}
+// trait BlockWriter: Write {}
 
-/// Trait for providing blocks and additional logic required for selection.
+/// Trait for providing blocks and additional logic required for selection,
+/// patching, etc.
 pub trait Context: Sized {
     ///
-    type Reader: Read;
+    type Reader: Read; // ? BufRead?
 
     ///
-    type Writer: Write;
+    type Writer: Write; // ? BufWrite?
 
     // type Marker;
 
     ///
     fn block_reader(&mut self, cid: &Cid) -> Result<Self::Reader, Error>;
 
-    ///
+    /// TODO:
     fn block_writer(&mut self, cid_to_replace: Option<&Cid>) -> Result<Self::Writer, Error> {
         unimplemented!()
     }
@@ -134,7 +137,7 @@ impl MemoryContext {
         multihash_code: u64,
         block: Vec<u8>,
     ) -> Result<Cid, Error> {
-        let cid = Cid::new(version, multicodec_code, multihash_code, block.as_slice())?;
+        let cid = Cid::from_reader(version, multicodec_code, multihash_code, block.as_slice())?;
         self.blocks.insert(cid, block);
         Ok(cid)
     }

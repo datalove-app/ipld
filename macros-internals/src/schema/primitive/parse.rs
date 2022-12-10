@@ -1,6 +1,8 @@
 use super::*;
-use crate::dev::{common, impl_advanced_parse, parse, parse_kwarg, schema::kw};
-use proc_macro2::TokenStream;
+use crate::dev::{
+    impl_advanced_parse, parse_kwarg,
+    schema::{kw, parse},
+};
 use syn::{
     parse::{Parse, ParseStream, Result as ParseResult},
     Path,

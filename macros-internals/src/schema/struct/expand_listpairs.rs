@@ -25,9 +25,6 @@ impl ExpandBasicRepresentation for ListpairsStructReprDefinition {
             }
         }
     }
-    fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
-        TokenStream::default()
-    }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         super::expand::impl_repr(
             self,

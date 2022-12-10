@@ -114,136 +114,158 @@ pub(crate) use callbacks::*;
 mod callbacks {
     use super::*;
 
-    ///
-    pub trait SelectNodeOp<C>: FnMut(NodeSelection, &mut C) -> Result<(), Error> {
+    pub use match_dag::*;
+    pub use patch_dag::*;
+    pub use select_dag::*;
+    pub use select_node::*;
+
+    mod select_node {
+        use super::*;
+
         ///
-        fn clone_box<'a>(&self) -> Box<dyn SelectNodeOp<C> + 'a>
-        where
-            Self: 'a;
-    }
+        pub trait SelectNodeOp<C>: FnMut(NodeSelection, &mut C) -> Result<(), Error> {
+            ///
+            fn clone_box<'a>(&self) -> Box<dyn SelectNodeOp<C> + 'a>
+            where
+                Self: 'a;
+        }
 
-    impl<C, F> SelectNodeOp<C> for F
-    where
-        F: FnMut(NodeSelection, &mut C) -> Result<(), Error> + Clone,
-    {
-        fn clone_box<'a>(&self) -> Box<dyn SelectNodeOp<C> + 'a>
+        impl<C, F> SelectNodeOp<C> for F
         where
-            Self: 'a,
+            F: FnMut(NodeSelection, &mut C) -> Result<(), Error> + Clone,
         {
-            Box::new(self.clone())
+            fn clone_box<'a>(&self) -> Box<dyn SelectNodeOp<C> + 'a>
+            where
+                Self: 'a,
+            {
+                Box::new(self.clone())
+            }
+        }
+
+        impl<'a, C> Clone for Box<dyn SelectNodeOp<C> + 'a>
+        where
+            C: 'a,
+        {
+            fn clone(&self) -> Self {
+                (**self).clone_box()
+            }
         }
     }
+    mod select_dag {
+        use super::*;
 
-    impl<'a, C> Clone for Box<dyn SelectNodeOp<C> + 'a>
-    where
-        C: 'a,
-    {
-        fn clone(&self) -> Self {
-            (**self).clone_box()
-        }
-    }
-
-    ///
-    pub trait SelectDagOp<C>: FnMut(DagSelection, &mut C) -> Result<(), Error> {
         ///
-        fn clone_box<'a>(&self) -> Box<dyn SelectDagOp<C> + 'a>
-        where
-            Self: 'a;
-    }
+        pub trait SelectDagOp<C>: FnMut(DagSelection, &mut C) -> Result<(), Error> {
+            ///
+            fn clone_box<'a>(&self) -> Box<dyn SelectDagOp<C> + 'a>
+            where
+                Self: 'a;
+        }
 
-    impl<C, F> SelectDagOp<C> for F
-    where
-        F: FnMut(DagSelection, &mut C) -> Result<(), Error> + Clone,
-    {
-        fn clone_box<'a>(&self) -> Box<dyn SelectDagOp<C> + 'a>
+        impl<C, F> SelectDagOp<C> for F
         where
-            Self: 'a,
+            F: FnMut(DagSelection, &mut C) -> Result<(), Error> + Clone,
         {
-            Box::new(self.clone())
+            fn clone_box<'a>(&self) -> Box<dyn SelectDagOp<C> + 'a>
+            where
+                Self: 'a,
+            {
+                Box::new(self.clone())
+            }
+        }
+
+        impl<'a, C> Clone for Box<dyn SelectDagOp<C> + 'a>
+        where
+            C: 'a,
+        {
+            fn clone(&self) -> Self {
+                (**self).clone_box()
+            }
         }
     }
+    mod match_dag {
+        use super::*;
 
-    impl<'a, C> Clone for Box<dyn SelectDagOp<C> + 'a>
-    where
-        C: 'a,
-    {
-        fn clone(&self) -> Self {
-            (**self).clone_box()
-        }
-    }
-
-    ///
-    pub trait MatchDagOp<T, C>: FnMut(T, &mut C) -> Result<(), Error> {
         ///
-        fn clone_box<'a>(&self) -> Box<dyn MatchDagOp<T, C> + 'a>
-        where
-            Self: 'a;
-    }
+        pub trait MatchDagOp<T, C>: FnMut(T, &mut C) -> Result<(), Error> {
+            ///
+            fn clone_box<'a>(&self) -> Box<dyn MatchDagOp<T, C> + 'a>
+            where
+                Self: 'a;
+        }
 
-    impl<T, C, F> MatchDagOp<T, C> for F
-    where
-        F: FnMut(T, &mut C) -> Result<(), Error> + Clone,
-    {
-        fn clone_box<'a>(&self) -> Box<dyn MatchDagOp<T, C> + 'a>
+        impl<T, C, F> MatchDagOp<T, C> for F
         where
-            Self: 'a,
+            F: FnMut(T, &mut C) -> Result<(), Error> + Clone,
         {
-            Box::new(self.clone())
+            fn clone_box<'a>(&self) -> Box<dyn MatchDagOp<T, C> + 'a>
+            where
+                Self: 'a,
+            {
+                Box::new(self.clone())
+            }
+        }
+
+        impl<'a, T, C> Clone for Box<dyn MatchDagOp<T, C> + 'a>
+        where
+            T: 'a,
+            C: 'a,
+        {
+            fn clone(&self) -> Self {
+                (**self).clone_box()
+            }
         }
     }
+    mod patch_dag {
+        use super::*;
 
-    impl<'a, T, C> Clone for Box<dyn MatchDagOp<T, C> + 'a>
-    where
-        T: 'a,
-        C: 'a,
-    {
-        fn clone(&self) -> Self {
-            (**self).clone_box()
-        }
-    }
-
-    ///
-    pub trait PatchDagOp<T, C>: FnMut(&mut T, &mut C) -> Result<bool, Error> {
         ///
-        fn clone_box<'a>(&self) -> Box<dyn PatchDagOp<T, C> + 'a>
-        where
-            Self: 'a;
-    }
-
-    impl<T, C, F> PatchDagOp<T, C> for F
-    where
-        F: FnMut(&mut T, &mut C) -> Result<bool, Error> + Clone,
-    {
-        fn clone_box<'a>(&self) -> Box<dyn PatchDagOp<T, C> + 'a>
-        where
-            Self: 'a,
-        {
-            Box::new(self.clone())
+        pub trait PatchDagOp<T, C>: FnMut(&mut T, &mut C) -> Result<bool, Error> {
+            ///
+            fn clone_box<'a>(&self) -> Box<dyn PatchDagOp<T, C> + 'a>
+            where
+                Self: 'a;
         }
-    }
 
-    impl<'a, T, C> Clone for Box<dyn PatchDagOp<T, C> + 'a>
-    where
-        T: 'a,
-        C: 'a,
-    {
-        fn clone(&self) -> Self {
-            (**self).clone_box()
+        impl<T, C, F> PatchDagOp<T, C> for F
+        where
+            F: FnMut(&mut T, &mut C) -> Result<bool, Error> + Clone,
+        {
+            fn clone_box<'a>(&self) -> Box<dyn PatchDagOp<T, C> + 'a>
+            where
+                Self: 'a,
+            {
+                Box::new(self.clone())
+            }
+        }
+
+        impl<'a, T, C> Clone for Box<dyn PatchDagOp<T, C> + 'a>
+        where
+            T: 'a,
+            C: 'a,
+        {
+            fn clone(&self) -> Self {
+                (**self).clone_box()
+            }
         }
     }
 
     ///
+    /// TODO: merge this back with state
     #[doc(hidden)]
     pub enum Callback<'a, C, T> {
         SelectNode {
+            // state
             cb: Box<dyn SelectNodeOp<C> + 'a>,
             only_results: bool,
         },
         SelectDag {
+            // state
             // TODO: does this need to be cloneable? it is either called on U, or wrapped
             cb: Box<dyn SelectDagOp<C> + 'a>,
         },
         MatchDag {
+            // Option<state>; if None, deserializes up to links
             cb: Box<dyn MatchDagOp<T, C> + 'a>,
         },
         Patch {
@@ -451,24 +473,32 @@ mod callbacks {
         // }
          */
 
+        pub(crate) fn cover_node(
+            &mut self,
+            path: &Path,
+            selected_node: SelectedNode,
+            ctx: &mut C,
+        ) -> Result<(), Error> {
+            match self {
+                Self::SelectNode { cb, only_results } if !*only_results => {
+                    cb(NodeSelection::covered(path, selected_node), ctx)
+                }
+                _ => Ok(()),
+            }
+        }
+
         pub(crate) fn select_node(
             &mut self,
             path: &Path,
             selected_node: SelectedNode,
-            is_result: bool,
             label: Option<&str>,
             ctx: &mut C,
         ) -> Result<(), Error> {
             match self {
-                Self::SelectNode { cb, .. } if is_result => {
+                Self::SelectNode { cb, .. } => {
                     cb(NodeSelection::result(path, selected_node, label), ctx)
                 }
-                Self::SelectNode { cb, only_results } if !*only_results => {
-                    cb(NodeSelection::covered(path, selected_node), ctx)
-                }
-                Self::SelectNode { .. } => Ok(()),
-                Self::SelectDag { .. } => Ok(()),
-                _ => unreachable!(),
+                _ => Ok(()),
             }
         }
 
@@ -612,7 +642,7 @@ impl State {
         &mut self,
         // next_selector: Selector,
         next_path: &Field<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<&mut Self, Error> {
         if self.path_depth >= self.max_path_depth() {
             return Err(Error::SelectorDepth(
                 "descending would exceed max path depth",
@@ -627,39 +657,23 @@ impl State {
         }
 
         next_path.append_to_path(&mut self.path);
-        self.path_depth = self
-            .path_depth
-            .checked_add(1)
-            .ok_or_else(|| Error::SelectorDepth("exceeds root path depth", self.path_depth))?;
-        if T::IS_LINK {
-            self.link_depth = self
-                .link_depth
-                .checked_sub(1)
-                .ok_or_else(|| Error::SelectorDepth("exceeds root link depth", self.link_depth))?;
+        self.path_depth += 1;
+        if T::DATA_MODEL_KIND.is_link() {
+            self.link_depth += 1;
         }
 
-        Ok(())
+        Ok(self)
     }
 
     #[inline]
     pub(crate) fn ascend<T: Representation>(
         &mut self,
         // previous_selector: Selector,
-    ) -> Result<(), Error> {
+    ) {
         self.path.pop();
-        self.path_depth = self
-            .path_depth
-            .checked_sub(1)
-            .ok_or_else(|| Error::SelectorDepth("exceeds root path depth", self.path_depth))?;
-
-        if T::IS_LINK {
-            self.link_depth = self
-                .link_depth
-                .checked_sub(1)
-                .ok_or_else(|| Error::SelectorDepth("exceeds root link depth", self.link_depth))?;
+        self.path_depth -= 1;
+        if T::DATA_MODEL_KIND.is_link() {
+            self.link_depth -= 1;
         }
-
-        // self.selector = previous_selector;
-        Ok(())
     }
 }

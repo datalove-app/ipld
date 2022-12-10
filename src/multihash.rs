@@ -3,6 +3,8 @@ use macros::derive_more::From;
 use maybestd::io;
 use multihash::Hasher;
 
+pub type Code = u64;
+
 macro_rules! impl_multihasher {
     (@multihash $(
         $(#[$meta:meta])*
@@ -11,22 +13,22 @@ macro_rules! impl_multihasher {
         /// A generic [multihash]()-er enum.
         #[derive(Debug, From)]
         #[non_exhaustive]
-        pub enum Multihash {
+        pub enum Multihasher {
             $(
                 $(#[$meta])*
                 $variant($ty),
             )*
         }
 
-        impl Multihash {
+        impl Multihasher {
             $(
                 ///
-                pub const $const: u64 = $code;
+                pub const $const: Code = $code;
             )*
 
             ///
             #[inline]
-            pub fn from_code<const C: u64>() -> Result<Self, Error> {
+            pub fn from_code<const C: Code>() -> Result<Self, Error> {
                 Ok(match C {
                     $($code => Ok(Self::$variant(<$ty>::default())),)*
                     code => Err(multihash::Error::UnsupportedCode(code))
@@ -35,7 +37,7 @@ macro_rules! impl_multihasher {
 
             ///
             #[inline]
-            pub const fn is_supported<const C: u64>() -> bool {
+            pub const fn is_supported<const C: Code>() -> bool {
                 match C {
                     $($code => true,)*
                     _ => false,
@@ -44,7 +46,7 @@ macro_rules! impl_multihasher {
 
             ///
             #[inline]
-            pub const fn code(&self) -> u64 {
+            pub const fn code(&self) -> Code {
                 match self {
                     $(Self::$variant(_) => $code,)*
                 }
@@ -67,6 +69,7 @@ macro_rules! impl_multihasher {
             }
 
             ///
+            #[inline]
             pub fn try_finalize(&mut self) -> Result<DefaultMultihash, Error> {
                 let mh = DefaultMultihash::wrap(self.code(), multihash::Hasher::finalize(self))?;
                 self.reset();
@@ -74,7 +77,7 @@ macro_rules! impl_multihasher {
             }
         }
 
-        impl multihash::Hasher for Multihash {
+        impl multihash::Hasher for Multihasher {
             #[inline]
             fn update(&mut self, input: &[u8]) {
                 match self {
@@ -95,7 +98,7 @@ macro_rules! impl_multihasher {
             }
         }
 
-        impl io::Write for Multihash {
+        impl io::Write for Multihasher {
             fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
                 self.update(buf);
                 Ok(buf.len())
@@ -111,11 +114,11 @@ macro_rules! impl_multihasher {
         //     use super::*;
         //     use digest::{Digest, OutputSizeUser, FixedOutputReset, generic_array::{typenum::U64, GenericArray}};
         //
-        //     impl OutputSizeUser for Multihash {
+        //     impl OutputSizeUser for Multihasher {
         //         type OutputSize = GenericArray<u8, U64>;
         //     }
         //
-        //     impl Multihash {
+        //     impl Multihasher {
         //         const OUTPUT_SIZE: usize = U64::USIZE;
         //
         //         fn finalize_to_digest(&mut self, digest: &mut Output<Self>) {
@@ -123,7 +126,7 @@ macro_rules! impl_multihasher {
         //         }
         //     }
         //
-        //     impl Digest for Multihash {
+        //     impl Digest for Multihasher {
         //         fn new() -> Self {
         //             unimplemented!()
         //         }
@@ -176,9 +179,9 @@ macro_rules! impl_multihasher {
         //     }
         // };
 
-        impl TryFrom<u64> for Multihash {
+        impl TryFrom<Code> for Multihasher {
             type Error = Error;
-            fn try_from(multihash_code: u64) -> Result<Self, Self::Error> {
+            fn try_from(multihash_code: Code) -> Result<Self, Self::Error> {
                 Ok(match multihash_code {
                     $($code => Ok(Self::$variant(<$ty>::default())),)*
                     mh_code => Err(multihash::Error::UnsupportedCode(mh_code))
@@ -234,4 +237,42 @@ impl_multihasher! {@multihash
     ///
     Blake3_256 (BLAKE3_256: "blake3": 0x1e)
         -> multihash::Blake3Hasher::<32> [32],
+}
+
+// impl Default for Multihasher {
+//     fn default() -> Self {
+//         Self::
+//     }
+// }
+
+impl Representation for DefaultMultihash {
+    const NAME: &'static str = "Multihash";
+    const SCHEMA: &'static str = "type Multihash bytes";
+    const DATA_MODEL_KIND: Kind = Kind::Bytes;
+    const SCHEMA_KIND: Kind = Kind::Bytes;
+    const REPR_KIND: Kind = Kind::Bytes;
+
+    fn to_selected_node(&self) -> SelectedNode {
+        SelectedNode::Bytes(self.to_bytes().into())
+    }
+
+    ///
+    #[inline]
+    fn serialize<const MC: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // TODO: bytes / base58 str
+        unimplemented!()
+    }
+
+    ///
+    #[inline]
+    fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // TODO: bytes / base58 str
+        unimplemented!()
+    }
 }

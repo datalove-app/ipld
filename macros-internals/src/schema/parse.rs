@@ -31,7 +31,7 @@ impl Parse for SchemaMeta {
         let generics = input.parse::<Generics>().map_or(None, Some);
 
         Ok(Self {
-            lib: Self::lib(internal),
+            lib: Default::default(),
             // TODO: fix this
             typedef_str: String::default(),
             internal,

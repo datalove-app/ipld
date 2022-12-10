@@ -8,107 +8,97 @@
 //! TODO:
 //!     - utf-8 string handling/normalization
 //!     - replace boxed callbacks with a ref
+//!     - TryFrom delegation, if custom types want value-checking
 
 #![warn(rust_2018_idioms, missing_debug_implementations, missing_docs)]
 #[cfg_attr(not(feature = "std"), no_std)]
-#[forbid(unsafe_code)]
-//
+// #[cfg(feature = "std")] extern crate std;
+#[doc(hidden)]
+extern crate self as __ipld;
+
+// #[forbid(unsafe_code)]
+mod advanced;
 #[path = "cid.rs"]
 mod cid_;
 #[path = "codecs/mod.rs"]
-mod codecs_;
+pub(crate) mod codecs_;
 mod compat;
 mod data_model;
 mod error;
+// todo support fmt::Display / writing to a fmt::Formatter for multibase/hash/addr
 mod multicodec;
 #[path = "multihash.rs"]
 mod multihash_;
 mod representation;
 mod select;
 
-pub use cid;
-#[doc(inline)]
 pub use error::Error;
-pub use multibase;
-pub use multihash;
+#[cfg(feature = "multiaddr")]
+pub use multiaddr::{self, Multiaddr};
 
-pub use specs::*;
-
-mod specs {
-    use super::*;
+// specification implementations
+pub use {
+    // cid
+    cid::{self, Cid as DefaultCid, CidGeneric, Version},
+    cid_::Cid,
 
     // codecs
-    #[cfg(feature = "dag-cbor")]
-    pub use crate::codecs_::dag_cbor::DagCbor;
-    #[cfg(feature = "dag-json")]
-    pub use crate::codecs_::dag_json::DagJson;
-    pub use crate::multicodec::{Codec, Multicodec};
-
-    // multiformats
-    pub use multibase::Base as Multibase;
-    #[doc(hidden)]
-    pub use multihash::{Hasher as _, Multihash as DefaultMultihash, MultihashDigest as _};
-    pub use multihash_::Multihash;
-
-    // cid
-    pub use crate::cid_::Cid;
-    #[doc(hidden)]
-    pub use cid::{Cid as DefaultCid, CidGeneric, Version};
+    codecs_::*,
 
     // data model, schemas and representations
-    pub use crate::data_model::*;
-    #[doc(hidden)]
-    pub use crate::representation::TypedKind as _;
-    pub use crate::representation::{strategies::Strategy, Kind, Representation};
-    pub use ipld_macros::{ipld_attr, schema};
+    data_model::*,
+    ipld_macros::{
+        ipld_attr,
+        schema,
+        // selector
+        Representation,
+        // Select, Patch
+    },
+
+    // multiformats
+    // multiaddr::Multiaddr,
+    multibase::{self, Base as Multibase},
+    multicodec::Multicodec,
+    multihash::{self, Hasher as _, Multihash as DefaultMultihash, MultihashDigest as _},
+    multihash_::Multihasher,
+
+    // representations
+    representation::{Kind, Representation, Strategy},
 
     // selectors
-    pub use crate::select::{Context, Params, Select, Selector};
-    // pub use ipld_macros::selector;
-}
+    select::{Context, Params, Select, Selector},
+};
 
-/// All the exports and re-exports necessary for using `ipld`.
-pub mod prelude {
-    #[doc(hidden)]
-    pub use crate::representation::strategies::*;
-    #[doc(inline)]
-    pub use crate::{codecs_::LinkVisitor, specs::*, Error};
-    #[doc(hidden)]
-    pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
+/// Useful macros for implementing IPLD traits.
+mod macros {
+    pub use crate::repr_serde;
+    // pub use derive_builder::Builder;
+    // pub use const_format::*;
+    pub use ipld_macros_internals::dev::*;
 }
 
 /// All exports from `ipld::prelude`, plus re-exports of first- and third-party
 /// dependencies to aid developers wanting to implement or extend `ipld` behaviour.
 #[cfg_attr(not(feature = "dev"), doc(hidden))]
 pub mod dev {
-    #[doc(hidden)]
     pub use crate::maybestd;
-    pub use crate::{prelude::*, representation::*, select::*};
+    pub use crate::{cid_::*, macros::*, representation::*, select::*, *};
 
     // dependency re-exports for macro convenience
     #[doc(hidden)]
     pub use anyhow;
     #[doc(hidden)]
     pub use bytes;
-    /// Useful macros for aiding in providing bespoke IPLD support.
-    pub mod macros {
-        pub use crate::repr_serde;
-        // pub use const_format::*;
-        pub use ipld_macros_internals::dev::*;
-    }
 
-    #[doc(hidden)]
-    pub use ipld_macros_internals::dev::typenum;
-    #[doc(hidden)]
-    pub use ipld_macros_internals::dev::typenum_macro;
     #[doc(hidden)]
     pub use serde::{
         self,
         de::{
-            self, DeserializeOwned, DeserializeSeed, EnumAccess, Error as _, IgnoredAny,
-            IntoDeserializer as _, MapAccess, SeqAccess, VariantAccess, Visitor,
+            self, DeserializeOwned, DeserializeSeed, Deserializer, EnumAccess, Error as _,
+            IgnoredAny, IntoDeserializer as _, MapAccess, SeqAccess, VariantAccess, Visitor,
         },
-        ser::{self, Error as _},
+        ser::{self, Error as _, Serializer},
+        Deserialize, Serialize,
     };
 }
 
@@ -116,22 +106,19 @@ pub mod dev {
 #[cfg(not(feature = "std"))]
 #[doc(hidden)]
 pub mod maybestd {
+    #[cfg(feature = "alloc")]
     extern crate alloc;
-
+    #[cfg(feature = "alloc")]
     pub use alloc::{boxed, collections, rc, vec};
-    pub use core::{
-        borrow, cell, cmp, convert, fmt, hash, iter, marker, num, ops, primitive, str, string, sync,
-    };
+
+    pub use core::{error as _, io as _, *};
     pub use core2::{error, io};
+    // todo: replace this
     pub use std::path;
 }
 #[cfg(feature = "std")]
 #[doc(hidden)]
 pub mod maybestd {
     pub use core2::{error, io};
-    pub use std::path;
-    pub use std::{
-        borrow, boxed, cell, cmp, collections, convert, fmt, hash, iter, marker, num, ops,
-        primitive, rc, str, string, sync, vec,
-    };
+    pub use std::{error as _, io as _, *};
 }

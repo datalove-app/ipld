@@ -1,3 +1,5 @@
+use std::{borrow::Borrow, ops::Deref};
+
 use crate::dev::{macros::derive_more::From, *};
 use maybestd::{fmt, marker::PhantomData, str::FromStr};
 
@@ -11,6 +13,8 @@ pub enum SelectionMode {
 
     /// Selection will invoke the provided callback on all matched [`Node`]s.
     MatchNode,
+
+    Match,
 
     /// Selection will invoke the provided callback on all matched [`Dag`]s.
     Select,
@@ -46,116 +50,21 @@ pub struct SelectorSeed<'a, Ctx, T> {
 
 pub type EmptySeed<T> = SelectorSeed<'static, (), T>;
 
-/// A marked [`SelectorSeed`] that's aware of the codec of the block it's
-/// currenly selecting against.
-#[cfg_attr(not(feature = "dev"), doc(hidden))]
-#[derive(Debug)]
-pub struct CodecSeed<
-    const C: u64,
-    S,
-    T,
-    U,
-    DK = <T as Representation>::DataModelKind,
-    SK = <T as Representation>::SchemaKind,
-    RK = <T as Representation>::ReprKind,
->(pub(crate) S, PhantomData<(T, U, DK, SK, RK)>)
-where
-    T: Representation<DataModelKind = DK, SchemaKind = SK, ReprKind = RK>,
-    DK: TypedKind,
-    SK: TypedKind,
-    RK: TypedKind;
-
-impl<const C: u64, S, T: Representation, U> CodecSeed<C, S, T, U> {
-    ///
-    pub fn from(seed: S) -> Self {
-        Self(seed, PhantomData)
-    }
-
-    /// Normalizes the representation kind, if typed.
-    const fn repr_kind() -> Kind {
-        if Kind::TypedInt.contains(T::REPR_KIND) {
-            Int::REPR_KIND
-        } else if Kind::TypedFloat.contains(T::REPR_KIND) {
-            Float::REPR_KIND
-        } else {
-            T::REPR_KIND
-        }
-    }
-}
-
-/// Blanket impl for all `CodecSeed`s that implement `Visitor` for a given `T`.
-/// Doing this allows us to more easily "escape" [`serde`]'s traits into our own
-/// methods for selection.
-impl<'a, 'de, const C: u64, S, T, U, DK, SK, RK> DeserializeSeed<'de>
-    for CodecSeed<C, S, T, U, DK, SK, RK>
-where
-    Self: Visitor<'de> + LinkVisitor<'de>,
-    S: SeedType<T>,
-    T: Representation<DataModelKind = DK, SchemaKind = SK, ReprKind = RK>,
-    DK: TypedKind,
-    SK: TypedKind,
-    RK: TypedKind,
-{
-    type Value = <Self as Visitor<'de>>::Value;
-
-    #[inline]
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        if T::__IGNORED {
-            return deserializer.deserialize_ignored_any(self);
-        } else if T::DATA_MODEL_KIND.is_option() {
-            return deserializer.deserialize_option(self);
-        }
-
-        match (T::SCHEMA_KIND, Self::repr_kind()) {
-            // union (kinded => any, stringprefix => str, bytesprefix => bytes)
-            // union keyed (ref), envelope (tag + ref), inline (tag + inline)
-            (Kind::Union, Kind::Map) => deserializer.deserialize_enum(T::NAME, T::FIELDS, self),
-
-            // structs (stringpair, stringjoin => str)
-            // struct map
-            (Kind::Struct, Kind::Map) => deserializer.deserialize_struct(T::NAME, T::FIELDS, self),
-            // struct tuple, listpairs
-            (Kind::Struct, Kind::List) => {
-                deserializer.deserialize_tuple_struct(T::NAME, T::FIELDS.len(), self)
-            }
-
-            // enum (int => int, string => str)
-
-            // basic
-            (_, Kind::Null) => deserializer.deserialize_unit(self),
-            (_, Kind::Bool) => deserializer.deserialize_bool(self),
-            (_, Kind::Int8) => deserializer.deserialize_i8(self),
-            (_, Kind::Int16) => deserializer.deserialize_i16(self),
-            (_, Kind::Int32) => deserializer.deserialize_i32(self),
-            (_, Kind::Int64) => deserializer.deserialize_i64(self),
-            (_, Kind::Int128) => deserializer.deserialize_i128(self),
-            (_, Kind::Uint8) => deserializer.deserialize_u8(self),
-            (_, Kind::Uint16) => deserializer.deserialize_u16(self),
-            (_, Kind::Uint32) => deserializer.deserialize_u32(self),
-            (_, Kind::Uint64) => deserializer.deserialize_u64(self),
-            (_, Kind::Uint128) => deserializer.deserialize_u128(self),
-            (_, Kind::Float32) => deserializer.deserialize_f32(self),
-            (_, Kind::Float64) => deserializer.deserialize_f64(self),
-            (_, Kind::String) => deserializer.deserialize_str(self),
-            (_, Kind::Bytes) => Multicodec::deserialize_bytes::<C, _, _>(deserializer, self),
-            (_, Kind::List) => deserializer.deserialize_seq(self),
-            (_, Kind::Map) => deserializer.deserialize_map(self),
-            (_, Kind::Link) => Multicodec::deserialize_link::<C, _, _>(deserializer, self),
-            // anything else
-            _ => Multicodec::deserialize_any::<C, _, _>(deserializer, self),
-        }
-    }
-}
+// Blanket impl for all `CodecSeed`s that implement `Visitor` for a given `T`.
+// Doing this allows us to more easily "escape" [`serde`]'s traits into our own
+// methods for selection, requiring only that we implement [`Visitor`] for
+// `CodecSeed<..., T>`.
+repr_serde!(@def_seed);
 
 #[doc(hidden)]
 pub trait SeedType<T, U = T>: Sized {
-    type Input;
+    // type Input;
     type Output;
     type Wrapped: SeedType<U>;
     const CAN_SELECT: bool;
+
+    fn mode(&self) -> SelectionMode;
+    fn selector(&self) -> &Selector;
 
     // fn select_node() -> Result<(), Error> {
     //     unimplemented!()
@@ -169,22 +78,30 @@ pub trait SeedType<T, U = T>: Sized {
     }
 }
 impl<T, U> SeedType<T, U> for PhantomData<T> {
-    type Input = ();
+    // type Input = ();
     type Output = T;
     type Wrapped = PhantomData<U>;
     const CAN_SELECT: bool = false;
+
+    fn mode(&self) -> SelectionMode {
+        SelectionMode::Match
+    }
+    fn selector(&self) -> &Selector {
+        &DEFAULT_SELECTOR
+    }
 }
-// impl<const C: u64, T, U> SeedType<T, U> for DeserializeWrapper<C, T> {
-//     type Input = ();
-//     type Output = T;
-//     type Wrapped = DeserializeWrapper<C, U>;
-//     const CAN_SELECT: bool = false;
-// }
-impl<'a, Ctx, T: 'a, U: 'a> SeedType<T, U> for SelectorSeed<'a, Ctx, T> {
-    type Input = &'a mut T;
+impl<'a, Ctx, T, U> SeedType<T, U> for SelectorSeed<'a, Ctx, T> {
+    // type Input = &'a mut T;
     type Output = ();
     type Wrapped = SelectorSeed<'a, Ctx, U>;
     const CAN_SELECT: bool = true;
+
+    fn mode(&self) -> SelectionMode {
+        self._mode()
+    }
+    fn selector(&self) -> &Selector {
+        self.selector
+    }
 }
 
 // impl<'de, const C: u64, T> CodecSeed<C, true, PhantomData<T>, T>
@@ -246,6 +163,48 @@ where
 }
 
 // TODO: be lazier: provide a mode method that lets us skip any dag-deserialization work, while also letting us just call what we want without a lot of branching
+impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T> {
+    ///
+    #[inline]
+    const fn _mode(&self) -> SelectionMode {
+        match (&self.callback, self.selector.is_matcher()) {
+            (Callback::SelectNode { .. }, true) => SelectionMode::MatchNode,
+            (Callback::SelectNode { .. }, _) => SelectionMode::CoverNode,
+            (Callback::SelectDag { .. }, true) | (Callback::MatchDag { .. }, _) => {
+                SelectionMode::Match
+            }
+            (Callback::SelectDag { .. }, _) => SelectionMode::Select,
+            (Callback::Patch { .. }, _) => SelectionMode::Patch,
+        }
+    }
+
+    ///
+    #[inline]
+    pub fn is_node_select(&self) -> bool {
+        match self._mode() {
+            SelectionMode::CoverNode | SelectionMode::MatchNode => true,
+            _ => false,
+        }
+    }
+
+    ///
+    #[inline]
+    pub fn is_dag_select(&self) -> bool {
+        match self._mode() {
+            SelectionMode::Select | SelectionMode::Match => true,
+            _ => false,
+        }
+    }
+
+    ///
+    #[inline]
+    pub fn is_patch(&self) -> bool {
+        match self._mode() {
+            SelectionMode::Patch => true,
+            _ => false,
+        }
+    }
+}
 impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
 where
     Ctx: Context,
@@ -262,44 +221,6 @@ where
     //         // Self::Patch { .. } => SelectionMode::Patch,
     //     }
     // }
-
-    ///
-    #[inline]
-    pub const fn mode(&self) -> SelectionMode {
-        match &self.callback {
-            Callback::SelectNode { .. } if self.selector.is_matcher() => SelectionMode::MatchNode,
-            Callback::SelectNode { .. } => SelectionMode::CoverNode,
-            Callback::SelectDag { .. } | Callback::MatchDag { .. } => SelectionMode::Select,
-            Callback::Patch { .. } => SelectionMode::Patch,
-        }
-    }
-
-    ///
-    #[inline]
-    pub const fn is_node_select(&self) -> bool {
-        match self.mode() {
-            SelectionMode::CoverNode | SelectionMode::MatchNode => true,
-            _ => false,
-        }
-    }
-
-    ///
-    #[inline]
-    pub const fn is_dag_select(&self) -> bool {
-        match self.mode() {
-            SelectionMode::Select => true,
-            _ => false,
-        }
-    }
-
-    ///
-    #[inline]
-    pub const fn is_patch(&self) -> bool {
-        match self.mode() {
-            SelectionMode::Patch => true,
-            _ => false,
-        }
-    }
 
     ///
     #[inline]
@@ -371,23 +292,17 @@ where
     T: Representation,
 {
     ///
-    pub fn select_node(&mut self, node: SelectedNode) -> Result<(), Error> {
+    pub fn handle_node(&mut self, node: SelectedNode) -> Result<(), Error> {
         if let Some(matcher) = self.selector.as_matcher() {
-            self.callback.select_node(
-                self.state.path(),
-                node,
-                true,
-                matcher.label.as_deref(),
-                self.ctx,
-            )
-        } else {
             self.callback
-                .select_node(self.state.path(), node, false, None, self.ctx)
+                .select_node(self.state.path(), node, matcher.label.as_deref(), self.ctx)
+        } else {
+            self.callback.cover_node(self.state.path(), node, self.ctx)
         }
     }
 
     ///
-    pub fn select_dag(&mut self, dag: T) -> Result<(), Error>
+    pub fn handle_dag(&mut self, dag: T) -> Result<(), Error>
     where
         T: Representation + 'static,
     {
@@ -396,6 +311,7 @@ where
             .select_dag((self.state.path(), dag, matcher.label.as_deref()), self.ctx)
     }
 
+    /*
     ///
     fn to_field_select_seed<'b, U>(
         &'b mut self,
@@ -419,59 +335,61 @@ where
             ctx: self.ctx,
         })
     }
+     */
 
     /// Execute the next [`Selector`] against the next element of the
     /// [`ListIterator`].
-    pub fn select_index<'b, const C: u64, U>(
+    ///
+    /// TODO: switch on mode, calling the right iter method
+    ///
+    /// T creates seed (+ iter)
+    /// seed + iter -> select/patch_dm(iter) -> handle_index
+    ///     - if selector for current index exists, descend
+    ///     - else, ignore
+    pub fn handle_index<'b, const C: u64, U>(
         &'b mut self,
-        index: usize,
+        iter: &mut impl ListIterator<U>,
         match_cb: Option<Box<dyn MatchDagOp<U, Ctx> + 'b>>,
         // match_cb: Option<&'b mut dyn MatchDagOp<U, Ctx>>,
-        iter: &mut impl ListIterator<U>,
     ) -> Result<bool, Error>
     where
         U: Select<Ctx>,
     {
-        let res = iter.next_seed::<C, Ctx>({
-            let field = index.into();
-            self.state.descend::<U>(&field)?;
-            SelectorSeed {
+        let was_empty = iter.next_element_seed::<C, Ctx, _>(|idx| {
+            let field = Field::Index(idx);
+            Ok(Some(SelectorSeed {
                 selector: self.selector.try_next(Some(&field))?,
-                state: self.state,
+                state: self.state.descend::<U>(&field)?,
                 callback: self.callback.wrap_match::<U>(match_cb),
                 ctx: self.ctx,
-            }
+            }))
         })?;
-        self.state.ascend::<U>()?;
-
-        Ok(res)
+        self.state.ascend::<U>();
+        Ok(was_empty)
     }
 
     ///
-    pub fn select_field<'b, const C: u64, K, V>(
+    pub fn handle_field<'b, const C: u64, K, V>(
         &'b mut self,
-        // key: &K,
-        match_cb: Option<Box<dyn MatchDagOp<V, Ctx> + 'b>>,
         iter: &mut impl MapIterator<K, V>,
-    ) -> Result<(), Error>
+        match_cb: Option<Box<dyn MatchDagOp<V, Ctx> + 'b>>,
+    ) -> Result<bool, Error>
     where
         K: StringRepresentation,
         <K as FromStr>::Err: fmt::Display,
         V: Select<Ctx>,
     {
-        iter.next_value_seed::<C, Ctx>({
-            let field = iter.field();
-            self.state.descend::<V>(&field)?;
-            SelectorSeed {
+        let was_empty = iter.next_entry_seed::<C, Ctx, _>(|key| {
+            let field = Field::Key(key.into());
+            Ok(Some(SelectorSeed {
                 selector: self.selector.try_next(Some(&field))?,
-                state: self.state,
+                state: self.state.descend::<V>(&field)?,
                 callback: self.callback.wrap_match::<V>(match_cb),
                 ctx: self.ctx,
-            }
+            }))
         })?;
-        self.state.ascend::<V>()?;
-
-        Ok(())
+        self.state.ascend::<V>();
+        Ok(was_empty)
     }
 }
 
@@ -544,538 +462,325 @@ where
 #[doc(hidden)]
 #[macro_export]
 macro_rules! repr_serde {
-    // impl Visitor for CodedSeed by REPR_KIND
-    (@visitor $ty:ident $marker_ty:ty { $($rk:tt)* }
-        { $($generics:tt)* } { $($bounds:tt)* }
-        // $ty:ident
-        //  $(<
-        //     // match one or more lifetimes separated by a comma
-        //     $( $ty_generics:ident ),+
-        // >)?
-        { $($visit_fns:tt)* }
-    ) => {
-        const _: () = {
-            #[allow(unused_imports)]
-            use $crate::dev::*;
-
-            // #[doc(hidden)]
-            impl<'_a, 'de, const C: u64, Ctx, $($generics)*>
-                Visitor<'de> for
-                CodecSeed<C,
-                    SelectorSeed<'_a, Ctx, $ty>,
-                    $ty, $marker_ty, $($rk)*>
-            where
-                Ctx: Context,
-                $ty: Representation<ReprKind = $($rk)*> + Select<Ctx>,
-                $($bounds)*
-            {
-                type Value = ();
-                $($visit_fns)*
-            }
-        };
-    };
-    // impl LinkVisitor for CodedSeed by REPR_KIND
-    (@visitor_ext $ty:ident $marker_ty:ty { $($rk:tt)* }
-        { $($generics:tt)* } { $($bounds:tt)* }
-        // $ty:ident
-        //  $(<
-        //     // match one or more lifetimes separated by a comma
-        //     $( $ty_generics:ident ),+
-        // >)?
-        { $($visit_fns:tt)* }
-    ) => {
-        const _: () = {
-            #[allow(unused_imports)]
-            use $crate::dev::*;
-
-            // #[doc(hidden)]
-            impl<'_a, 'de, const C: u64, Ctx, $($generics)*>
-                LinkVisitor<'de> for
-                CodecSeed<C,
-                    SelectorSeed<'_a, Ctx, $ty>,
-                    $ty, $marker_ty, $($rk)*>
-            where
-                Ctx: Context,
-                $ty: Representation<ReprKind = $($rk)*> + Select<Ctx>,
-                $($bounds)*
-            {
-                $($visit_fns)*
-            }
-        };
-    };
-
-    // Select
-
-    // impl Select for T, using the seed's select
-    (@select
-        $ty:ty => $marker_ty:ty
-        { $($generics:tt)* } { $($bounds:tt)* }
-    ) => {
-        const _: () = {
-            #[allow(unused_imports)]
-            use $crate::dev::*;
-
-            impl<Ctx, $($generics)*> Select<Ctx> for $ty
-            where
-                Ctx: Context,
-                $($bounds)*
-            {
-                // #[inline]
-                // fn select(
-                //     params: Params<'_, Ctx, Self>,
-                //     ctx: &mut Ctx,
-                // ) -> Result<(), Error> {
-                //     SelectorSeed::<'_, Ctx, Self>::select(params, ctx)
-                // }
-
-                #[doc(hidden)]
-                #[inline]
-                fn __select_de<'a, 'de, const C: u64, D>(
-                    seed: SelectorSeed<'a, Ctx, Self>,
-                    deserializer: D,
-                ) -> Result<(), D::Error>
-                where
-                    D: Deserializer<'de>,
-                {
-                    let seed = CodecSeed::<C, _, $ty, $marker_ty>::from(seed);
-                    seed.deserialize(deserializer)
-                }
-
-                // #[doc(hidden)]
-                // #[inline]
-                // fn __select_seq<'a, 'de, const C: u64, A>(
-                //     seed: SelectorSeed<'a, Ctx, Self>,
-                //     mut seq: A,
-                // ) -> Result<Option<()>, A::Error>
-                // where
-                //     A: SeqAccess<'de>,
-                // {
-                //     let seed = CodecSeed::<C, false, _, Self>::from(seed);
-                //     seq.next_element_seed(seed)
-                // }
-                //
-                // #[doc(hidden)]
-                // #[inline]
-                // fn __select_map<'a, 'de, const C: u64, A>(
-                //     seed: SelectorSeed<'a, Ctx, Self>,
-                //     mut map: A,
-                //     is_key: bool,
-                // ) -> Result<Option<()>, A::Error>
-                // where
-                //     A: MapAccess<'de>,
-                // {
-                //     let seed = CodecSeed::<C, false, _, Self>::from(seed);
-                //     if is_key {
-                //         map.next_key_seed(seed)
-                //     } else {
-                //         Ok(Some(map.next_value_seed(seed)?))
-                //     }
-                // }
-            }
-        };
-    };
-
     ///////////////////////////////////////////////////////////////
-    (@visitors for $T:ty => $U:ty
-        { @dk ($($dk:tt)*) @sk ($($sk:tt)*) @rk ($($rk:tt)*) }
-        { $($generics:tt)* } { $($bounds:tt)* }
-        @serde { $($visit_fns:tt)* }
-    ) => {
-        repr_serde!(@visitors for $T => $U
-            { @dk ($($dk)*) @sk ($($sk)*) @rk ($($rk)*) }
-            { $($generics)* } { $($bounds)* }
-            @serde { $($visit_fns)* } @link {}
-        );
+    ///////////////////////////////////////////////////////////////
+
+    // impls Visitor for $seed<const C, S: SeedType<T>, T>
+    (@visitors for $T:ty { $($visit_fns:tt)* }) => {
+        repr_serde!(@visitors for $T {} {} @serde { $($visit_fns)* });
     };
-    (@visitors for $T:ty => $U:ty
-        { @dk ($($dk:tt)*) @sk ($($sk:tt)*) @rk ($($rk:tt)*) }
-        { $($generics:tt)* } { $($bounds:tt)* }
+    (@visitors for $T:ty where
         @serde { $($visit_fns:tt)* }
         @link { $($visit_link_fns:tt)* }
     ) => {
-        const _: () = {
-            #[allow(unused_imports)]
-            use $crate::dev::*;
-
-            #[doc(hidden)]
-            impl<'_a, 'de, const C: u64, Ctx, $($generics)*>
-                Visitor<'de> for
-                CodecSeed<C, SelectorSeed<'_a, Ctx, $T>, $T, $U,
-                    $($dk)*, $($sk)*, $($rk)*
-                >
-            where
-                Ctx: Context,
-                $T: Select<Ctx> + Representation<
-                    DataModelKind = $($dk)*,
-                    SchemaKind = $($sk)*,
-                    ReprKind = $($rk)*
-                >,
-                $($bounds)*
-            {
-                type Value = <SelectorSeed<'_a, Ctx, $T> as SeedType<$T>>::Output;
-                $($visit_fns)*
-            }
-
-            #[doc(hidden)]
-            impl<'_a, 'de, const C: u64, Ctx, $($generics)*>
-                LinkVisitor<'de> for
-                CodecSeed<C, SelectorSeed<'_a, Ctx, $T>, $T, $U,
-                    $($dk)*, $($sk)*, $($rk)*
-                >
-            where
-                Ctx: Context,
-                $T: Select<Ctx> + Representation<
-                    DataModelKind = $($dk)*,
-                    SchemaKind = $($sk)*,
-                    ReprKind = $($rk)*
-                >,
-                $($bounds)*
-            {
-                $($visit_link_fns)*
-            }
-        };
-    };
-    // (@select_for $T:ty => $U:ty
-    // ) => {
-    //     repr_serde!(
-    //         @select_for $T => $U
-    //         { @dk (<$T as Representation>::DataModelKind)
-    //           @sk (<$T as Representation>::SchemaKind)
-    //           @rk (<$T as Representation>::ReprKind) }
-    //     );
-    // };
-    (@select_for $T:ty) => {
-        repr_serde!(@select_for $T {} {});
-    };
-    (@select_for $T:ty { $($generics:tt)* } { $($bounds:tt)* }) => {
-        repr_serde!(@select_for $T => $T { $($generics)* } { $($bounds)* });
-    };
-    (@select_for $T:ty => $U:ty { $($generics:tt)* } { $($bounds:tt)* }) => {
-        const _: () = {
-            #[allow(unused_imports)]
-            use $crate::dev::*;
-
-            impl<Ctx, $($generics)*> Select<Ctx> for $T
-            where
-                Ctx: Context,
-                $($bounds)*
-            {
-                #[doc(hidden)]
-                #[inline]
-                fn __select_de<'a, 'de, const C: u64, D>(
-                    seed: SelectorSeed<'a, Ctx, Self>,
-                    deserializer: D,
-                ) -> Result<(), D::Error>
-                where
-                    D: Deserializer<'de>,
-                {
-                    let seed = CodecSeed::<C, _, $T, $U>::from(seed);
-                    seed.deserialize(deserializer)
-                }
-            }
-        };
-    };
-    (@select_for $T:ty => $U:ty
-        { @dk ($($dk:tt)*) @sk ($($sk:tt)*) @rk ($($rk:tt)*) }
-    ) => {
-        repr_serde!(@select_for $T => $U
-            { @dk ($($dk)*)  @sk ($($sk)*) @rk ($($rk)*) } {} {}
+        repr_serde!(@visitors for $T {} {}
+            @serde { $($visit_fns)* } @link { $($visit_link_fns)* }
         );
     };
-    (@select_for $T:ty => $U:ty
-        { @dk ($($dk:tt)*) @sk ($($sk:tt)*) @rk ($($rk:tt)*) }
-        { $($generics:tt)* } { $($bounds:tt)* }
+    (@visitors for $T:ty { $($generics:tt)* } { $($bounds:tt)* }
+        @serde { $($visit_fns:tt)* }
     ) => {
-        repr_serde!(@select_for $T => $U { $($generics)* } {
-            $T: Representation<
-                DataModelKind = $($dk)*,
-                SchemaKind = $($sk)*,
-                ReprKind = $($rk)*
-            >,
+        repr_serde!(@visitors for $T { $($generics)* } { $($bounds)* }
+            @serde { $($visit_fns)* } @link {}
+        );
+    };
+    (@visitors for $T:ty { $($generics:tt)* } { $($bounds:tt)* }
+        @serde { $($visit_fns:tt)* }
+        @link { $($visit_link_fns:tt)* }
+    ) => {
+        #[doc(hidden)]
+        impl<'_a, 'de, const MC: u64, Ctx, $($generics)*>
+            $crate::dev::Visitor<'de> for
+            Seed<MC, $crate::dev::SelectorSeed<'_a, Ctx, $T>, $T>
+        where
+            Ctx: $crate::dev::Context,
             $($bounds)*
-        });
-    };
-    (@select_for_newtype $T:ty => $($constructor:tt)* ( $U:ty )
-        { @dk ($($dk:tt)*) @sk ($($sk:tt)*) @rk ($($rk:tt)*) }
-        { $($generics:tt)* } { $($bounds:tt)* }
-    ) => {
-        const _: () = {
-            #[allow(unused_imports)]
-            use $crate::dev::*;
-
-            impl<Ctx, $($generics)*> Select<Ctx> for $T
-            where
-                Ctx: Context,
-                $T: Representation<
-                    DataModelKind = $($dk)*,
-                    SchemaKind = $($sk)*,
-                    ReprKind = $($rk)*
-                >,
-                $($bounds)*
-            {
-                #[doc(hidden)]
-                #[inline]
-                fn __select<'a>(
-                    seed: SelectorSeed<'a, Ctx, Self>,
-                ) -> Result<(), Error> {
-                    let seed = seed.wrap::<$U, _>($constructor);
-                    <$U>::__select(seed)
-                }
-            }
-        };
-    };
-
-    /*
-    (@seed_from_params $params:ident $ctx:ident) => {{
-        let Params {
-            cid,
-            selector,
-            max_path_depth,
-            max_link_depth,
-            callback,
-        } = $params;
-        let mut state = State {
-            max_path_depth,
-            max_link_depth,
-            ..Default::default()
-        };
-
-        let root = cid.ok_or_else(|| {
-            Error::InvalidSelectionParams("selection must start against some cid")
-        })?;
-        let block = $ctx.block_reader(&root)?;
-
-        let default_selector = Selector::DEFAULT;
-        SelectorSeed {
-            selector: &selector.unwrap_or(&default_selector),
-            state: &mut state,
-            callback,
-            ctx: &mut $ctx,
+        {
+            type Value = <$crate::dev::SelectorSeed<'_a, Ctx, $T> as SeedType<$T>>::Output;
+            $($visit_fns)*
         }
-    }};
-        */
 
-    // newtype impls
+        #[doc(hidden)]
+        impl<'_a, 'de, const MC: u64, Ctx, $($generics)*>
+            LinkVisitor<'de, MC> for
+            Seed<MC, $crate::dev::SelectorSeed<'_a, Ctx, $T>, $T>
+        where
+            Ctx: $crate::dev::Context,
+            $($bounds)*
+        {
+            $($visit_link_fns)*
+        }
+    };
 
-        (@select_newtype
-            { $($generics:tt)* } { $($bounds:tt)* }
-            $ty:ty { $constructor:expr => $inner_ty:ty }
-        ) => {
-            const _: () = {
-                #[allow(unused_imports)]
-                use $crate::dev::*;
+    ///////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////
 
-                impl<Ctx, $($generics)*> Select<Ctx> for $ty
-                where
-                    Ctx: Context,
-                    $($bounds)*
-                {
-                    #[doc(hidden)]
-                    #[inline]
-                    fn __select<'a>(
-                        seed: SelectorSeed<'a, Ctx, Self>,
-                    ) -> Result<(), Error> {
-                        let seed = seed.wrap::<$inner_ty, _>($constructor);
-                        <$inner_ty>::__select(seed)
-                    }
-
-                    // #[doc(hidden)]
-                    // #[inline]
-                    // fn __select_de<'a, 'de, const C: u64, D>(
-                    //     seed: SelectorSeed<'a, Ctx, Self>,
-                    //     deserializer: D,
-                    // ) -> Result<(), D::Error>
-                    // where
-                    //     D: Deserializer<'de>,
-                    // {
-                    //     let seed = seed.wrap::<$inner_ty, _>($constructor);
-                    //     <$inner_ty>::__select_de::<C, D>(seed, deserializer)
-                    // }
-
-                    // #[doc(hidden)]
-                    // #[inline]
-                    // fn __select_seq<'a, 'de, const C: u64, A>(
-                    //     seed: SelectorSeed<'a, Ctx, Self>,
-                    //     seq: A,
-                    // ) -> Result<Option<()>, A::Error>
-                    // where
-                    //     A: SeqAccess<'de>,
-                    // {
-                    //     let seed = seed.wrap::<$inner_ty, _>($constructor);
-                    //     <$inner_ty>::__select_seq::<C, D>(seed, seq)
-                    // }
-
-                    // #[doc(hidden)]
-                    // #[inline]
-                    // fn __select_map<'a, 'de, const C: u64, A>(
-                    //     seed: SelectorSeed<'a, Ctx, Self>,
-                    //     map: A,
-                    //     is_key: bool,
-                    // ) -> Result<Option<()>, A::Error>
-                    // where
-                    //     A: MapAccess<'de>,
-                    // {
-                    //     let seed = seed.wrap::<$inner_ty, _>($constructor);
-                    //     <$inner_ty>::__select_map::<C, D>(seed, map, is_key)
-                    // }
-                }
-            };
-        };
-
-    /*
-
-        // TODO: instead of transmuting cb in DeSeed, transmute it in Select
-        (@selector_seed_codec_deseed_newtype
-            { $($generics:tt)* } { $($bounds:tt)* }
-            // TODO: this should probably by a ty
-            $ty:ident as $inner_ty:ty
-        ) => {
-            $crate::dev::macros::impl_selector_seed_serde! {
-                @selector_seed_codec_deseed { $($generics)* } { $($bounds)* } $ty
+    // impls Select for T, where $seed<C, S, T>: DeserializeSeed
+    (@select for $T:ty) => { repr_serde!(@select for $T {} {}); };
+    (@select for $T:ty { $($generics:tt)* } { $($bounds:tt)* }) => {
+        impl<Ctx, $($generics)*> $crate::dev::Select<Ctx> for $T
+        where
+            Ctx: $crate::dev::Context,
+            $($bounds)*
+        {
+            #[doc(hidden)]
+            #[inline]
+            fn __select_de<'a, 'de, const C: u64, D>(
+                seed: $crate::dev::SelectorSeed<'a, Ctx, Self>,
+                deserializer: D,
+            ) -> Result<(), D::Error>
+            where
+                D: $crate::dev::Deserializer<'de>,
             {
-                #[inline]
-                fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-                where
-                    D: Deserializer<'de>,
-                {
-                    if _RK {
-                        unimplemented!()
-                    } else {
-                        let inner_seed = macros::impl_selector_seed_serde! {
-                            @selector_seed_wrap
-                            // TODO: probably need to pass a closure
-                            self { $ty => $inner_ty }
-                        };
+                Seed::<C, _, Self>::from(seed).deserialize(deserializer)
+            }
+        }
+    };
 
-                        // cfg_if::cfg_if! {
-                        //     if #[cfg(feature = "serde-codec")] {
-                        //         // (&mut &mut &mut Decoder(deserializer)).deserialize_any(self)
-                        //         inner_seed.deserialize((&mut &mut &mut Decoder(deserializer)))
-                        //     } else {
-                        //         // deserializer.deserialize_any(self)
-                        //         inner_seed.deserialize(deserializer)
-                        //     }
-                        // }
+    ///////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////
 
-                        // inner_seed.deserialize::<C, _>(deserializer)
-                        inner_seed.deserialize(deserializer)
-                    }
-                }
-            }}
-        };
-        // produces an seed for the inner_ty, providing the original cb with ty
-        // (@selector_seed_wrap $seed:ident { $constructor:expr => $inner_ty:ty }) => {{
-        //     use $crate::dev::{DagSelection, Callback::*};
+    // defines a new Seed to be used as a DeserializeSeed and Visitor
+    (@def_seed) => {
+        use $crate::maybestd::marker::PhantomData as Phantom;
 
-        //     let SelectorSeed { selector, state, callback, ctx } = $seed.0;
-        //     let callback = match callback {
-        //         SelectDag { mut cb } => SelectDag {
-        //             cb: Box::new(move |selection, ctx| {
-        //                 let inner_dag = selection.dag.downcast::<$inner_ty>()?;
-        //                 let dag = $constructor(inner_dag.into());
-        //                 cb(DagSelection { dag: dag.into(), ..selection }, ctx)
-        //             }),
-        //         },
-        //         cb => cb.clone(),
-        //         _ => unreachable!(),
-        //     };
-        //     Self::from(SelectorSeed { selector, state, callback, ctx })
-        // }};
+        #[doc(hidden)]
+        pub(crate) struct Seed<const C: u64, S, T>(S, Phantom<T>);
+        #[doc(hidden)]
+        pub(crate) trait ISeed<S>: AsRef<S> + AsMut<S> + From<S> {
+            const CAN_SELECT: bool;
+            type Inner;
+            fn into_inner(self) -> S;
+            fn mode(&self) -> SelectionMode;
+            fn selector(&self) -> &Selector;
+        }
+        impl<const C: u64, S: SeedType<T>, T> ISeed<S> for Seed<C, S, T> {
+            const CAN_SELECT: bool = S::CAN_SELECT;
+            type Inner = T;
+            #[inline(always)]
+            fn into_inner(self) -> S {
+                self.0
+            }
+            #[inline(always)]
+            fn selector(&self) -> &Selector {
+                self.0.selector()
+            }
+            #[inline(always)]
+            fn mode(&self) -> SelectionMode {
+                self.0.mode()
+            }
+        }
 
-    // (@empty $seed:ident $constructor:expr => $inner_ty:tt) => { unimplemented!() };
-    // TODO: deprecate, since we want SelectorSeed to do all the heavy-lifting
-    // (@select_newtype
-    //     { $($generics:tt)* } { $($bounds:tt)* }
-    //     $ty:ident as $inner_ty:ident
-    // ) => {
-    //     /// Delegates directly to the inner type's [`Select`] implmentation,
-    //     /// wrapping the provided callbacks to ensure the expected types are
-    //     /// selected.
-    //     ///
-    //     /// [`Select`]: crate::dev::Select
-    //     impl<Ctx, $($generics)*> $crate::dev::Select<Ctx> for $ty
-    //     where
-    //         Ctx: $crate::dev::Context,
-    //         $inner_ty: $crate::dev::Select<Ctx>,
-    //         $($bounds)*
-    //     {
-    //         fn select(
-    //             params: $crate::dev::Params<'_, Ctx, Self>,
-    //             ctx: &mut Ctx,
-    //         ) -> Result<(), $crate::dev::Error> {
-    //             use $crate::dev::Callback::*;
+        impl<const C: u64, S, T> AsRef<S> for Seed<C, S, T> {
+            #[inline(always)]
+            fn as_ref(&self) -> &S {
+                &self.0
+            }
+        }
+        impl<const C: u64, S, T> AsMut<S> for Seed<C, S, T> {
+            #[inline(always)]
+            fn as_mut(&mut self) -> &mut S {
+                &mut self.0
+            }
+        }
+        impl<const C: u64, S, T> From<S> for Seed<C, S, T> {
+            #[inline(always)]
+            fn from(seed: S) -> Self {
+                Self(seed, Phantom)
+            }
+        }
 
-    //             let params = $crate::dev::Params::<'_, Ctx, $inner_ty> {
-    //                 cid: params.cid,
-    //                 selector: params.selector,
-    //                 max_path_depth: params.max_path_depth,
-    //                 max_link_depth: params.max_link_depth,
-    //                 callback: match params.callback {
-    //                     SelectNode { cb, only_matched } => SelectNode { cb, only_matched },
-    //                     SelectDag { mut cb } => SelectDag {
-    //                         cb: Box::new(move |selection, ctx| {
-    //                             let dag = selection.dag.downcast::<$inner_ty>()?;
-    //                             let selection = $crate::dev::DagSelection {
-    //                                 dag: Self(dag).into(),
-    //                                 ..selection
-    //                             };
-    //                             cb(selection, ctx)
-    //                         }),
-    //                     },
-    //                     _ => unreachable!(),
-    //                 },
-    //             };
+        impl<'de, const C: u64, S, T: Representation> DeserializeSeed<'de> for Seed<C, S, T>
+        where
+            Self: LinkVisitor<'de, C>,
+            S: SeedType<T>,
+            T: Representation,
+        {
+            type Value = <Self as Visitor<'de>>::Value;
 
-    //             <$inner_ty>::select(params, ctx)
-    //         }
-    //     }
-    // };
-
-    // (visit_self
-    //     { $($generics:tt)* } { $($bounds:tt)* }
-    //     $type:ty
-    //     { $($visit_fn:tt)* }
-    //     { $($flush_fn:tt)* }
-    // ) => {
-    //     impl<Ctx, $($generics)*> $crate::dev::Visit<Ctx> for $type
-    //     where
-    //         Ctx: $crate::dev::Context,
-    //         $($bounds)*
-    //     {
-    //         // #[inline]
-    //         // fn r#match(
-    //         //     selector: &$crate::dev::Selector,
-    //         //     state: $crate::dev::SelectorState,
-    //         //     ctx: &mut Ctx
-    //         // ) -> Result<Option<Self>, $crate::dev::Error> {
-    //         //     let deserializer = ctx.path_decoder(state.path())?;
-    //         //     $crate::dev::SelectorSeed::<'_, Ctx, Self, Self>::from(selector, state, ctx)
-    //         //         .deserialize(deserializer)
-    //         //         .map_err($crate::dev::Error::decoder)
-    //         // }
-    //
-    //         fn visit<F, T: $crate::dev::Representation>(
-    //             &mut self,
-    //             selector: &$crate::dev::Selector,
-    //             state: $crate::dev::SelectorState,
-    //             ctx: &mut Ctx,
-    //             op: F,
-    //         ) -> Result<(), $crate::dev::Error>
-    //         where
-    //             F: Fn(T, &mut Ctx) -> Result<Option<T>, $crate::dev::Error>,
-    //         {
-    //             unimplemented!()
-    //         }
-    //
-    //         fn flush(
-    //             &mut self,
-    //             selector: &$crate::dev::Selector,
-    //             state: $crate::dev::SelectorState,
-    //             ctx: &mut Ctx,
-    //         ) -> Result<(), $crate::dev::Error> {
-    //             unimplemented!()
-    //         }
-    //     }
-    // };
-     */
+            #[inline]
+            fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                T::deserialize_with_visitor::<C, D, _>(deserializer, self)
+            }
+        }
+    };
 }
+
+/// ideas for refactor
+///
+/// notes:
+/// - serde == ||basic-data-model|| access to ||encoded|| data
+/// - ipld data model ==
+/// - ipld node == ||basic-data-model|| access to ||abstract-data-model|| data
+///
+/// ! reqs:
+/// 0. select/patch against blocks
+/// 1. easy support for selective-deserialization
+/// 1b. share selection impl between block (select) and dag (select_in)
+///     ==> AstWalk<T>.deserialize(block_de)
+///     ==> AstWalk<T>.deserialize(self.into_deserializer())
+///         e.g. tuple struct -> tupledeserializer<T>, so it knows fields
+///         => each IntoDeserializer must support T::REPR (for select(_in))
+///             (? DM, SCHEMA?)
+///         => [opt] Into(Map/Seq/Enum/Struct)Access for Ref(Mut)<T>
+/// 1c. share Visitor logic between decode (Phantom) and select (Seed)
+///     - Phantom<T>.deserialize(...) vs AstWalk<T>.deserialize(...)
+///         i.e. AstWalk.seed.select(T::from(val)) vs return T::from(val)
+///     - each visit fn:
+///         - is given a source of value(s) from a REPRESENTATION
+///         - MUST decide to:
+///             1. drain source (by SCHEMA) and return T
+///             2. selectively drain source (by SCHEMA) and return None
+///             3. ...?
+///     ? ==> SelectorSeed.explore_list(seq)
+///         -
+///
+/// ! nice to haves:
+/// 1. serde-compatible
+/// 2.
+/// 3. ? (de)serialize as another repr
+///     - aka follow another type's (de)serialize instructions
+///     ... U::deserialize(t.into_deserializer())
+///
+/// ! dream features:
+/// 1. provide hooks forcompat with rkyv / other frameworks
+pub trait Walk<'de, 'a: 'de, const MC: u64 = IDENTITY, T = Any>
+where
+    T: Representation + 'de,
+    Self: Default
+        + LinkVisitor<'de, MC, Value = AstResult<'de, T>>
+        + DeserializeSeed<'de, Value = AstResult<'de, T>>,
+{
+}
+
+impl<'de, 'a: 'de, const MC: u64, T, W> Walk<'de, 'a, MC, T> for W
+where
+    T: Representation + 'de,
+    W: Default
+        + LinkVisitor<'de, MC, Value = AstResult<'de, T>>
+        + DeserializeSeed<'de, Value = AstResult<'de, T>>,
+{
+}
+
+// impl<'de, 'a: 'de, const FULL: bool, W, T> DeserializeSeed<'de> for W
+// where
+//     T: Representation,
+//     W: Walk<'de, 'a, T, FULL>,
+// {
+//     unimplemented!()
+// }
+
+///
+pub struct AstWalk<'a, const MC: u64 = IDENTITY, Ctx = (), T = Any>(pub SelectorSeed<'a, Ctx, T>);
+
+///
+#[derive(Debug)]
+pub enum AstResult<'a, T> {
+    ///
+    Ok,
+    ///
+    Value(T),
+    ///
+    Ref(&'a T),
+    ///
+    RefMut(&'a mut T),
+}
+
+impl<'a, T> AstResult<'a, T> {
+    #[inline(always)]
+    pub(crate) fn unwrap_val(self) -> T {
+        match self {
+            AstResult::Value(val) => val,
+            _ => unreachable!("AstResult return type should be known"),
+        }
+    }
+}
+
+impl<'a, const MC: u64, Ctx, T> AstWalk<'a, MC, Ctx, T>
+where
+    T: Representation,
+{
+    #[inline(always)]
+    fn into_inner(self) -> SelectorSeed<'a, Ctx, T> {
+        self.0
+    }
+    #[inline(always)]
+    fn selector(&self) -> &Selector {
+        self.0.selector
+    }
+    #[inline(always)]
+    fn mode(&self) -> SelectionMode {
+        self.0._mode()
+    }
+}
+
+impl<'a, const MC: u64, Ctx, T> AsRef<SelectorSeed<'a, Ctx, T>> for AstWalk<'a, MC, Ctx, T> {
+    #[inline(always)]
+    fn as_ref(&self) -> &SelectorSeed<'a, Ctx, T> {
+        &self.0
+    }
+}
+impl<'a, const MC: u64, Ctx, T> AsMut<SelectorSeed<'a, Ctx, T>> for AstWalk<'a, MC, Ctx, T> {
+    #[inline(always)]
+    fn as_mut(&mut self) -> &mut SelectorSeed<'a, Ctx, T> {
+        &mut self.0
+    }
+}
+impl<'a, const MC: u64, Ctx, T> From<SelectorSeed<'a, Ctx, T>> for AstWalk<'a, MC, Ctx, T> {
+    #[inline(always)]
+    fn from(seed: SelectorSeed<'a, Ctx, T>) -> Self {
+        Self(seed)
+    }
+}
+
+impl<'de, 'a: 'de, const MC: u64, Ctx, T: Representation> DeserializeSeed<'de>
+    for AstWalk<'a, MC, Ctx, T>
+where
+    Self: LinkVisitor<'de, MC>,
+    T: Representation,
+{
+    type Value = <Self as Visitor<'de>>::Value;
+
+    #[inline]
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        T::deserialize_with_visitor::<MC, D, _>(deserializer, self)
+    }
+}
+
+// impl<'de, 'a: 'de, const MC: u64, Ctx, T> DeserializeSeed<'de> for AstWalk<'a, MC, Ctx, T>
+// where
+//     Self: LinkVisitor<'de, MC, Value = AstResult<T>>,
+//     T: Representation,
+// {
+//     type Value = AstResult<T>;
+
+//     #[inline]
+//     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         T::deserialize_with_visitor::<MC, D, _>(deserializer, self)
+//     }
+// }
+
+// impl<'de, const C: u64, S, T: Representation> DeserializeSeed<'de> for S
+// where
+//     S: Visitor<'de, Value = > + LinkVisitor<'de>,
+//     T: Representation,
+// {
+//     type Value = <Self as Visitor<'de>>::Value;
+
+//     #[inline]
+//     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         T::deserialize_with_visitor::<C, D, _>(deserializer, self)
+//     }
+// }

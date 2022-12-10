@@ -1,3 +1,4 @@
+use super::Codec;
 use crate::dev::*;
 use maybestd::{
     convert::TryFrom,
@@ -6,47 +7,6 @@ use maybestd::{
 
 pub use multicodec::Multicodec;
 
-/// An unified trait for all IPLD
-/// [Codec](https://github.com/ipld/specs/blob/master/block-layer/codecs/README.dsmd)s,
-/// providing methods for reading and writing blocks.
-pub trait Codec: TryFrom<u64, Error = Error> {
-    /// The standardized [`Multicodec`] name for this IPLD codec.
-    const NAME: &'static str;
-
-    /// The standardized [`Multicodec`] code that identifies this IPLD codec.
-    const CODE: u64;
-
-    /// Given a dag, serialize it to a `Vec<u8>`.
-    fn encode<T>(&mut self, dag: &T) -> Result<Vec<u8>, Error>
-    where
-        T: Representation,
-    {
-        let mut vec = vec![];
-        self.write(dag, &mut vec)?;
-        Ok(vec)
-    }
-
-    /// Given a dag and a `Write`, encode it to the writer.
-    fn write<T, W>(&mut self, dag: &T, writer: W) -> Result<(), Error>
-    where
-        T: Representation,
-        W: Write;
-
-    /// Given some bytes, deserialize a dag.
-    fn decode<'de, T>(&mut self, bytes: &'de [u8]) -> Result<T, Error>
-    where
-        T: Representation,
-    {
-        self.read::<T, _>(bytes)
-    }
-
-    /// Given a `Read`, deserialize a dag.
-    fn read<T, R>(&mut self, reader: R) -> Result<T, Error>
-    where
-        T: Representation,
-        R: Read;
-}
-
 mod multicodec {
     use super::*;
 
@@ -54,26 +14,34 @@ mod multicodec {
     ($(
         #[cfg(feature = $feature:expr)]
         $(#[$meta:meta])*
-        $variant:ident -> $ty:ty,
+        $path:path => $variant:ident $code_name:ident,
     )*) => {
         /// A generic [multicodec]() enum.
-        #[derive(Clone, Debug)]
+        #[derive(Debug)]
         #[non_exhaustive]
         pub enum Multicodec {
             $(
                 #[cfg(feature = $feature)]
                 $(#[$meta])*
-                $variant($ty),
+                $variant($path),
             )*
         }
 
         impl Multicodec {
+            $(
+                #[doc = "[Multicodec]() code for the `"]
+                #[doc = stringify!($variant)]
+                #[doc = "` codec."]
+                pub const $code_name: u64 = <$path as Codec>::CODE;
+            )*
+
+            ///
             #[inline]
-            pub const fn is_known<const C: u64>() -> bool {
-                match C {
+            pub const fn is_known<const MC: u64>() -> bool {
+                match MC {
                     $(
                         #[cfg(feature = $feature)]
-                        <$ty>::CODE => true,
+                        <$path as Codec>::CODE => true,
                     )*
                     _ => false,
                 }
@@ -85,7 +53,7 @@ mod multicodec {
                 match self {
                     $(
                         #[cfg(feature = $feature)]
-                        Self::$variant(_) => <$ty>::NAME,
+                        Self::$variant(_) => <$path as Codec>::NAME,
                     )*
                     // _ => unimplemented!()
                 }
@@ -97,7 +65,7 @@ mod multicodec {
                 match self {
                     $(
                         #[cfg(feature = $feature)]
-                        Self::$variant(_) => <$ty>::CODE,
+                        Self::$variant(_) => <$path as Codec>::CODE,
                     )*
                     // _ => unimplemented!()
                 }
@@ -109,7 +77,7 @@ mod multicodec {
                 match name {
                     $(
                         #[cfg(feature = $feature)]
-                        <$ty>::NAME => Ok(Self::$variant(<$ty>::new())),
+                        <$path as Codec>::NAME => Ok(Self::$variant(<$path>::new())),
                     )*
                     name => Err(Error::UnknownMulticodecName(name.to_string()))
                 }
@@ -117,11 +85,11 @@ mod multicodec {
 
             ///
             #[inline]
-            pub const fn from_code<const C: u64>() -> Result<Self, Error> {
-                match C {
+            pub const fn from_code<const MC: u64>() -> Result<Self, Error> {
+                match MC {
                     $(
                         #[cfg(feature = $feature)]
-                        <$ty>::CODE => Ok(Self::$variant(<$ty>::new())),
+                        <$path as Codec>::CODE => Ok(Self::$variant(<$path>::new())),
                     )*
                     code => Err(Error::UnknownMulticodecCode(code))
                 }
@@ -199,104 +167,9 @@ mod multicodec {
                 match self {
                     $(
                         #[cfg(feature = $feature)]
-                        Self::$variant(_) => <$ty>::read_with_seed(seed, reader),
+                        Self::$variant(_) => <$path>::read_with_seed(seed, reader),
                     )*
                 }
-            }
-
-            #[inline]
-            #[doc(hidden)]
-            pub fn serialize_bytes<const C: u64, S>(
-                dag: impl AsRef<[u8]>,
-                serializer: S,
-            ) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer,
-            {
-                #[cfg(feature = "dag-json")]
-                if C == DagJson::CODE {
-                    return DagJson::serialize_bytes(dag, serializer);
-                }
-                serializer.serialize_bytes(dag.as_ref())
-            }
-
-            #[inline]
-            #[doc(hidden)]
-            pub fn serialize_link<const C: u64, S>(
-                cid: &Cid,
-                serializer: S,
-            ) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer,
-            {
-                #[cfg(feature = "dag-json")]
-                if C == DagJson::CODE {
-                    return DagJson::serialize_link(cid, serializer);
-                }
-                #[cfg(feature = "dag-cbor")]
-                if C == DagCbor::CODE {
-                    return DagCbor::serialize_link(cid, serializer);
-                }
-                Serialize::serialize(&cid.inner, serializer)
-            }
-
-            #[inline]
-            #[doc(hidden)]
-            pub fn deserialize_any<'de, const C: u64, D, V>(
-                deserializer: D,
-                visitor: V,
-            ) -> Result<V::Value, D::Error>
-            where
-                D: Deserializer<'de>,
-                V: LinkVisitor<'de>,
-            {
-                #[cfg(feature = "dag-json")]
-                if C == DagJson::CODE {
-                    return DagJson::deserialize_any(deserializer, visitor);
-                }
-                #[cfg(feature = "dag-cbor")]
-                if C == DagCbor::CODE {
-                    return DagCbor::deserialize_any(deserializer, visitor);
-                }
-                deserializer.deserialize_any(visitor)
-            }
-
-            #[inline]
-            #[doc(hidden)]
-            pub fn deserialize_bytes<'de, const C: u64, D, V>(
-                deserializer: D,
-                visitor: V,
-            ) -> Result<V::Value, D::Error>
-            where
-                D: Deserializer<'de>,
-                V: LinkVisitor<'de>,
-            {
-                #[cfg(feature = "dag-json")]
-                if C == DagJson::CODE {
-                    return DagJson::deserialize_bytes(deserializer, visitor);
-                }
-                deserializer.deserialize_bytes(visitor)
-            }
-
-            #[inline]
-            #[doc(hidden)]
-            pub fn deserialize_link<'de, const C: u64, D, V>(
-                deserializer: D,
-                visitor: V,
-            ) -> Result<V::Value, D::Error>
-            where
-                D: Deserializer<'de>,
-                V: LinkVisitor<'de>,
-            {
-                #[cfg(feature = "dag-json")]
-                if C == DagJson::CODE {
-                    return DagJson::deserialize_link(deserializer, visitor);
-                }
-                #[cfg(feature = "dag-cbor")]
-                if C == DagCbor::CODE {
-                    return DagCbor::deserialize_link(deserializer, visitor);
-                }
-                deserializer.deserialize_any(visitor)
             }
         }
 
@@ -307,7 +180,7 @@ mod multicodec {
                 match code {
                     $(
                         #[cfg(feature = $feature)]
-                        <$ty>::CODE => Ok(Self::$variant(<$ty>::new())),
+                        <$path as Codec>::CODE => Ok(Self::$variant(<$path>::new())),
                     )*
                     _ => Err(Error::UnknownMulticodecCode(code)),
                 }
@@ -321,7 +194,7 @@ mod multicodec {
                 match s {
                     $(
                         #[cfg(feature = $feature)]
-                        <$ty>::NAME => Ok(Self::$variant(<$ty>::new())),
+                        <$path as Codec>::NAME => Ok(Self::$variant(<$path>::new())),
                     )*
                     _ => Err(Error::UnknownMulticodecName(s.into())),
                 }
@@ -332,11 +205,108 @@ mod multicodec {
     impl_multicodec! {
         #[cfg(feature = "dag-cbor")]
         ///
-        DagCbor -> DagCbor,
+        crate::DagCbor => DagCbor DAG_CBOR,
         #[cfg(feature = "dag-json")]
         ///
-        DagJson -> DagJson,
+        crate::DagJson => DagJson DAG_JSON,
+        // #[cfg(feature = "dag-rkyv")]
+        // ///
+        // DagRkyv DAG_RKYV,
         // Custom(Box<dyn Codec>),
+    }
+
+    impl Multicodec {
+        #[inline]
+        #[doc(hidden)]
+        pub fn serialize_bytes<const MC: u64, S>(
+            dag: impl AsRef<[u8]>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            #[cfg(feature = "dag-json")]
+            if MC == <crate::DagJson as Codec>::CODE {
+                return crate::DagJson::serialize_bytes(dag, serializer);
+            }
+            serializer.serialize_bytes(dag.as_ref())
+        }
+
+        #[inline]
+        #[doc(hidden)]
+        pub fn serialize_link<const MC: u64, S>(cid: &Cid, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            #[cfg(feature = "dag-cbor")]
+            if MC == <crate::DagCbor as Codec>::CODE {
+                return crate::DagCbor::serialize_link(cid, serializer);
+            }
+            #[cfg(feature = "dag-json")]
+            if MC == <crate::DagJson as Codec>::CODE {
+                return crate::DagJson::serialize_link(cid, serializer);
+            }
+            Serialize::serialize(&cid.inner, serializer)
+        }
+
+        #[inline]
+        #[doc(hidden)]
+        pub fn deserialize_any<'de, const MC: u64, D, V>(
+            deserializer: D,
+            visitor: V,
+        ) -> Result<V::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+            V: LinkVisitor<'de, MC>,
+        {
+            #[cfg(feature = "dag-cbor")]
+            if MC == <crate::DagCbor as Codec>::CODE {
+                return crate::DagCbor::deserialize_any(deserializer, visitor);
+            }
+            #[cfg(feature = "dag-json")]
+            if MC == <crate::DagJson as Codec>::CODE {
+                return crate::DagJson::deserialize_any(deserializer, visitor);
+            }
+            deserializer.deserialize_any(visitor)
+        }
+
+        #[inline]
+        #[doc(hidden)]
+        pub fn deserialize_bytes<'de, const MC: u64, D, V>(
+            deserializer: D,
+            visitor: V,
+        ) -> Result<V::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+            V: LinkVisitor<'de, MC>,
+        {
+            #[cfg(feature = "dag-json")]
+            if MC == <crate::DagJson as Codec>::CODE {
+                return crate::DagJson::deserialize_bytes(deserializer, visitor);
+            }
+            deserializer.deserialize_bytes(visitor)
+        }
+
+        #[inline]
+        #[doc(hidden)]
+        pub fn deserialize_link<'de, const MC: u64, D, V>(
+            deserializer: D,
+            visitor: V,
+        ) -> Result<V::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+            V: LinkVisitor<'de, MC>,
+        {
+            #[cfg(feature = "dag-cbor")]
+            if MC == <crate::DagCbor as Codec>::CODE {
+                return crate::DagCbor::deserialize_link(deserializer, visitor);
+            }
+            #[cfg(feature = "dag-json")]
+            if MC == <crate::DagJson as Codec>::CODE {
+                return crate::DagJson::deserialize_link(deserializer, visitor);
+            }
+            deserializer.deserialize_any(visitor)
+        }
     }
 
     impl<'a, const S: usize> TryFrom<&'a CidGeneric<S>> for Multicodec {
@@ -432,7 +402,7 @@ mod autoref {
         assert!(false)
     }
 
-    trait Tag<const C: usize> {}
+    trait Tag<const MC: usize> {}
 
     trait ViaDagJson<W> {
         type Ok;
@@ -509,7 +479,7 @@ mod tagged {
         }
     }
 
-    trait Tag<const C: usize> {}
+    trait Tag<const MC: usize> {}
 
     struct Encoder<S>(S);
 
@@ -657,11 +627,14 @@ mod autoref2 {
             // if <S as SerdeCodec<false, 0>>
         }
     }
-    trait SerdeCodec<const C: u64>: Serializer {}
-    // impl<const C: u64, S: Serializer> SerdeCodec<false, C> for S {}
-    impl<W: std::io::Write> SerdeCodec<{ DagJson::CODE }> for &mut serde_json::Serializer<W> {}
+    trait SerdeCodec<const MC: u64>: Serializer {}
+    // impl<const MC: u64, S: Serializer> SerdeCodec<false, MC> for S {}
+    impl<W: std::io::Write> SerdeCodec<{ <DagJson as Codec>::CODE }>
+        for &mut serde_json::Serializer<W>
+    {
+    }
 
-    // trait SerdeCodec<const C: u64>: Serializer {}
+    // trait SerdeCodec<const MC: u64>: Serializer {}
 
     // Requires one extra autoref to call! Lower priority than XXXEncoderKind.
     trait GenericEncoderKind {
@@ -825,10 +798,10 @@ mod specialize {
         }
     }
 
-    trait SerdeCodec<const F: bool, const C: u64>: Serializer {
-        const CODE: Option<u64> = if F { Some(C) } else { None };
+    trait SerdeCodec<const F: bool, const MC: u64>: Serializer {
+        const CODE: Option<u64> = if F { Some(MC) } else { None };
     }
-    impl<const C: u64, S: Serializer> SerdeCodec<false, C> for S {}
+    impl<const MC: u64, S: Serializer> SerdeCodec<false, MC> for S {}
     impl<W: std::io::Write> SerdeCodec<true, { DagJson::CODE }> for &mut serde_json::Serializer<W> {}
 
     // struct Encoder<S>(S);
@@ -959,7 +932,7 @@ mod autoref3 {
         assert!(false)
     }
 
-    trait Tag<const C: u64>: Serializer {}
+    trait Tag<const MC: u64>: Serializer {}
     impl<'a, W: std::io::Write> Tag<{ DagJson::CODE }> for &'a mut serde_json::Serializer<W> {}
 
     trait ViaDagJson {

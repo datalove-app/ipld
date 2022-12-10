@@ -3,6 +3,13 @@ use macros::{derive_more::From, repr_serde};
 use maybestd::fmt;
 
 ///
+pub trait LinkRepresentation: Representation {
+    // const_assert <Self as Representation>::{DM_KIND, SCHEMA_KIND} == Link
+}
+// TODO
+impl LinkRepresentation for Cid {}
+
+///
 #[derive(
     Copy,
     Clone,
@@ -13,15 +20,15 @@ use maybestd::fmt;
     PartialEq, // todo
                // PartialOrd
 )]
-pub enum Link<T: Representation = Any> {
+pub enum Link<T: Representation = Any, I: LinkRepresentation = Cid> {
     ///
-    Cid(Cid),
+    Id(I),
 
     ///
     #[from(ignore)]
     Resolved {
         ///
-        cid: Cid,
+        id: I,
         ///
         t: T,
         ///
@@ -29,13 +36,13 @@ pub enum Link<T: Representation = Any> {
     },
 }
 
-impl<T: Representation> Link<T> {
+impl<T: Representation, I: LinkRepresentation> Link<T, I> {
     ///
     #[inline]
-    pub const fn cid(&self) -> &Cid {
+    pub const fn id(&self) -> &I {
         match self {
-            Self::Cid(cid) => cid,
-            Self::Resolved { cid, .. } => cid,
+            Self::Id(id) => id,
+            Self::Resolved { id, .. } => id,
         }
     }
 
@@ -43,7 +50,7 @@ impl<T: Representation> Link<T> {
     #[inline]
     pub const fn is_dirty(&self) -> bool {
         match self {
-            Self::Cid(_) => false,
+            Self::Id(_) => false,
             Self::Resolved { dirty, .. } => *dirty,
         }
     }
@@ -52,7 +59,7 @@ impl<T: Representation> Link<T> {
     #[inline]
     pub const fn as_ref(&self) -> Option<&T> {
         match self {
-            Self::Cid(_) => None,
+            Self::Id(_) => None,
             Self::Resolved { t, .. } => Some(t),
         }
     }
@@ -73,29 +80,28 @@ impl<T: Representation> Link<T> {
      */
 }
 
+// TODO: restrict to some I
 impl<T: Representation> Representation for Link<T> {
-    type DataModelKind = type_kinds::Link;
-    type SchemaKind = type_kinds::Link;
-    type ReprKind = type_kinds::Link;
-
     const NAME: &'static str = "Link";
     const SCHEMA: &'static str = "type Link &Any";
     const DATA_MODEL_KIND: Kind = Kind::Link;
-    const SCHEMA_KIND: Kind = Kind::Link;
-    const REPR_KIND: Kind = Kind::Link;
 
     fn name(&self) -> &'static str {
         match self {
-            Self::Cid(_) => Self::NAME,
+            Self::Id(_) => Self::NAME,
             Self::Resolved { t, .. } => t.name(),
         }
     }
 
     fn has_links(&self) -> bool {
         match self {
-            Self::Cid(_) => T::HAS_LINKS,
+            Self::Id(_) => T::HAS_LINKS,
             Self::Resolved { t, .. } => t.has_links(),
         }
+    }
+
+    fn to_selected_node(&self) -> SelectedNode {
+        SelectedNode::Link(*self.id())
     }
 
     ///
@@ -109,7 +115,7 @@ impl<T: Representation> Representation for Link<T> {
                 "cannot serialize dirty links; flush changes first",
             ))
         } else {
-            Representation::serialize::<C, _>(self.cid(), serializer)
+            Representation::serialize::<C, _>(self.id(), serializer)
         }
     }
 
@@ -119,21 +125,16 @@ impl<T: Representation> Representation for Link<T> {
     where
         D: Deserializer<'de>,
     {
-        Ok(Self::Cid(Cid::deserialize::<C, _>(deserializer)?))
+        Ok(Self::Id(Cid::deserialize::<C, _>(deserializer)?))
     }
 }
 
-repr_serde! { @select_for Link<T> => T
-    { @dk (type_kinds::Link) @sk (type_kinds::Link) @rk (type_kinds::Link) }
-    { T } { T: Select<Ctx> + 'static }
-}
-repr_serde! { @visitors for S => T
-    { @dk (type_kinds::Link) @sk (type_kinds::Link) @rk (type_kinds::Link) }
-    { S, T }  { S: 'static, T: Select<Ctx> + 'static }
+repr_serde! { @select for Link<T> { T } { T: Select<Ctx> + 'static }}
+repr_serde! { @visitors for Link<T> { T } { T: Select<Ctx> + 'static }
     @serde {
         #[inline]
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "A link of type {} to a {}", S::NAME, T::NAME)
+            write!(f, "A link of type {} to a {}", <Link<T>>::NAME, T::NAME)
         }
         #[inline]
         fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
@@ -172,9 +173,9 @@ where
 
         if self.selector.is_matcher() {
             if self.is_dag_select() {
-                self.select_dag(Link::Cid(cid))?;
+                self.handle_dag(Link::Id(cid))?;
             } else {
-                self.select_node(cid.into())?;
+                self.handle_node(cid.into())?;
             }
 
             return Ok(());
@@ -188,11 +189,14 @@ where
 impl<T: Representation> Into<Cid> for Link<T> {
     fn into(self) -> Cid {
         match self {
-            Self::Cid(cid) => cid,
-            Self::Resolved { cid, .. } => cid,
+            Self::Id(cid) => cid,
+            Self::Resolved { id: cid, .. } => cid,
         }
     }
 }
+
+#[cfg(feature = "dep:rkyv")]
+mod rkyv {}
 
 // // TODO: dirty links?
 // impl<T> Serialize for Link<T>

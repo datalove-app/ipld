@@ -1,12 +1,17 @@
 use super::*;
-use crate::dev::schema::{
-    expand::{impl_repr, ExpandBasicRepresentation},
-    SchemaKind, SchemaMeta,
-};
+use crate::dev::schema::{expand::ExpandBasicRepresentation, SchemaKind, SchemaMeta};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens, TokenStreamExt};
 
 impl ExpandBasicRepresentation for KindedUnionReprDefinition {
+    fn schema(&self, meta: &SchemaMeta) -> TokenStream {
+        // const SCHEMA: &'static str = concat!(
+        //     "type ", #name_str, " union {",
+        //     "}"
+        // );
+        Default::default()
+    }
+
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream {
         let attrs = &meta.attrs;
         let vis = &meta.vis;
@@ -27,108 +32,89 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
 
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
         let name = &meta.name;
-        let dm_ty = self.dm_ty();
-        // let repr_kind = self.repr_kind();
-        let name_branches = self.iter().map(UnionKindedField::name_branch);
-        // let kind_branches: Vec<TokenStream> = self.iter().map(|f| f.kind_branch(&lib)).collect();
-        let serialize_branches = self.iter().map(UnionKindedField::serialize_branch);
-        // let deserialize_branches = self.iter().map(UnionKindedField::deserialize_branch);
+        let dm_kind = self.dm_kind();
 
+        let names = self.iter().map(UnionKindedField::name_branch);
+        let as_fields = self.iter().map(UnionKindedField::as_field_branch);
+        let to_selected_nodes = self.iter().map(UnionKindedField::to_selected_node_branch);
+        let serializes = self.iter().map(UnionKindedField::serialize_branch);
+
+        let expecting = self.expecting(meta);
         let non_link_visitors = self.visitors(meta, false, false);
         let link_visitors = self.visitors(meta, true, false);
-        impl_repr(
+
+        let consts = quote! {
+            const DATA_MODEL_KIND: Kind = #dm_kind;
+            const SCHEMA_KIND: Kind = Kind::Union;
+            const REPR_KIND: Kind = Kind::Any;
+            const REPR_STRATEGY: Strategy = Strategy::Kinded;
+            // TODO
+            // const FIELDS: Fields = Fields::Keyed(&[#(#fields,)*]);
+        };
+        self.impl_repr(
             meta,
+            consts,
             quote! {
-                type DataModelKind = #dm_ty;
-                type SchemaKind = type_kinds::Union;
-                // FIXME:
-                // cannot be the literal union of the types, as that
-                // confuses the type checker
-                type ReprKind = type_kinds::Any;
-
-                const SCHEMA: &'static str = "";
-                const DATA_MODEL_KIND: Kind = <#dm_ty>::KIND;
-                const SCHEMA_KIND: Kind = Kind::Union;
-                const REPR_KIND: Kind = type_kinds::Any::KIND;
-                // const FIELDS: Fields = Fields::Keyed(&[#(#fields,)*]);
-
                 #[inline]
                 fn name(&self) -> &'static str {
                     match self {
-                        #(#name_branches,)*
+                        #(#names,)*
                     }
                 }
-
-                // #[inline]
-                // fn kind(&self) -> Kind {
-                //     match self {
-                //         #(#kind_branches,)*
-                //     }
-                // }
-
-                #[doc(hidden)]
-                fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-                where
-                    S: Serializer,
-                {
+                #[inline]
+                fn as_field(&self) -> Option<Field<'_>> {
                     match self {
-                        #(#serialize_branches,)*
+                        #(#as_fields,)*
                     }
                 }
-
-                #[doc(hidden)]
-                fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
-                where
-                    D: Deserializer<'de>,
-                {
-                    struct KindedVisitor<const C: u64>;
-                    impl<'de, const C: u64> Visitor<'de> for KindedVisitor<C> {
+                #[inline]
+                fn to_selected_node(&self) -> SelectedNode {
+                    match self {
+                        #(#to_selected_nodes,)*
+                    }
+                }
+                #[inline]
+                fn serialize<const MC: u64, Se: Serializer>(
+                    &self, serializer: Se
+                ) -> Result<Se::Ok, Se::Error> {
+                    match self {
+                        #(#serializes,)*
+                    }
+                }
+                #[inline]
+                fn deserialize<'de, const MC: u64, De: Deserializer<'de>>(de: De) -> Result<Self, De::Error> {
+                    struct V<const MC: u64>;
+                    impl<'de, const MC: u64> Visitor<'de> for V<MC> {
                         type Value = #name;
-                        #[inline]
-                        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                            write!(f, "{}", stringify!(#name))
-                        }
+                        #expecting
                         #(#non_link_visitors)*
                     }
-                    impl<'de, const C: u64> LinkVisitor<'de> for KindedVisitor<C> {
+                    impl<'de, const MC: u64> LinkVisitor<'de, MC> for V<MC> {
                         #(#link_visitors)*
                     }
 
-                    Multicodec::deserialize_any::<C, _, _>(deserializer, KindedVisitor::<C>)
+                    Multicodec::deserialize_any::<MC, De, _>(de, V::<MC>)
                 }
             },
         )
     }
 
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
-        let lib = &meta.lib;
         let name = &meta.name;
-        let dm_ty = self.dm_ty();
 
+        let expecting = self.expecting(meta);
         let non_link_visitors = self.visitors(meta, false, true);
         let link_visitors = self.visitors(meta, true, true);
 
-        // TODO: add a method that does the delegation to the variant, rather than codegen each
+        let select = self.impl_select(meta, None);
         quote! {
-            #lib::dev::macros::repr_serde! { @visitors for #name => #name
-                { @dk (#dm_ty) @sk (type_kinds::Union) @rk (type_kinds::Any) }
-                {} {}
-                @serde {
-                    #[inline]
-                    fn expecting(&self, f: &mut maybestd::fmt::Formatter<'_>) -> maybestd::fmt::Result {
-                        write!(f, "A `{}`", <#name as Representation>::NAME)
-                    }
-                    #(#non_link_visitors)*
-                }
-                @link {
-                    #(#link_visitors)*
-                }
-            }
-
-            #lib::dev::macros::repr_serde! { @select_for #name => #name
-                { @dk (#dm_ty) @sk (type_kinds::Union) @rk (type_kinds::Any) }
-                {} {}
-            }
+            #select
+            repr_serde!(@visitors for #name where @serde {
+                #expecting
+                #(#non_link_visitors)*
+            } @link {
+                #(#link_visitors)*
+            });
         }
     }
 
@@ -138,18 +124,21 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
 }
 
 impl KindedUnionReprDefinition {
-    // TODO: should be the union of all the actual type's data models (since they may not be the standard)
-    // fn dm_kind(&self) -> TokenStream {
-    //     self.iter()
-    //         .map(|f| f.dm_kind())
-    //         .fold(quote!(Kind::empty()), |ts, kind| quote!(#ts.union(#kind)))
-    // }
-
-    fn dm_ty(&self) -> TokenStream {
+    fn dm_kind(&self) -> TokenStream {
         self.iter().map(|f| f.ty(true)).fold(
-            quote!(type_kinds::Empty),
-            |ts, ty| quote!(typenum::Or<#ts, <#ty as Representation>::DataModelKind>),
+            quote!(Kind::empty()),
+            |ts, ty| quote!(#ts.union(<#ty as Representation>::DATA_MODEL_KIND)),
         )
+    }
+
+    fn expecting(&self, meta: &SchemaMeta) -> TokenStream {
+        let name = &meta.name;
+        quote! {
+            #[inline]
+            fn expecting(&self, f: &mut maybestd::fmt::Formatter<'_>) -> maybestd::fmt::Result {
+                write!(f, "A `{}`", stringify!(#name))
+            }
+        }
     }
 
     fn visitors<'a>(
@@ -178,31 +167,13 @@ impl UnionKindedField {
         &self.value
     }
 
-    fn dm_kind(&self) -> TokenStream {
-        match self.key {
-            SchemaKind::Null => quote!(Kind::Null),
-            SchemaKind::Bool => quote!(Kind::Bool),
-            SchemaKind::Int => quote!(Kind::Int),
-            SchemaKind::Float => quote!(Kind::Float),
-            SchemaKind::String => quote!(Kind::String),
-            SchemaKind::Bytes => quote!(Kind::Bytes),
-            SchemaKind::List => quote!(Kind::List),
-            SchemaKind::Map => quote!(Kind::Map),
-            SchemaKind::Link => quote!(Kind::Link),
-            _ => unreachable!(),
-        }
-    }
-
     fn ty(&self, with_wrapper: bool) -> TokenStream {
+        let name = self.name();
         let generics = &self.generics;
-        let ty = match self.key {
-            SchemaKind::String => Ident::new("IpldString", Span::call_site()),
-            _ => self.value.clone(),
-        };
 
         self.linked
-            .then(|| quote!(Link<#ty #generics>))
-            .or_else(|| Some(quote!(#ty #generics)))
+            .then(|| quote!(Link<#name #generics>))
+            .or_else(|| Some(quote!(#name #generics)))
             .map(|ty| match &self.wrapper {
                 Some(wrapper) if with_wrapper => quote!(#wrapper <#ty>),
                 _ => ty,
@@ -235,28 +206,19 @@ impl UnionKindedField {
 
     fn name_branch(&self) -> TokenStream {
         let name = self.name();
-        // let ty = &self.value;
         quote!(Self::#name(ty) => Representation::name(ty))
     }
-
-    fn dm_kind_branch(&self) -> TokenStream {
+    fn as_field_branch(&self) -> TokenStream {
         let name = self.name();
-        quote!(Self::#name(ty) => Representation::data_model_kind(ty))
+        quote!(Self::#name(ty) => Representation::as_field(ty))
     }
-
-    fn schema_kind_branch(&self) -> TokenStream {
+    fn to_selected_node_branch(&self) -> TokenStream {
         let name = self.name();
-        quote!(Self::#name(ty) => Representation::schema_kind(ty))
+        quote!(Self::#name(ty) => Representation::to_selected_node(ty))
     }
-
-    fn repr_kind_branch(&self) -> TokenStream {
-        let name = self.name();
-        quote!(Self::#name(ty) => Representation::repr_kind(ty))
-    }
-
     fn serialize_branch(&self) -> TokenStream {
         let name = self.name();
-        quote!(Self::#name(ty) => Representation::serialize::<C, _>(ty, serializer))
+        quote!(Self::#name(ty) => Representation::serialize::<MC, Se>(ty, serializer))
     }
 }
 
@@ -315,7 +277,7 @@ impl UnionKindedField {
         for_seed: bool,
     ) -> impl Iterator<Item = TokenStream> + '_ {
         let name = &meta.name;
-        let field_name = self.name();
+        let variant = self.name();
         let ty = self.ty(false);
         let visit_impl = {
             // TODO: match key's REPR_KIND
@@ -330,14 +292,15 @@ impl UnionKindedField {
 
             if for_seed {
                 quote! {
-                    let seed = self.0
-                        .wrap::<#ty, _>(|dag| #name::#field_name(dag.into()));
-                    <#ty>::__select_de::<C, _>(seed, #deserializer)
+                    let seed = self
+                        .into_inner()
+                        .wrap::<#ty, _>(|dag: #ty| #name::#variant(dag.into()));
+                    <#ty>::__select_de::<MC, _>(seed, #deserializer)
                 }
             } else {
                 quote! {
-                    let inner = <#ty as Representation>::deserialize::<C, _>(#deserializer)?;
-                    Ok(#name::#field_name(inner.into()))
+                    let dag = <#ty as Representation>::deserialize::<MC, _>(#deserializer)?;
+                    Ok(#name::#variant(dag.into()))
                 }
             }
         };

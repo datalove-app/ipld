@@ -3,6 +3,8 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::{parse_macro_input, parse_quote, Ident};
 
+impl SchemaMeta {}
+
 impl SchemaDefinition {
     /// Expand this into a `TokenStream` of the IPLD Schema + Representation
     /// implementation.
@@ -42,52 +44,21 @@ impl ToTokens for SchemaDefinition {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         macro_rules! expand_basic {
             ($meta:ident, $def:ident) => {{
-                let import_ipld = if $meta.internal {
-                    quote!(
-                        use crate as _ipld;
-                    )
-                } else {
-                    let lib = &$meta.lib;
-                    quote! {
-                        // #[allow(clippy::useless_attribute)]
-                        extern crate #lib as _ipld;
-                    }
-                };
-
-                let defs = [
-                    ("IMPL_SERDE", $def.derive_serde($meta)),
-                    ("IMPL_REPR", $def.derive_repr($meta)),
-                    ("IMPL_SELECT", $def.derive_select($meta)),
-                    ("IMPL_CONV", $def.derive_conv($meta)),
-                ];
-                let scoped_impls = defs
-                    .iter()
-                    .map(|(def_kind, def)| {
-                        (
-                            Ident::new(
-                                &format!("_IPLD_{}_FOR_{}", def_kind, &$meta.name),
-                                Span::call_site(),
-                            ),
-                            def,
-                        )
-                    })
-                    .map(|(ident, def)| {
-                        quote! {
-                            #[doc(hidden)]
-                            const #ident: () = {
-                                #import_ipld
-                                #[allow(unused_imports)]
-                                use _ipld::dev::*;
-
-                                #def
-                            };
-                        }
-                    });
-
+                let imports = SchemaMeta::imports($meta.internal);
+                let scope = Ident::new(&format!("_IPLD_FOR_{}", &$meta.name), Span::call_site());
                 let typedef = $def.define_type($meta);
+                let defs = [
+                    $def.derive_repr($meta),
+                    $def.derive_select($meta),
+                    $def.derive_conv($meta),
+                ];
+
                 quote! {
                     #typedef
-                    #(#scoped_impls)*
+                    const #scope: () = {
+                        #imports
+                        #(#defs)*
+                    };
                 }
             }};
         }
@@ -124,35 +95,78 @@ impl ToTokens for SchemaDefinition {
 /// Helper trait for expanding a `SchemaDefinition` into a type and it's trait impls.
 #[allow(unused_variables)]
 pub(crate) trait ExpandBasicRepresentation {
+    ///
+    fn schema(&self, meta: &SchemaMeta) -> TokenStream {
+        Default::default()
+    }
+
     /// Defines the type, and applies any provided attributes.
     fn define_type(&self, meta: &SchemaMeta) -> TokenStream;
 
     /// Derives `Representation` for the defined type.
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream;
 
-    /// Derive Serde impls for the defined type, as well as core-logic types like [`ipld::context::ContextSeed`].
-    ///
-    /// Optional because many types can use `serde-derive`directly.
-    fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
-        TokenStream::default()
-    }
-
     /// Derives `Select` for the type.
     ///
     /// TODO: support conditionals
-    /// - `type ReprSelectorSeed = SelectorSeed<ReprVisitor>`
-    ///     `impl Visitor for `ReprSelectorSeed`
-    /// - `type IgnoredT = IgnoredRepr<T>`
-    /// - defines a `NewSelector` for the type, wrapping `Selector`
-    ///     `impl DeserializeSeed for NewSelector`
-    /// - `impl DeserializeSeed<'de, Value = Self> for Selector`
-    ///     instantiates ReprSelectorSeed(selector, repr_visitor)
-    ///     matches on selector, delegates to one deserializer method
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream;
 
     /// Derives conversions between the type and `Value`, as well as `ipfs::Ipld`
     /// (if `#[cfg(feature = "ipld/ipfs")]` is enabled)
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream;
+
+    fn impl_repr(
+        &self,
+        meta: &SchemaMeta,
+        consts: TokenStream,
+        methods: TokenStream,
+    ) -> TokenStream {
+        let name = &meta.name;
+        let generics = meta.generics_tokens();
+
+        let name_str = meta.name_str();
+        let schema = self.schema(meta);
+        quote! {
+            #[automatically_derived]
+            impl #generics Representation for #name #generics {
+                const NAME: &'static str = #name_str;
+                const SCHEMA: &'static str = concat!(#schema);
+                #consts
+                #methods
+            }
+        }
+    }
+
+    fn impl_select(&self, meta: &SchemaMeta, rest: Option<TokenStream>) -> TokenStream {
+        let methods = rest.unwrap_or(quote::quote! {
+            #[doc(hidden)]
+            #[inline]
+            fn __select_de<'a, 'de, const C: u64, D>(
+                seed: SelectorSeed<'a, Ctx, Self>,
+                deserializer: D,
+            ) -> Result<(), D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                Seed::<C, _, Self>::from(seed).deserialize(deserializer)
+            }
+        });
+
+        let name = &meta.name;
+        // let (impl_gen, ty_gen, where_gen) = match &meta.generics {
+        //     Some(generics) => generics.split_for_impl(),
+        //     None => Generics::default().split_for_impl(),
+        // };
+        quote::quote! {
+            #[automatically_derived]
+            impl<Ctx> Select<Ctx> for #name
+            where
+                Ctx: Context,
+            {
+                #methods
+            }
+        }
+    }
 }
 
 /// Helper trait for crates that want to provide auto-implementable
@@ -218,40 +232,6 @@ impl SchemaKind {
             Span::call_site(),
         )
     }
-
-    pub(crate) fn selected_node_ident(&self) -> Ident {
-        Ident::new(
-            match *self {
-                Self::Null => "Null",
-                Self::Bool => "Bool",
-                Self::Int => "Int64",
-                Self::Int8 => "Int8",
-                Self::Int16 => "Int16",
-                Self::Int32 => "Int32",
-                Self::Int64 => "Int64",
-                Self::Int128 => "Int128",
-                Self::Uint8 => "Uint8",
-                Self::Uint16 => "Uint16",
-                Self::Uint32 => "Uint32",
-                Self::Uint64 => "Uint64",
-                Self::Uint128 => "Uint128",
-                Self::Float => "Float64",
-                Self::Float32 => "Float32",
-                Self::Float64 => "Float64",
-                Self::Bytes => "Bytes",
-                Self::String => "String",
-                Self::List => "List",
-                Self::Map => "Map",
-                Self::Link => "Link",
-                Self::Struct => todo!(),
-                Self::Union => todo!(),
-                Self::Enum => todo!(),
-                Self::Copy => todo!(),
-                _ => unreachable!(),
-            },
-            Span::call_site(),
-        )
-    }
 }
 
 // Helpers
@@ -294,153 +274,95 @@ macro_rules! derive_newtype {
             #vis struct #name #generics (#$inner_ty);
         }
     }};
-    // (@typedef_transparent $def:ident, $meta:ident => $inner_ty:ident) => {{
-    //     $crate::derive_newtype! { @typedef
-    //         $def, $meta => $inner_ty
-    //         #[derive(serde::Deserialize, serde::Serialize)]
-    //         #[serde(transparent)]
-    //     }
-    // }};
-    (@repr { $tokens:tt } $meta:ident => $inner_ty:ident) => {{
-        $crate::dev::impl_repr(
-            $meta,
+    (@repr $def:ident, $meta:ident => $inner_ty:ident { $consts:tt }) => {{
+        $def.impl_repr($meta,
             quote::quote! {
-                type DataModelKind = <#$inner_ty as Representation>::DataModelKind;
-                type SchemaKind = <#$inner_ty as Representation>::SchemaKind;
-                type ReprKind = <#$inner_ty as Representation>::ReprKind;
-
-                const DATA_MODEL_KIND: Kind = <#$inner_ty>::DATA_MODEL_KIND;
-                const SCHEMA_KIND: Kind = <#$inner_ty>::SCHEMA_KIND;
-                const IS_LINK: bool = <#$inner_ty>::IS_LINK;
+                #$consts
                 const HAS_LINKS: bool = <#$inner_ty>::HAS_LINKS;
-
-                #$tokens
-
-                #[inline]
-                #[doc(hidden)]
-                fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-                where
-                    S: Serializer,
-                {
-                    Representation::serialize::<C, _>(&self.0, serializer)
-                }
-
-                #[inline]
-                #[doc(hidden)]
-                fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
-                where
-                    D: Deserializer<'de>,
-                {
-                    Ok(Self(Representation::deserialize::<C, _>(deserializer)?))
-                }
+            }, quote::quote! {
+            #[inline]
+            fn name(&self) -> &'static str {
+                Representation::name(&self.0)
             }
-        )
+            #[inline]
+            fn has_links(&self) -> bool {
+                Representation::has_links(&self.0)
+            }
+            #[inline]
+            fn as_field(&self) -> Option<Field<'_>> {
+                Representation::as_field(&self.0)
+            }
+            #[inline]
+            fn to_selected_node(&self) -> SelectedNode {
+                Representation::to_selected_node(&self.0)
+            }
+            #[inline]
+            fn serialize<const MC: u64, Se>(&self, serializer: Se) -> Result<Se::Ok, Se::Error>
+            where
+                Se: Serializer,
+            {
+                Representation::serialize::<MC, Se>(&self.0, serializer)
+            }
+            #[inline]
+            fn deserialize<'de, const MC: u64, De>(deserializer: De) -> Result<Self, De::Error>
+            where
+                De: Deserializer<'de>,
+            {
+                Ok(Self(Representation::deserialize::<MC, De>(deserializer)?))
+            }
+        })
     }};
-    (@select $meta:ident => $inner_ty:ident) => {{
-        let lib = &$meta.lib;
+    (@select $def:ident, $meta:ident => $inner_ty:ident) => {{
+        let name = &$meta.name;
+        $def.impl_select($meta, Some(quote::quote! {
+            #[doc(hidden)]
+            #[inline]
+            fn __select<'a>(
+                seed: SelectorSeed<'a, Ctx, Self>,
+            ) -> Result<(), Error> {
+                let seed = seed.wrap::<#$inner_ty, _>(#name);
+                <#$inner_ty as Select<Ctx>>::__select(seed)
+            }
+
+            #[doc(hidden)]
+            #[inline]
+            fn __select_de<'a, 'de, const C: u64, D>(
+                seed: SelectorSeed<'a, Ctx, Self>,
+                deserializer: D,
+            ) -> Result<(), D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let seed = seed.wrap::<#$inner_ty, _>(#name);
+                <#$inner_ty as Select<Ctx>>::__select_de::<C, D>(seed, deserializer)
+            }
+        }))
+    }};
+    (@conv @has_constructor $def:ident, $meta:ident) => {{
         let name = &$meta.name;
         quote::quote! {
-            // #lib::dev::macros::repr_serde! { @selector_seed_codec_deseed_newtype {} {} #name as #$inner_ty
-            // }
-            // #lib::dev::macros::repr_serde! {
-            //     @selector_seed_select {} {} #name
-            // }
-
-            #lib::dev::macros::repr_serde! {
-                @select_newtype {} {} #name { #name => #$inner_ty }
-            }
-
-
-        }
-    }};
-    (@conv @has_constructor $def:ident, $meta:ident =>
-        $dm_ty:ident $selected_node:ident) => {{
-        let name = &$meta.name;
-        quote::quote! {
+            #[automatically_derived]
             impl From<#name> for SelectedNode {
                 fn from(t: #name) -> Self {
-                    Self::from(t.0)
+                    t.0.into()
                 }
             }
-
+            #[automatically_derived]
             impl Into<Any> for #name {
                 fn into(self) -> Any {
                     self.0.into()
                 }
             }
-
+            #[automatically_derived]
             impl TryFrom<Any> for #name {
                 type Error = Error;
                 fn try_from(any: Any) -> Result<Self, Self::Error> {
-                    match any {
-                        Any::#$dm_ty(inner) => {
-                            let any_variant = Representation::name(&inner);
-                            let inner = inner.try_into()
-                                .or_else(|_| Err(Error::failed_any_conversion::<Self>(any_variant)))?;
-                            Ok(Self(inner))
-                        },
-                        _ => Err(Error::MismatchedAny)
-                    }
+                    let variant = Representation::name(&any);
+                    let inner = TryFrom::try_from(any)
+                        .map_err(|_| Error::failed_any_conversion::<Self>(variant))?;
+                    Ok(Self(inner))
                 }
             }
         }
-    }};
+    }}
 }
-
-pub(crate) fn impl_repr(meta: &SchemaMeta, consts_and_simple_methods: TokenStream) -> TokenStream {
-    let lib = &meta.lib;
-    let name = &meta.name;
-    let typedef_str = &meta.typedef_str;
-    let generics = meta.generics_tokens();
-    quote! {
-        #[automatically_derived]
-        impl #generics #lib::dev::Representation for #name #generics {
-            const NAME: &'static str = ::std::stringify!(#name);
-            // const SCHEMA: &'static str = #typedef_str;
-
-            #consts_and_simple_methods
-        }
-    }
-}
-
-// pub(crate) fn impl_primtive_de_seed(meta: &SchemaMeta) -> TokenStream {
-//     let name = &meta.name;
-//     let lib = &meta.ipld_schema_lib;
-//     impl_de_seed(
-//         meta,
-//         quote! {
-//             match (&self).as_selector() {
-//                 Selector::Matcher(sel) => <#name as de::Deserialize<'de>>::deserialize(deserializer),
-//                 Selector::ExploreConditional(sel) => {
-//                     use std::borrow::Borrow;
-//                     let ExploreConditional { condition, next } = sel.borrow();
-//                     unimplemented!()
-//                 },
-//                 sel => Err(de::Error::custom(
-//                     #lib::Error::Selector::invalid_selector::<#name>(sel)
-//                 )),
-//             }
-//         },
-//     )
-// }
-
-// fn expand_try_from_visitor_methods(tokens: TokenStream) -> TokenStream {
-//     let tokens = tokens.into::<proc_macro::TokenStream>();
-//     let methods = parse_macro_input!(tokens as super::Methods);
-//
-//     &methods.0.iter().map(|item_fn| {
-//         let sig = &item_fn.sig;
-//         let block = &item_fn.block;
-//
-//         quote! {
-//             use ::std::convert::TryFrom;
-//             // let t = #try_from_ident::deserialize(deserializer)?;
-//             // Ok(#name::try_from(t).map_err(D::Error::custom)?)
-//
-//             #sig {
-//                 let
-//             }
-//         }
-//     });
-//     tokens
-// }

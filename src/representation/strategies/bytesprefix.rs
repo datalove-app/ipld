@@ -1,3 +1,3 @@
 use crate::dev::*;
 
-const STRATEGY: Strategy = Strategy::BytesPrefix;
+const STRATEGY: Strategy = Strategy::Bytesprefix;

@@ -265,7 +265,7 @@ macro_rules! tuple {
                 Cfn: FnOnce($($ty,)*) -> Result<T, Error>,
             {
                 // select the matched node, and set up the dag
-                self.handle_node(SelectedNode::Map)?;
+                // self.handle_node(SelectedNode::Map)?;
                 // FIXME: should maybe just use an option, since idx might get inited
                 $(let [<v_ $ty:lower>] = RefCell::new(MaybeUninit::uninit());)*
                 // create cleanup cb
@@ -282,32 +282,33 @@ macro_rules! tuple {
 
                 //
                 let mut idx = 0usize;
-                $(  if let Err(err) = <_ as MapIterator<String, $ty>>::next_key::<MC>(&mut iter, Some(T::FIELDS[idx]))
-                        .and_then(|_: Option<String>| self.handle_field::<MC, String, $ty>(
-                            &mut iter,
-                            self.is_dag_select().then_some(Box::new(|child, _| {
-                                [<v_ $ty:lower>].borrow_mut().write(child);
-                                Ok(())
-                            })),
-                        ))
-                    {
-                        return drop_inited(idx, err);
-                    }
+                // $(  if let Err(err) =
+                //         <_ as MapIterator<String, $ty>>::next_key::<MC>(&mut iter, Some(T::FIELDS[idx]))
+                //         .and_then(|_: Option<&String>| self.select_field::<MC, String, $ty>(
+                //             &mut iter,
+                //             // self.is_dag_select().then_some(Box::new(|child, _| {
+                //             //     [<v_ $ty:lower>].borrow_mut().write(child);
+                //             //     Ok(())
+                //             // })),
+                //         ))
+                //     {
+                //         return drop_inited(idx, err);
+                //     }
 
-                    idx += 1;
-                    // if idx < LEN {
-                    //     iter.into_next()
-                    // } else {
-                    //     iter
-                    // }
-                )*
+                //     idx += 1;
+                //     // if idx < LEN {
+                //     //     iter.into_next()
+                //     // } else {
+                //     //     iter
+                //     // }
+                // )*
 
                 // match dag
-                if self.is_dag_select() {
+                if self.is_select_dag() {
                     $(let [<v_ $ty:lower>] = unsafe {
                         [<v_ $ty:lower>].into_inner().assume_init()
                     };)*
-                    self.handle_dag(constructor($([<v_ $ty:lower>],)*)?)?;
+                    self.select_dag(constructor($([<v_ $ty:lower>],)*)?)?;
                 }
 
                 Ok(())

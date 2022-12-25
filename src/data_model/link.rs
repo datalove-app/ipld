@@ -168,18 +168,19 @@ where
     Ctx: Context,
     T: Select<Ctx> + 'static,
 {
-    fn select_link<'de, const C: u64>(mut self, cid: Cid) -> Result<(), Error> {
-        // TODO: handle "blocks encoded with rawa codec are valid Bytes kinds"
+    fn select_link<'de, const C: u64>(mut self, link: Link<T>) -> Result<AstResult<T>, Error> {
+        // TODO: handle "blocks encoded with raw codec are valid Bytes kinds"
 
-        if self.selector.is_matcher() {
-            if self.is_dag_select() {
-                self.handle_dag(Link::Id(cid))?;
-            } else {
-                self.handle_node(cid.into())?;
-            }
+        // if self.selector.is_matcher() {
+        //     if self.is_select_dag() {
+        //         self.handle_dag(Link::Id(cid))?;
+        //     } else {
+        //         self.handle_node(cid.into())?;
+        //     }
 
-            return Ok(());
-        }
+        //     return Ok(());
+        // }
+        // self.match_dag(link)
 
         /// TODO: continue selection if the current selector is not a matcher
         unimplemented!()

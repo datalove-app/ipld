@@ -25,8 +25,13 @@ mod null {
     #[ipld(internal)]
     pub struct Null;
 
-    repr_serde! { @select for Null }
-    repr_serde! { @visitors for Null {
+    impl<'a, 'de, const MC: u64, Ctx> Visitor<'de> for AstWalk<'a, MC, Ctx, Null>
+    where
+        'a: 'de,
+        Ctx: Context,
+    {
+        type Value = AstResult<Null>;
+
         #[inline]
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "A nothing type `{}`", <Null>::NAME)
@@ -47,21 +52,16 @@ mod null {
         {
             self.visit_none()
         }
-    }}
-
-    // impl<Ctx: Context> Select<Ctx> for Null {
-    //     #[doc(hidden)]
-    //     #[inline]
-    //     fn __select_de<'a, 'de, const C: u64, D>(
-    //         seed: SelectorSeed<'a, Ctx, Self>,
-    //         deserializer: D,
-    //     ) -> Result<(), D::Error>
-    //     where
-    //         D: Deserializer<'de>,
-    //     {
-    //         AstWalk::<'a, C, _, Self>(seed).deserialize(deserializer)
-    //     }
-    // }
+    }
+    impl<'a, 'de, const MC: u64, Ctx> LinkVisitor<'de, MC> for AstWalk<'a, MC, Ctx, Null>
+    where
+        'a: 'de,
+        Ctx: Context,
+    {
+    }
+    impl<Ctx: Context> Select<Ctx> for Null {
+        type Walker<'a, const MC: u64> = AstWalk<'a, MC, Ctx, Self> where Ctx: 'a;
+    }
 
     impl From<()> for Null {
         #[inline]
@@ -99,11 +99,12 @@ mod bool {
 
         #[doc(hidden)]
         #[inline]
-        fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+        fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {
-            Deserialize::deserialize(deserializer)
+            let res = AstWalk::<'de, MC, (), Self>::default().deserialize(deserializer)?;
+            Ok(res.unwrap_val())
         }
     }
 
@@ -165,11 +166,13 @@ mod num {
 
                 #[doc(hidden)]
                 #[inline]
-                fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+                fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
                 where
                     D: Deserializer<'de>,
                 {
-                    Deserialize::deserialize(deserializer)
+                    // Deserialize::deserialize(deserializer)
+                    let res = AstWalk::<'de, MC, (), Self>::default().deserialize(deserializer)?;
+                    Ok(res.unwrap_val())
                 }
             }
 
@@ -187,8 +190,13 @@ mod num {
                 where
                     Er: de::Error,
                 {
+                    // if self.mode() == SelectionMode::Decode {
+                    //     return Ok(AstResult::Value(v));
+                    // }
+
                     self.into_inner().select_scalar::<MC>(v).map_err(Er::custom)
                 }
+
                 $(  #[inline]
                     fn $other_visit_fn<Er>(self, v: $other_ty) -> Result<Self::Value, Er>
                     where
@@ -323,12 +331,14 @@ mod string {
 
         #[doc(hidden)]
         #[inline]
-        fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+        fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {
-            let s = <Cow<'_, str>>::deserialize(deserializer)?;
-            Ok(s.nfc().collect())
+            // let s = <Cow<'_, str>>::deserialize(deserializer)?;
+            // Ok(s.nfc().collect())
+            let res = AstWalk::<'de, MC, (), Self>::default().deserialize(deserializer)?;
+            Ok(res.unwrap_val())
         }
     }
 
@@ -344,6 +354,11 @@ mod string {
         where
             Er: de::Error,
         {
+
+            // if self.mode() == SelectionMode::Decode {
+            //     return Ok(AstResult::Value(s.nfc().collect()));
+            // }
+
             self.into_inner()
                 .select_scalar::<MC>(s.nfc().collect())
                 .map_err(Er::custom)
@@ -354,6 +369,10 @@ mod string {
         where
             Er: de::Error,
         {
+            if self.mode() == SelectionMode::Decode {
+                return Ok(AstResult::Value(s));
+            }
+
             self.visit_str(s.as_ref())
         }
     }}
@@ -488,43 +507,49 @@ mod bytes {
         }
 
         #[doc(hidden)]
-        fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        fn serialize<const MC: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
-            Multicodec::serialize_bytes::<C, S>(self.as_ref(), serializer)
+            Multicodec::serialize_bytes::<MC, S>(self.as_ref(), serializer)
         }
 
         #[doc(hidden)]
-        fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+        fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {
-            struct BytesVisitor;
-            impl<'de> Visitor<'de> for BytesVisitor {
-                type Value = Bytes;
-                #[inline]
-                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    write!(f, "A slice of bytes of type {}", Self::Value::NAME)
-                }
-                #[inline]
-                fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
-                where
-                    E: de::Error,
-                {
-                    Ok(Self::Value::copy_from_slice(bytes))
-                }
-                #[inline]
-                fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
-                where
-                    E: de::Error,
-                {
-                    Ok(Self::Value::from(bytes))
-                }
-            }
-            impl<'de, const MC: u64> LinkVisitor<'de, MC> for BytesVisitor {}
+            // struct BytesVisitor;
+            // impl<'de> Visitor<'de> for BytesVisitor {
+            //     type Value = Bytes;
+            //     #[inline]
+            //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            //         write!(f, "A slice of bytes of type {}", Self::Value::NAME)
+            //     }
+            //     #[inline]
+            //     fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
+            //     where
+            //         E: de::Error,
+            //     {
+            //         Ok(Self::Value::copy_from_slice(bytes))
+            //     }
+            //     #[inline]
+            //     fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
+            //     where
+            //         E: de::Error,
+            //     {
+            //         Ok(Self::Value::from(bytes))
+            //     }
+            // }
+            // impl<'de, const MC: u64> LinkVisitor<'de, MC> for BytesVisitor {}
 
-            Multicodec::deserialize_bytes::<C, D, _>(deserializer, BytesVisitor)
+            // Multicodec::deserialize_bytes::<MC, D, _>(deserializer, BytesVisitor)
+
+            let res = Multicodec::deserialize_bytes(
+                deserializer,
+                AstWalk::<'de, MC, (), Self>::default(),
+            )?;
+            Ok(res.unwrap_val())
         }
     }
 
@@ -539,6 +564,10 @@ mod bytes {
         where
             E: de::Error,
         {
+            if self.mode() == SelectionMode::Decode {
+                return Ok(AstResult::Value(Bytes::copy_from_slice(bytes)));
+            }
+
             // let bytes = T::try_from(bytes).map_err(E::custom)?;
             // self.0.select_bytes::<C>(bytes).map_err(E::custom)
             unimplemented!()
@@ -558,11 +587,11 @@ mod bytes {
     //     const NAME: &'static str = "Bytes";
     //     const SCHEMA: &'static str = "type Bytes bytes";
     //     const DATA_MODEL_KIND: Kind = Kind::Bytes;
-
+    //
     //     fn to_selected_node(&self) -> SelectedNode {
     //         SelectedNode::Bytes(self.clone())
     //     }
-
+    //
     //     #[doc(hidden)]
     //     fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     //     where
@@ -570,7 +599,7 @@ mod bytes {
     //     {
     //         Multicodec::serialize_bytes::<C, S>(self.as_ref(), serializer)
     //     }
-
+    //
     //     #[doc(hidden)]
     //     fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
     //     where
@@ -599,11 +628,11 @@ mod bytes {
     //             }
     //         }
     //         impl<'de> LinkVisitor<'de> for BytesVisitor {}
-
+    //
     //         Multicodec::deserialize_bytes::<C, D, _>(deserializer, BytesVisitor)
     //     }
     // }
-
+    //
     // repr_serde! { @select for Bytes }
     // repr_serde! { @visitors for Bytes {
     //     #[inline]
@@ -635,35 +664,56 @@ mod bytes {
     // where
     //     Ctx: Context,
     //     T: Select<Ctx>,
-    impl<'a, Ctx> SelectorSeed<'a, Ctx, Bytes>
+    impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
     where
         Ctx: Context,
+        T: Representation,
     {
         ///
         #[inline]
         // TODO: should accept a slice of bytes, then do conversion
-        pub fn select_bytes<const C: u64>(mut self, bytes: Bytes) -> Result<(), Error> {
+        pub fn select_bytes<'de, const MC: u64>(
+            mut self,
+            bytes: &[u8],
+        ) -> Result<AstResult<Bytes>, Error>
+        where
+            T: TryFrom<&'de [u8]>,
+        {
+            unimplemented!()
+        }
+
+        ///
+        #[inline]
+        // TODO: should accept a slice of bytes, then do conversion
+        pub fn select_byte_buf<'de, const MC: u64>(
+            mut self,
+            bytes: Vec<u8>,
+        ) -> Result<AstResult<Bytes>, Error>
+        where
+            T: TryFrom<Vec<u8>>,
+        {
             // if let Some(s) = self.selector.as_explore_union() {
             //     s.assert_matches_first::<Bytes>()?;
             //     bytes.__select_in(self)
             // } else {
-            //     self.match_scalar::<C>(raw)
+            //     self.match_scalar::<MC>(raw)
             // }
 
             if let Some(matcher) = self.selector.as_matcher() {
-                let bytes = matcher
-                    .subset
-                    .as_ref()
-                    .map(|slice| bytes.slice(slice.to_range()))
-                    .unwrap_or(bytes);
+                // let bytes = matcher
+                //     .subset
+                //     .as_ref()
+                //     .map(|slice| bytes.slice(slice.to_range()))
+                //     .unwrap_or(bytes);
 
-                if self.is_node_select() {
-                    self.handle_node(bytes.into())?;
-                } else if self.is_dag_select() {
-                    self.handle_dag(bytes)?;
-                };
+                // if self.is_select_node() {
+                //     self.handle_node(bytes.into())?;
+                // } else if self.is_select_dag() {
+                //     self.handle_dag(bytes)?;
+                // };
+                // return Ok(());
 
-                return Ok(());
+                // return self.cover_dag(bytes);
             }
 
             match self.selector {
@@ -683,27 +733,42 @@ where
     // TODO And<T::ReprKind, TypedScalar>: TypedScalar
 {
     ///
-    pub fn select_scalar<const C: u64>(self, raw: T) -> Result<(), Error> {
-        if let Some(s) = self.selector.as_explore_union() {
-            s.assert_matches_first::<T>()?;
-            raw.__select_in(self)
-        } else {
-            self.match_scalar::<C>(raw)
+    #[inline]
+    pub fn select_scalar<const MC: u64>(mut self, raw: T) -> Result<AstResult<T>, Error> {
+        match self.selector {
+            Selector::Matcher(_) => self.select_dag(raw),
+            Selector::ExploreUnion(s) => {
+                // todo: split into params + ctx, T::select for each
+                // raw.__select(self)
+
+                Ok(AstResult::Ok)
+            }
+            s => Err(Error::unsupported_selector::<T>(s)),
         }
     }
 
     #[inline]
-    fn match_scalar<'de, const C: u64>(mut self, dag: T) -> Result<(), Error> {
+    pub fn patch_scalar<const MC: u64>(mut self, raw: &mut T) -> Result<AstResult<T>, Error> {
         self.selector.try_as_matcher()?;
 
-        if self.is_node_select() {
-            self.handle_node(dag.to_selected_node())?;
-        } else if self.is_dag_select() {
-            self.handle_dag(dag)?;
-        };
+        // todo
+        // self.
 
-        Ok(())
+        Ok(AstResult::Ok)
     }
+
+    // #[inline]
+    // pub fn match_scalar<'de, const MC: u64>(mut self, dag: T) -> Result<(), Error> {
+    //     self.selector.try_as_matcher()?;
+
+    //     if self.is_node_select() {
+    //         self.handle_node(dag.to_selected_node())?;
+    //     } else if self.is_dag_select() {
+    //         self.handle_dag(dag)?;
+    //     };
+
+    //     Ok(())
+    // }
 }
 
 #[cfg(test)]

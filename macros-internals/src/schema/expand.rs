@@ -138,19 +138,24 @@ pub(crate) trait ExpandBasicRepresentation {
     }
 
     fn impl_select(&self, meta: &SchemaMeta, rest: Option<TokenStream>) -> TokenStream {
-        let methods = rest.unwrap_or(quote::quote! {
-            #[doc(hidden)]
-            #[inline]
-            fn __select_de<'a, 'de, const C: u64, D>(
-                seed: SelectorSeed<'a, Ctx, Self>,
-                deserializer: D,
-            ) -> Result<(), D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                Seed::<C, _, Self>::from(seed).deserialize(deserializer)
-            }
-        });
+        let walker = quote::quote! {
+            // <Self as Representation>::Walker::<'de, MC>
+            AstWalk::<'__a, MC, Ctx, Self>
+        };
+        // let methods = rest.unwrap_or(quote::quote! {
+        //     #[doc(hidden)]
+        //     #[inline]
+        //     fn __select_de<'a, 'de, const MC: u64, D>(
+        //         seed: SelectorSeed<'a, Ctx, Self>,
+        //         deserializer: D,
+        //     ) -> Result<(), D::Error>
+        //     where
+        //         D: Deserializer<'de>,
+        //     {
+        //         #walker::from(seed).deserialize(deserializer)?;
+        //         Ok(())
+        //     }
+        // });
 
         let name = &meta.name;
         // let (impl_gen, ty_gen, where_gen) = match &meta.generics {
@@ -163,7 +168,8 @@ pub(crate) trait ExpandBasicRepresentation {
             where
                 Ctx: Context,
             {
-                #methods
+                type Walker<'__a, const MC: u64> = #walker where Ctx: '__a;
+                // #methods
             }
         }
     }
@@ -315,27 +321,27 @@ macro_rules! derive_newtype {
     (@select $def:ident, $meta:ident => $inner_ty:ident) => {{
         let name = &$meta.name;
         $def.impl_select($meta, Some(quote::quote! {
-            #[doc(hidden)]
-            #[inline]
-            fn __select<'a>(
-                seed: SelectorSeed<'a, Ctx, Self>,
-            ) -> Result<(), Error> {
-                let seed = seed.wrap::<#$inner_ty, _>(#name);
-                <#$inner_ty as Select<Ctx>>::__select(seed)
-            }
+            // #[doc(hidden)]
+            // #[inline]
+            // fn __select<'a>(
+            //     seed: SelectorSeed<'a, Ctx, Self>,
+            // ) -> Result<(), Error> {
+            //     let seed = seed.wrap::<#$inner_ty, _>(#name);
+            //     <#$inner_ty as Select<Ctx>>::__select(seed)
+            // }
 
-            #[doc(hidden)]
-            #[inline]
-            fn __select_de<'a, 'de, const C: u64, D>(
-                seed: SelectorSeed<'a, Ctx, Self>,
-                deserializer: D,
-            ) -> Result<(), D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                let seed = seed.wrap::<#$inner_ty, _>(#name);
-                <#$inner_ty as Select<Ctx>>::__select_de::<C, D>(seed, deserializer)
-            }
+            // #[doc(hidden)]
+            // #[inline]
+            // fn __select_de<'a, 'de, const MC: u64, D>(
+            //     seed: SelectorSeed<'a, Ctx, Self>,
+            //     deserializer: D,
+            // ) -> Result<(), D::Error>
+            // where
+            //     D: Deserializer<'de>,
+            // {
+            //     let seed = seed.wrap::<#$inner_ty, _>(#name);
+            //     <#$inner_ty as Select<Ctx>>::__select_de::<MC, D>(seed, deserializer)
+            // }
         }))
     }};
     (@conv @has_constructor $def:ident, $meta:ident) => {{

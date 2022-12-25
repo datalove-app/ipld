@@ -60,7 +60,7 @@ impl SchemaMeta {
             #r#extern
             #[allow(clippy::useless_attribute)]
             use __ipld::dev::*;
-            __ipld::repr_serde!(@def_seed);
+            __ipld::repr_serde!(@def_walk);
         }
     }
 

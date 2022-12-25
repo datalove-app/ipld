@@ -8,8 +8,10 @@
 
 mod representation;
 mod select;
+mod typedefs;
 
 pub use representation::{DeriveRepresentation, ReprKind, SchemaKind};
+pub use select::DeriveSelect;
 
 use crate::dev::*;
 use darling::{
@@ -55,11 +57,23 @@ macro_rules! proc_macro_compat {
                 });
             }
         }
+
+        impl $t {
+            fn body(&self) -> TokenStream {
+                match self.schema_kind().unwrap() {
+                    SchemaKind::Null => self.expand_null(),
+                    SchemaKind::Struct(ref repr) => self.expand_struct(repr),
+                    SchemaKind::Enum => self.expand_enum(),
+                    SchemaKind::Union(ref repr) => self.expand_union(repr),
+                    SchemaKind::Copy => self.expand_newtype(),
+                }
+            }
+        }
     };
 }
 
 proc_macro_compat!(DeriveRepresentation);
-// proc_macro_compat!({ 'S' as u64 });
+proc_macro_compat!(DeriveSelect);
 
 // #[derive(Clone, Debug, FromDeriveInput)]
 // #[darling(
@@ -78,7 +92,7 @@ proc_macro_compat!(DeriveRepresentation);
 #[derive(Clone, Debug, FromDeriveInput)]
 #[darling(attributes(ipld), forward_attrs(cfg, repr), supports(any))]
 pub struct Ipld<const T: u64> {
-    vis: Visibility,
+    // vis: Visibility,
     ident: Ident,
     // generics: ast::Generics<GenericParam>,
     generics: Generics,
@@ -93,9 +107,32 @@ pub struct Ipld<const T: u64> {
     repr_kind: SpannedValue<ReprKind>,
     #[darling(default, rename = "where_ctx")]
     where_ctx: Option<Punctuated<TypeParamBound, Add>>,
-    #[darling(default, rename = "merge")]
-    merge: Option<Ident>,
-    // include: Option<Vec<>>,
+    // #[darling(default, rename = "merge")]
+    // merge: Option<Ident>,
+}
+
+// enum
+impl<const T: u64> Ipld<T> {
+    fn discriminant(&self) -> Option<&Expr> {
+        self.data
+            .as_ref()
+            .take_enum()
+            .and_then(|v| v[0].discriminant.as_ref())
+    }
+}
+
+// struct
+impl<const T: u64> Ipld<T> {
+    fn fields(&self) -> impl Iterator<Item = &IpldField> {
+        self.data.as_ref().take_struct().unwrap().into_iter()
+    }
+}
+
+// union
+impl<const T: u64> Ipld<T> {
+    fn variants(&self) -> impl Iterator<Item = &IpldVariant> {
+        self.data.as_ref().take_enum().unwrap().into_iter()
+    }
 }
 
 impl<const T: u64> Ipld<T> {
@@ -107,17 +144,16 @@ impl<const T: u64> Ipld<T> {
         self.into_token_stream()
     }
 
-    fn discriminant(&self) -> Option<&Expr> {
-        self.data
-            .as_ref()
-            .take_enum()
-            .and_then(|v| v[0].discriminant.as_ref())
+    fn imports(&self) -> TokenStream {
+        SchemaMeta::imports(self.internal)
     }
 
-    fn fields(&self) -> impl Iterator<Item = &IpldField> {
-        self.data.as_ref().take_struct().unwrap().into_iter()
+    fn scope(&self) -> Ident {
+        Ident::new(&format!("_{}_FOR_{}", T, &self.ident), Span::call_site())
     }
+}
 
+impl<const T: u64> Ipld<T> {
     fn schema_kind(&self) -> Result<SchemaKind, Error> {
         use ReprKind::*;
         use SchemaKind::*;
@@ -157,12 +193,14 @@ impl<const T: u64> Ipld<T> {
 }
 
 impl<const T: u64> Ipld<T> {
-    fn imports(&self) -> TokenStream {
-        SchemaMeta::imports(self.internal)
-    }
-
-    fn scope(&self) -> Ident {
-        Ident::new(&format!("_{}_FOR_{}", T, &self.ident), Span::call_site())
+    pub(crate) fn expecting(&self) -> TokenStream {
+        let name = &self.ident;
+        quote! {
+            #[inline]
+            fn expecting(&self, f: &mut maybestd::fmt::Formatter<'_>) -> maybestd::fmt::Result {
+                write!(f, "A `{}`", stringify!(#name))
+            }
+        }
     }
 }
 
@@ -203,6 +241,8 @@ pub struct IpldVariant {
     // attrs
     #[darling(default)]
     wrapper: Option<Type>,
+    // #[darling(default)]
+    rename: Option<LitStr>,
 }
 
 #[derive(Clone, Debug, FromMeta)]

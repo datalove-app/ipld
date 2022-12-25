@@ -97,7 +97,7 @@ use maybestd::{
 //     _t: PhantomData<(T, U)>,
 // }
 //
-// pub struct PatchParams<'a, C, T, U = T> {
+// pub struct PatchParams<'a, C, U = T> {
 //     /// current dag we're selecting against
 //     /// if none, then load and store while patching
 //     current: &'a mut T,
@@ -108,15 +108,16 @@ use maybestd::{
 // }
 //
 // impl<T, U> Params for SelectParams<T, U> {}
-// impl<'a, C, T, U> Params for PatchParams<'a, C, T, U> {}
+// impl<'a, C, U> Params for PatchParams<'a, C, U> {}
 
-pub(crate) use callbacks::*;
+pub use callbacks::*;
 mod callbacks {
     use super::*;
 
-    pub use match_dag::*;
+    // pub use match_dag::*;
     pub use patch_dag::*;
     pub use select_dag::*;
+    pub use select_dag_ref::*;
     pub use select_node::*;
 
     mod select_node {
@@ -183,6 +184,41 @@ mod callbacks {
             }
         }
     }
+    mod select_dag_ref {
+        use super::*;
+
+        ///
+        pub trait SelectDagRefOp<C>:
+            FnMut(DagRefSelection<'_>, &mut C) -> Result<(), Error>
+        {
+            ///
+            fn clone_box<'a>(&self) -> Box<dyn SelectDagRefOp<C> + 'a>
+            where
+                Self: 'a;
+        }
+
+        impl<C, F> SelectDagRefOp<C> for F
+        where
+            F: FnMut(DagRefSelection<'_>, &mut C) -> Result<(), Error> + Clone,
+        {
+            fn clone_box<'a>(&self) -> Box<dyn SelectDagRefOp<C> + 'a>
+            where
+                Self: 'a,
+            {
+                Box::new(self.clone())
+            }
+        }
+
+        impl<'a, C> Clone for Box<dyn SelectDagRefOp<C> + 'a>
+        where
+            C: 'a,
+        {
+            fn clone(&self) -> Self {
+                (**self).clone_box()
+            }
+        }
+    }
+    #[cfg(feature = "skipped")]
     mod match_dag {
         use super::*;
 
@@ -220,18 +256,20 @@ mod callbacks {
         use super::*;
 
         ///
-        pub trait PatchDagOp<T, C>: FnMut(&mut T, &mut C) -> Result<bool, Error> {
+        pub trait PatchDagOp<C>:
+            FnMut(DagRefMutSelection<'_>, &mut C) -> Result<bool, Error>
+        {
             ///
-            fn clone_box<'a>(&self) -> Box<dyn PatchDagOp<T, C> + 'a>
+            fn clone_box<'a>(&self) -> Box<dyn PatchDagOp<C> + 'a>
             where
                 Self: 'a;
         }
 
-        impl<T, C, F> PatchDagOp<T, C> for F
+        impl<C, F> PatchDagOp<C> for F
         where
-            F: FnMut(&mut T, &mut C) -> Result<bool, Error> + Clone,
+            F: FnMut(DagRefMutSelection<'_>, &mut C) -> Result<bool, Error> + Clone,
         {
-            fn clone_box<'a>(&self) -> Box<dyn PatchDagOp<T, C> + 'a>
+            fn clone_box<'a>(&self) -> Box<dyn PatchDagOp<C> + 'a>
             where
                 Self: 'a,
             {
@@ -239,9 +277,8 @@ mod callbacks {
             }
         }
 
-        impl<'a, T, C> Clone for Box<dyn PatchDagOp<T, C> + 'a>
+        impl<'a, C> Clone for Box<dyn PatchDagOp<C> + 'a>
         where
-            T: 'a,
             C: 'a,
         {
             fn clone(&self) -> Self {
@@ -253,52 +290,64 @@ mod callbacks {
     ///
     /// TODO: merge this back with state
     #[doc(hidden)]
-    pub enum Callback<'a, C, T> {
+    pub enum Callback<'a, C> {
+        /// Selects nodes covered/visited by the selection.
         SelectNode {
             // state
+            only_matched: bool,
             cb: Box<dyn SelectNodeOp<C> + 'a>,
-            only_results: bool,
         },
+        /// Selects (dyn) dags matched by the selection.
         SelectDag {
+            // ///
+            // current: &'a T,
             // state
             // TODO: does this need to be cloneable? it is either called on U, or wrapped
             cb: Box<dyn SelectDagOp<C> + 'a>,
         },
-        MatchDag {
-            // Option<state>; if None, deserializes up to links
-            cb: Box<dyn MatchDagOp<T, C> + 'a>,
+        // /// Select (exact) dags
+        // MatchDag {
+        //     // Option<state>; if None, deserializes up to links
+        //     cb: Box<dyn MatchDagOp<T, C> + 'a>,
+        // },
+        SelectRef {
+            // current: &'a T,
+            cb: Box<dyn SelectDagRefOp<C> + 'a>,
         },
         Patch {
             /// current dag we're selecting against
             /// if none, then load and store while patching
-            //    current: &'a mut T,
+            // current: &'a mut T,
             //    flush: bool,
-            // op to perform on matching dags, allowing update-inplace
-            cb: Box<dyn PatchDagOp<T, C> + 'a>,
+            /// op to perform on matching dags, allowing update-inplace
+            cb: Box<dyn PatchDagOp<C> + 'a>,
             // op: PatchFn<C, U>,
         },
     }
 
-    impl<'a, C, T> fmt::Debug for Callback<'a, C, T>
+    impl<'a, C> fmt::Debug for Callback<'a, C>
     where
         C: Context,
-        T: Representation,
+        // T: Representation,
     {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
-                Self::SelectNode { only_results, .. } => f
+                Self::SelectNode {
+                    only_matched: only_results,
+                    ..
+                } => f
                     .debug_struct("SelectionParams::SelectNode")
-                    .field("source", &T::NAME)
-                    .field("only_results", only_results)
+                    // .field("source", &T::NAME)
+                    .field("only_matched", only_results)
                     .finish(),
                 Self::SelectDag { .. } => f
                     .debug_struct("SelectionParams::SelectDag")
-                    .field("source", &T::NAME)
+                    // .field("source", &T::NAME)
                     .finish(),
-                Self::MatchDag { .. } => f
-                    .debug_struct("SelectionParams::MatchDag")
-                    .field("source", &T::NAME)
-                    .finish(),
+                // Self::MatchDag { .. } => f
+                //     .debug_struct("SelectionParams::MatchDag")
+                //     .field("source", &T::NAME)
+                //     .finish(),
                 _ => unimplemented!(),
                 // Self::Patch { current, flush, .. } => f
                 //     .debug_struct("SelectionParams::Patch")
@@ -309,45 +358,45 @@ mod callbacks {
         }
     }
 
-    impl<'a, C, T> Clone for Callback<'a, C, T>
+    impl<'a, C> Clone for Callback<'a, C>
     where
         C: Context + 'a,
-        T: Representation + 'a,
+        // T: Representation + 'a,
     {
         fn clone(&self) -> Self {
             match self {
-                Self::SelectNode { cb, only_results } => Self::SelectNode {
+                Self::SelectNode {
+                    only_matched: only_results,
+                    cb,
+                } => Self::SelectNode {
+                    only_matched: *only_results,
                     cb: cb.clone(),
-                    only_results: *only_results,
                 },
                 Self::SelectDag { cb } => Self::SelectDag { cb: cb.clone() },
-                Self::MatchDag { cb } => Self::MatchDag { cb: cb.clone() },
-                _ => unimplemented!(),
+                Self::SelectRef { cb } => Self::SelectRef { cb: cb.clone() },
+                Self::Patch { cb } => Self::Patch { cb: cb.clone() },
             }
         }
     }
 
-    impl<'a, C, T> Default for Callback<'a, C, T>
-    where
-        C: Context,
-        T: Representation,
-    {
-        /// Defaults to a no-op function for selecting nodes.
-        fn default() -> Self {
-            Self::SelectNode {
-                cb: Box::new(|_, _| Ok(())),
-                only_results: true,
-            }
-        }
-    }
+    // impl<'a, C> Default for Callback<'a, C>
+    // where
+    //     C: Context,
+    //     // T: Representation,
+    // {
+    //     /// Defaults to a no-op function for selecting nodes.
+    //     fn default() -> Self {
+    //         Self::new_select_node::<true, _>(|_, _| Ok(()))
+    //     }
+    // }
 
-    // impl<'a, C, T, Cb> Into<SelectionCallback<'a, C, T>> for Cb
+    // impl<'a, C, Cb> Into<SelectionCallback<'a, C>> for Cb
     // where
     //     C: Context,
     //     T: Representation,
     //     Cb: SelectNodeOp<C> + 'a,
     // {
-    //     fn into(self) -> SelectionCallback<'a, C, T> {
+    //     fn into(self) -> SelectionCallback<'a, C> {
     //         Self::SelectNode {
     //             cb: Box::new(self),
     //             only_results: false,
@@ -355,60 +404,124 @@ mod callbacks {
     //     }
     // }
 
-    impl<'a, C, T> Callback<'a, C, T>
+    impl<'a, C> Callback<'a, C>
     where
         C: Context,
-        T: Representation,
+        // T: Representation,
     {
-        // Return a callback that will be called on `U`, providing the original
-        // callback with `T`.
-        pub(crate) fn wrap<U, F>(self, conv: F) -> Callback<'a, C, U>
+        pub(crate) fn new_select_node<const M: bool, F>(func: F) -> Self
         where
-            C: 'a,
-            U: Representation + 'static,
-            T: 'static,
-            // T: From<U> + 'static,
-            F: Fn(U) -> T + Clone + 'a,
+            F: SelectNodeOp<C> + 'a,
         {
-            match self {
-                Self::SelectNode { cb, only_results } => Callback::SelectNode { cb, only_results },
-                Self::SelectDag { mut cb } => {
-                    let cb = Box::new(move |selection: DagSelection, ctx: &mut C| {
-                        let inner_dag = selection.dag.downcast::<U>()?;
-                        let dag = conv(inner_dag).into();
-                        cb(DagSelection { dag, ..selection }, ctx)
-                    });
-                    Callback::SelectDag { cb }
-                }
-                Self::MatchDag { mut cb } => {
-                    let cb = Box::new(move |dag: U, ctx: &mut C| cb(conv(dag), ctx));
-                    Callback::MatchDag { cb }
-                }
-                _ => unimplemented!(),
+            Self::SelectNode {
+                cb: Box::new(func),
+                only_matched: M,
             }
         }
 
-        // TODO: implement a clone method, delegate to that in some branches
-        pub(crate) fn wrap_match<'b, U>(
-            &'b mut self,
-            match_cb: Option<Box<dyn MatchDagOp<U, C> + 'b>>,
-        ) -> Callback<'b, C, U>
+        pub(crate) fn new_select<F>(func: F) -> Self
         where
-            'a: 'b,
+            F: SelectDagOp<C> + 'a,
         {
-            match (match_cb, self) {
-                // matching the field
-                (Some(match_cb), _) => Callback::MatchDag { cb: match_cb },
-                //
-                (None, Callback::SelectNode { cb, only_results }) => Callback::SelectNode {
-                    cb: cb.clone(),
-                    only_results: *only_results,
-                },
-                //
-                (None, Callback::SelectDag { cb }) => Callback::SelectDag { cb: cb.clone() },
-                _ => unreachable!(),
+            Self::SelectDag { cb: Box::new(func) }
+        }
+
+        pub(crate) fn new_select_ref<F>(func: F) -> Self
+        where
+            F: SelectDagRefOp<C> + 'a,
+        {
+            Self::SelectRef {
+                // current,
+                cb: Box::new(func),
             }
         }
+
+        pub(crate) fn new_patch<F>(func: F) -> Self
+        where
+            F: PatchDagOp<C> + 'a,
+        {
+            Self::Patch {
+                // current,
+                cb: Box::new(func),
+            }
+        }
+    }
+
+    impl<'a, C> Callback<'a, C>
+    where
+        C: Context,
+        // T: Representation,
+    {
+        // /// Return a callback that will be called on `U` returning `T` to be
+        // /// provided to the original callback.
+        // pub(crate) fn wrap<U, F>(self, conv: F) -> Callback<'a, C, U>
+        // where
+        //     C: 'a,
+        //     U: Representation + 'static,
+        //     T: 'static,
+        //     // T: From<U> + 'static,
+        //     F: Fn(U) -> T + Clone + 'a,
+        // {
+        //     match self {
+        //         Self::SelectNode {
+        //             only_matched: only_results,
+        //             cb,
+        //         } => Callback::SelectNode {
+        //             only_matched: only_results,
+        //             cb,
+        //         },
+        //         Self::SelectDag { mut cb } => {
+        //             let cb = Box::new(move |selection: DagSelection, ctx: &mut C| {
+        //                 let inner_dag = selection.dag.downcast::<U>()?;
+        //                 let dag = conv(inner_dag).into();
+        //                 cb(DagSelection { dag, ..selection }, ctx)
+        //             });
+        //             Callback::SelectDag { cb }
+        //         }
+        //         // todo?
+        //         // Self::SelectRef { mut cb } => {
+        //         //     let cb = Box::new(move |selection: DagSelection, ctx: &mut C| {
+        //         //         let inner_dag = selection.dag.downcast::<U>()?;
+        //         //         let dag = conv(inner_dag).into();
+        //         //         cb(DagSelection { dag, ..selection }, ctx)
+        //         //     });
+        //         //     Callback::SelectDag { cb }
+        //         // }
+        //         // Self::MatchDag { mut cb } => {
+        //         //     let cb = Box::new(move |dag: U, ctx: &mut C| cb(conv(dag), ctx));
+        //         //     Callback::MatchDag { cb }
+        //         // }
+        //         _ => unimplemented!(),
+        //     }
+        // }
+
+        // // TODO: implement a clone method, delegate to that in some branches
+        // pub(crate) fn transmute_select<'b, U>(
+        //     &'b mut self,
+        //     match_cb: Option<Box<dyn MatchDagOp<U, C> + 'b>>,
+        // ) -> Callback<'b, C, U>
+        // where
+        //     'a: 'b,
+        // {
+        //     match (match_cb, self) {
+        //         // matching the field
+        //         // (Some(match_cb), _) => Callback::MatchDag { cb: match_cb },
+        //         //
+        //         (
+        //             None,
+        //             Callback::SelectNode {
+        //                 only_matched: only_results,
+        //                 cb,
+        //             },
+        //         ) => Callback::SelectNode {
+        //             only_matched: *only_results,
+        //             cb: cb.clone(),
+        //         },
+        //         //
+        //         (None, Callback::SelectDag { cb }) => Callback::SelectDag { cb: cb.clone() },
+        //         _ => unreachable!(),
+        //     }
+        // }
 
         /*
         // #[inline]
@@ -473,6 +586,18 @@ mod callbacks {
         // }
          */
 
+        // pub fn as_mut(&mut self) -> Callback<'_, &mut C> {
+        //     match self {
+        //         Self::SelectNode { only_matched, cb } => Callback::SelectNode {
+        //             only_matched: *only_matched,
+        //             cb: cb.clone(),
+        //         },
+        //         Self::SelectDag { cb } => Callback::SelectDag { cb: cb.clone() },
+        //         Self::SelectRef { cb } => Callback::SelectRef { cb: cb.clone() },
+        //         Self::Patch { cb } => Callback::Patch { cb: cb.clone() },
+        //     }
+        // }
+
         pub(crate) fn cover_node(
             &mut self,
             path: &Path,
@@ -480,14 +605,14 @@ mod callbacks {
             ctx: &mut C,
         ) -> Result<(), Error> {
             match self {
-                Self::SelectNode { cb, only_results } if !*only_results => {
+                Self::SelectNode { only_matched, cb } if !*only_matched => {
                     cb(NodeSelection::covered(path, selected_node), ctx)
                 }
                 _ => Ok(()),
             }
         }
 
-        pub(crate) fn select_node(
+        pub(crate) fn match_node(
             &mut self,
             path: &Path,
             selected_node: SelectedNode,
@@ -502,14 +627,42 @@ mod callbacks {
             }
         }
 
-        pub(crate) fn select_dag<D>(&mut self, dag: D, ctx: &mut C) -> Result<(), Error>
-        where
-            D: Into<DagSelection>,
-        {
+        pub(crate) fn match_dag<T: Representation + 'static>(
+            &mut self,
+            path: &Path,
+            dag: T,
+            label: Option<&str>,
+            ctx: &mut C,
+        ) -> Result<(), Error> {
             match self {
-                Self::SelectDag { cb } => cb(dag.into(), ctx),
-                Self::SelectNode { .. } => Ok(()),
-                _ => unreachable!(),
+                Self::SelectDag { cb } => cb(DagSelection::new(path, dag, label), ctx),
+                _ => Ok(()),
+            }
+        }
+
+        pub(crate) fn match_ref<T: Representation + 'static>(
+            &mut self,
+            path: &Path,
+            dag: &T,
+            label: Option<&str>,
+            ctx: &mut C,
+        ) -> Result<(), Error> {
+            match self {
+                Self::SelectRef { cb } => cb(DagRefSelection { path, dag, label }, ctx),
+                _ => Ok(()),
+            }
+        }
+
+        pub(crate) fn patch_dag<T: Representation + 'static>(
+            &mut self,
+            path: &Path,
+            dag: &mut T,
+            label: Option<&str>,
+            ctx: &mut C,
+        ) -> Result<bool, Error> {
+            match self {
+                Self::Patch { cb } => cb(DagRefMutSelection { path, dag, label }, ctx),
+                _ => Ok(false),
             }
         }
 
@@ -584,7 +737,7 @@ where
 ///
 #[derive(AsRef, AsMut, Clone, Debug, Default)]
 #[doc(hidden)]
-pub(crate) struct State {
+pub struct State {
     // selector: Selector,
     // mode: SelectionMode,
     pub(crate) current_block: Cid,
@@ -597,7 +750,7 @@ pub(crate) struct State {
     pub(crate) max_path_depth: Option<usize>,
     pub(crate) max_link_depth: Option<usize>,
     // sender: Option<SelectionSender>,
-    // params: SelectionParams<'a, C, T, U>,
+    // params: SelectionParams<'a, C, U>,
 }
 
 // impl<'a> SelectorState<'a> {

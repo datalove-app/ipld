@@ -82,18 +82,24 @@ impl ExpandBasicRepresentation for KindedUnionReprDefinition {
                     }
                 }
                 #[inline]
-                fn deserialize<'de, const MC: u64, De: Deserializer<'de>>(de: De) -> Result<Self, De::Error> {
+                fn deserialize<'de, const MC: u64, De>(de: De) -> Result<Self, De::Error>
+                where
+                    De: Deserializer<'de>
+                {
                     struct V<const MC: u64>;
                     impl<'de, const MC: u64> Visitor<'de> for V<MC> {
-                        type Value = #name;
+                        type Value = AstResult<#name>;
+
                         #expecting
+
                         #(#non_link_visitors)*
                     }
                     impl<'de, const MC: u64> LinkVisitor<'de, MC> for V<MC> {
                         #(#link_visitors)*
                     }
 
-                    Multicodec::deserialize_any::<MC, De, _>(de, V::<MC>)
+                    let res = Multicodec::deserialize_any::<MC, De, _>(de, V::<MC>)?;
+                    Ok(res.unwrap_val())
                 }
             },
         )
@@ -132,11 +138,11 @@ impl KindedUnionReprDefinition {
     }
 
     fn expecting(&self, meta: &SchemaMeta) -> TokenStream {
-        let name = &meta.name;
+        let name = &meta.name.to_string();
         quote! {
             #[inline]
             fn expecting(&self, f: &mut maybestd::fmt::Formatter<'_>) -> maybestd::fmt::Result {
-                write!(f, "A `{}`", stringify!(#name))
+                write!(f, "A `{}`", #name)
             }
         }
     }
@@ -295,6 +301,7 @@ impl UnionKindedField {
                     let seed = self
                         .into_inner()
                         .wrap::<#ty, _>(|dag: #ty| #name::#variant(dag.into()));
+
                     <#ty>::__select_de::<MC, _>(seed, #deserializer)
                 }
             } else {
@@ -314,7 +321,8 @@ impl UnionKindedField {
                     where
                         A: serde::de::SeqAccess<'de>
                     {
-                        #visit_impl
+                        // { #visit_impl }?;
+                        Ok(AstResult::Ok)
                     }
                 },
                 SchemaKind::Map => quote! {
@@ -323,7 +331,8 @@ impl UnionKindedField {
                     where
                         A: serde::de::MapAccess<'de>
                     {
-                        #visit_impl
+                        // { #visit_impl }?;
+                        Ok(AstResult::Ok)
                     }
                 },
                 _ => quote! {
@@ -332,7 +341,8 @@ impl UnionKindedField {
                     where
                         E: serde::de::Error
                     {
-                        #visit_impl
+                        // { #visit_impl }?;
+                        Ok(AstResult::Ok)
                     }
                 },
             })

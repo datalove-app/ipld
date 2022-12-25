@@ -53,7 +53,7 @@ mod ignored {
         where
             E: de::Error,
         {
-            Ok(())
+            Ok(AstResult::Ok)
         }
     }}
 
@@ -88,7 +88,7 @@ mod ignored {
     }
 
     repr_serde! { @select for PhantomData<T> { T } { T: Representation }}
-    repr_serde! { @visitors for PhantomData<T> { T } { T: Representation + '_a } @serde {
+    repr_serde! { @visitors for PhantomData<T> { T } { T: Representation + '__a } @serde {
             #[inline]
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "{}", T::NAME)
@@ -311,23 +311,209 @@ macro_rules! derive {
             }
         }
 
+        impl<'a: 'de, 'de, const MC: u64, Ctx, T> Visitor<'de> for AstWalk<'a, MC, Ctx, $wrapper<T>>
+        where
+            Ctx: Context,
+            T: Select<Ctx>,
+        {
+            type Value = AstResult<$wrapper<T>>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                unimplemented!()
+            }
+
+            fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_i8<E>(self, v: i8) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_i16<E>(self, v: i16) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_i32<E>(self, v: i32) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_i128<E>(self, v: i128) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_u8<E>(self, v: u8) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_u16<E>(self, v: u16) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_u32<E>(self, v: u32) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_u128<E>(self, v: u128) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_f32<E>(self, v: f32) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_char<E>(self, v: char) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_borrowed_bytes<E>(self, v: &'de [u8]) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_none<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                unimplemented!()
+            }
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                unimplemented!()
+            }
+            fn visit_newtype_struct<D>(
+                self,
+                deserializer: D
+            ) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                unimplemented!()
+            }
+            fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                unimplemented!()
+            }
+            fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                unimplemented!()
+            }
+            fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+            where
+                A: EnumAccess<'de>,
+            {
+                unimplemented!()
+            }
+        }
+        impl<'a: 'de, 'de, const MC: u64, Ctx, T> LinkVisitor<'de, MC> for AstWalk<'a, MC, Ctx, $wrapper<T>>
+        where
+            Ctx: Context,
+            T: Select<Ctx>,
+        {
+        }
+
         impl<Ctx, T> Select<Ctx> for $wrapper<T>
         where
             Ctx: Context,
             T: Select<Ctx> + 'static,
         {
-            #[doc(hidden)]
-            #[inline]
-            fn __select_de<'a, 'de, const C: u64, D>(
-                seed: SelectorSeed<'a, Ctx, Self>,
-                deserializer: D,
-            ) -> Result<(), D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                let seed = seed.wrap::<T, _>($constructor);
-                T::__select_de::<C, D>(seed, deserializer)
-            }
+            type Walker<'a, const MC: u64> = AstWalk<'a, MC, Ctx, Self> where Ctx: 'a;
+
+            // #[doc(hidden)]
+            // #[inline]
+            // fn __select_de<'a, 'de, const C: u64, D>(
+            //     seed: SelectorSeed<'a, Ctx, Self>,
+            //     deserializer: D,
+            // ) -> Result<(), D::Error>
+            // where
+            //     D: Deserializer<'de>,
+            // {
+            //     let seed = seed.wrap::<T, _>($constructor);
+            //     T::__select_de::<C, D>(seed, deserializer)
+            // }
         }
     };
     /*

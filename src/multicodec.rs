@@ -167,7 +167,11 @@ mod multicodec {
                 match self {
                     $(
                         #[cfg(feature = $feature)]
-                        Self::$variant(_) => <$path>::read_with_seed(seed, reader),
+                        Self::$variant(_) => {
+                            <$path>::read_with_seed(seed, reader)
+
+                            // let mut de = <$path>::from_reader()
+                        },
                     )*
                 }
             }

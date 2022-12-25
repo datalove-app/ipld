@@ -85,6 +85,7 @@ impl DagCbor {
         // deserializer.deserialize_bytes(DagCborVisitor::<'l', _>(visitor))
     }
 
+    /// todo: refactor to (DeSeed and reader) => seed.deserialize(from(reader))
     #[doc(hidden)]
     #[inline]
     pub fn read_with_seed<Ctx, T, R>(seed: SelectorSeed<'_, Ctx, T>, reader: R) -> Result<(), Error>
@@ -94,7 +95,14 @@ impl DagCbor {
         R: Read,
     {
         let mut de = CborDeserializer::from_reader(reader);
-        T::__select_de::<{ <Self as Codec>::CODE }, _>(seed, &mut de).map_err(Error::decoder)
+        // T::__select_de::<{ <Self as Codec>::CODE }, _>(seed, &mut de).map_err(Error::decoder)
+
+        // todo: requires T::Walk
+        // T::deserialize_with_visitor::<'_, <Self as Codec>::CODE, _, _>(&mut de, seed)
+        //     .map(AstResult::unwrap_val)
+        //     .map_err(Error::decoder)
+
+        unimplemented!()
     }
 
     // pub(crate) fn deserializer_from_reader<R: Read>(

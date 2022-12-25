@@ -73,16 +73,11 @@ impl DeriveRepresentation {
     pub(crate) fn derive(&self) -> TokenStream {
         let name = &self.ident;
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
-        let body = match self.schema_kind().unwrap() {
-            SchemaKind::Null => self.expand_null(),
-            SchemaKind::Struct(_) => Default::default(),
-            SchemaKind::Enum => Default::default(),
-            SchemaKind::Union(_) => Default::default(),
-            SchemaKind::Copy => self.expand_newtype(),
-        };
+        let body = self.body();
 
         quote! {
-            impl #impl_generics Representation for #name #ty_generics #where_clause {
+            impl #impl_generics Representation for #name #ty_generics
+            #where_clause {
                 #body
             }
         }
@@ -175,7 +170,7 @@ impl DeriveRepresentation {
         }
     }
 
-    fn expand_map(&self) -> TokenStream {
+    pub(crate) fn expand_struct(&self, repr: &ReprKind) -> TokenStream {
         let name = &self.ident;
         let inner = &self.fields().next().unwrap().ty;
         let schema = {
@@ -230,17 +225,107 @@ impl DeriveRepresentation {
             }
         }
     }
+
+    pub(crate) fn expand_enum(&self) -> TokenStream {
+        Default::default()
+    }
+
+    pub(crate) fn expand_union(&self, repr: &ReprKind) -> TokenStream {
+        let name = &self.ident;
+        let schema = self.to_string();
+
+        let expecting = self.expecting();
+
+        quote! {
+            const NAME: &'static str = stringify!(#name);
+            const SCHEMA: &'static str = #schema;
+            // todo:
+            const DATA_MODEL_KIND: Kind = Kind::Null;
+            const SCHEMA_KIND: Kind = Kind::Union;
+            const REPR_KIND: Kind = Kind::Any;
+            const REPR_STRATEGY: Strategy = Strategy::Kinded;
+            // todo:
+            const HAS_LINKS: bool = false;
+
+            #[inline]
+            fn name(&self) -> &'static str {
+                unimplemented!()
+            }
+            #[inline]
+            fn has_links(&self) -> bool {
+                unimplemented!()
+            }
+            #[inline]
+            fn as_field(&self) -> Option<Field<'_>> {
+                unimplemented!()
+            }
+            #[inline]
+            fn to_selected_node(&self) -> SelectedNode {
+                unimplemented!()
+            }
+            #[inline]
+            fn serialize<const __C: u64, __S>(&self, serializer: __S) -> Result<__S::Ok, __S::Error>
+            where
+                __S: Serializer,
+            {
+                match self {
+                    _ => unimplemented!(),
+                }
+            }
+            #[inline]
+            fn deserialize<'de, const __C: u64, __D>(de: __D) -> Result<Self, __D::Error>
+            where
+                __D: Deserializer<'de>,
+            {
+                struct V<const MC: u64>;
+                impl<'de, const MC: u64> Visitor<'de> for V<MC> {
+                    type Value = #name;
+                    #expecting
+                    // #(#non_link_visitors)*
+                }
+                impl<'de, const MC: u64> LinkVisitor<'de, MC> for V<MC> {
+                    // #(#link_visitors)*
+                }
+
+                Multicodec::deserialize_any::<__C, __D, _>(de, V::<__C>)
+            }
+        }
+    }
 }
 
 impl fmt::Display for DeriveRepresentation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.schema_kind().or(Err(fmt::Error))? {
             SchemaKind::Null => write!(f, "type {} null", &self.ident),
-            SchemaKind::Struct(repr) => unimplemented!(),
-            SchemaKind::Enum => unimplemented!(),
-            SchemaKind::Union(repr) => unimplemented!(),
-            SchemaKind::Copy => unimplemented!(),
-            _ => unimplemented!(),
+            SchemaKind::Copy => write!(
+                f,
+                "type {} = {:?}",
+                &self.ident,
+                &self.fields().next().unwrap().ty
+            ),
+            SchemaKind::Enum => write!(f, "unimplemented"),
+            SchemaKind::Struct(repr) => match repr {
+                _ => write!(f, "unimplemented"),
+            },
+            SchemaKind::Union(repr) => match repr {
+                ReprKind::Kinded => {
+                    write!(f, "type {} union {{\n", &self.ident)?;
+                    for variant in self.variants() {
+                        // todo: add dm kind
+                        write!(f, "| {}", &variant.ident,)?;
+                    }
+                    write!(f, "}}")
+                }
+                ReprKind::Keyed => {
+                    write!(f, "type {} union {{\n", &self.ident)?;
+                    for variant in self.variants() {
+                        write!(f, "| {} \"{:?}\"", &variant.ident, &variant.rename)?;
+                    }
+                    write!(f, "}}")
+                }
+                _ => write!(f, "unimplemented"),
+            },
+            _ => write!(f, "unimplemented"),
         }
     }
 }

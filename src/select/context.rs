@@ -13,6 +13,7 @@ use crate::dev::*;
 use maybestd::{
     collections::HashMap,
     io::{empty, Cursor, Empty, Read, Sink, Write},
+    task,
 };
 
 // trait BlockWriter: Write {}
@@ -118,6 +119,43 @@ impl Context for () {
 
     fn block_reader(&mut self, _: &Cid) -> Result<Self::Reader, Error> {
         Err(Error::Context(anyhow::Error::msg("empty block")))
+    }
+}
+
+#[cfg(feature = "sync")]
+mod sync {
+    /// ! only 1 place where blocking hurts: `Context::block_reader/writer()`
+    ///     ! in Select/Patch API
+    ///     ! in Link::deserialize
+    /// if called within async fn,
+    ///     - ctx.block_reader/writer() cannot use `block_on`
+    ///     - ctx.block_reader/writer() cannot return SyncIoBridge
+    /// ?
+    ///
+    ///
+    /// struct SelectFuture<T>(recv, params<send>, Ctx);
+    ///
+    /// impl Future for SelectFuture<DagSelection> {
+    ///     type Output = Result<DagSelection, Error>;
+    ///     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    ///
+    ///     }
+    ///}
+    ///
+    use super::*;
+
+    pub struct AsyncContext<'a, C> {
+        inner: C,
+        waker: &'a task::Waker,
+    }
+
+    impl<'a, C: Context> Context for AsyncContext<'a, C> {
+        type Reader = C::Reader;
+        type Writer = C::Writer;
+
+        fn block_reader(&mut self, cid: &Cid) -> Result<Self::Reader, Error> {
+            self.inner.block_reader(cid)
+        }
     }
 }
 

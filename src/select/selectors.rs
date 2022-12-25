@@ -160,37 +160,37 @@ schema! {
     pub type ExploreRecursive struct {
         ///
         pub sequence Selector (rename ":>")
-        ///
-        pub limit RecursionLimit (rename "l")
+        // ///
+        // pub limit RecursionLimit (rename "l")
         /// if a node matches, we won't match it nor explore it's children
         pub stopAt optional Condition (rename "!")
     }
 }
 
-schema! {
-    ///
-    #[ipld_attr(internal)]
-    #[derive(Clone, Debug, From)]
-    pub type RecursionLimit union {
-        ///
-        | RecursionLimit_None "none"
-        ///
-        | RecursionLimit_Depth "depth"
-    } representation keyed
-}
-schema! {
-    ///
-    #[ipld_attr(internal)]
-    #[derive(Clone, Debug, Default)]
-    pub type RecursionLimit_None struct {}
-}
-schema! {
-    ///
-    #[ipld_attr(internal)]
-    #[derive(Clone, Debug, Default, From)]
-    #[from(forward)]
-    pub type RecursionLimit_Depth int
-}
+// schema! {
+//     ///
+//     #[ipld_attr(internal)]
+//     #[derive(Clone, Debug, From)]
+//     pub type RecursionLimit union {
+//         ///
+//         | RecursionLimit_None "none"
+//         ///
+//         | RecursionLimit_Depth "depth"
+//     } representation keyed
+// }
+// schema! {
+//     ///
+//     #[ipld_attr(internal)]
+//     #[derive(Clone, Debug, Default)]
+//     pub type RecursionLimit_None struct {}
+// }
+// schema! {
+//     ///
+//     #[ipld_attr(internal)]
+//     #[derive(Clone, Debug, Default, From)]
+//     #[from(forward)]
+//     pub type RecursionLimit_Depth int
+// }
 
 schema! {
     /// ExploreRecursiveEdge is a special sentinel value which is used to mark
@@ -521,27 +521,27 @@ impl Selector {
     /// (key or index).
     /// TODO: matcher is infinite; need to distinguish link boundaries
     /// TODO: should return Option<&Selector>
-    pub fn try_next<'a>(&self, field: Option<&Field<'_>>) -> Result<&Selector, Error> {
+    pub fn next<'a>(&self, field: Option<&Field<'_>>) -> Option<&Selector> {
         match (self, field) {
-            (Self::Matcher(_), _) => Ok(self),
-            (Self::ExploreAll(inner), _) => Ok(&inner.next),
+            (Self::Matcher(_), _) => Some(self),
+            (Self::ExploreAll(inner), _) => Some(&inner.next),
             // TODO assert that provided field/index matches what the selector defines, otherwise return None
             (Self::ExploreFields { .. }, Some(f)) => todo!(),
             (Self::ExploreIndex(inner), Some(f)) if f.is_idx(inner.index as usize) => {
-                Ok(&inner.next)
+                Some(&inner.next)
             }
             (Self::ExploreRange(inner), Some(f))
                 if f.as_usize()
                     .filter(|idx| inner.contains(&(*idx as Int)))
                     .is_some() =>
             {
-                Ok(&inner.next)
+                Some(&inner.next)
             }
-            (Self::ExploreRecursive(inner), _) => Ok(&inner.sequence),
+            (Self::ExploreRecursive(inner), _) => Some(&inner.sequence),
             (Self::ExploreRecursiveEdge(_), _) => todo!(),
             (Self::ExploreUnion { .. }, _) => todo!(),
-            (Self::ExploreInterpretAs(inner), _) => Ok(&inner.next),
-            _ => Err(Error::missing_next_selector(&self)),
+            (Self::ExploreInterpretAs(inner), _) => Some(&inner.next),
+            _ => None,
         }
     }
 
@@ -691,11 +691,11 @@ impl ExploreRecursive {
     pub const CODE: char = 'R';
 }
 
-impl Default for RecursionLimit {
-    fn default() -> Self {
-        Self::RecursionLimit_None(RecursionLimit_None {})
-    }
-}
+// impl Default for RecursionLimit {
+//     fn default() -> Self {
+//         Self::RecursionLimit_None(RecursionLimit_None {})
+//     }
+// }
 
 /* ExploreUnion */
 

@@ -52,7 +52,8 @@ pub use {
         schema,
         // selector
         Representation,
-        // Select, Patch
+        Select,
+        // Patch
     },
 
     // multiformats

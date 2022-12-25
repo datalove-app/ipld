@@ -48,12 +48,12 @@ impl<T: Representation> Representation for List<T> {
 
     #[inline]
     #[doc(hidden)]
-    fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct ListVisitor<const C: u64, T>(PhantomData<T>);
-        impl<'de, const C: u64, T> Visitor<'de> for ListVisitor<C, T>
+        struct ListVisitor<const MC: u64, T>(PhantomData<T>);
+        impl<'de, const MC: u64, T> Visitor<'de> for ListVisitor<MC, T>
         where
             T: Representation,
         {
@@ -69,18 +69,18 @@ impl<T: Representation> Representation for List<T> {
             {
                 let mut list = List::with_capacity(seq.size_hint().unwrap_or(8));
                 // let mut iter = SerdeListIterator::<'de, A>::from(seq);
-                // while let Some(dag) = iter.next::<C>().map_err(A::Error::custom)? {
+                // while let Some(dag) = iter.next::<MC>().map_err(A::Error::custom)? {
                 //     list.push(dag);
                 // }
 
-                while let Some(dag) = seq.next_element_seed(DeserializeRepr::<C, T>::new())? {
+                while let Some(dag) = seq.next_element_seed(DeserializeRepr::<MC, T>::new())? {
                     list.push(dag);
                 }
                 Ok(list)
             }
         }
 
-        deserializer.deserialize_seq(ListVisitor::<C, T>(PhantomData))
+        deserializer.deserialize_seq(ListVisitor::<MC, T>(PhantomData))
     }
 }
 
@@ -98,19 +98,26 @@ repr_serde! { @visitors for List<T> { T } { T: Select<Ctx> + 'static } @serde {
         use de::value::SeqAccessDeserializer as De;
 
         match (self.mode(), self.selector()) {
-            (SelectionMode::Match, _) => {
+            (SelectionMode::Decode, _) => {
                 let list = <List<T>>::deserialize::<MC, _>(De::new(seq))?;
-                // todo:
-                self.into_inner().handle_dag(list).map_err(A::Error::custom)
+                Ok(AstResult::Value(list))
+                // self.into_inner()
+                //     .match_list::<MC, T, _>(SerdeListIterator::from(seq))
+                //     .map_err(A::Error::custom)
+
             }
+            // (SelectionMode::Patch, _) => {}
             (_, Selector::ExploreUnion(s)) if s.matches_first() => {
                 let list = <List<T>>::deserialize::<MC, _>(De::new(seq))?;
-                // todo: for each selector, __select_in
-                list.__select_in(self.into_inner()).map_err(A::Error::custom)
+                // todo: for each selector, List<T>::select
+                // list.__select_in(self.into_inner()).map_err(A::Error::custom)?;
+                Ok(AstResult::Ok)
             }
-            _ => self.into_inner()
-                .select_list::<MC, false, T, _>(SerdeListIterator::from(seq))
-                .map_err(A::Error::custom)
+            _ => {
+                self.into_inner()
+                    .select_list::<MC, false, T, _>(SeqAccessIterator::from(seq))
+                    .map_err(A::Error::custom)
+            }
         }
     }
 }}
@@ -122,58 +129,49 @@ where
     T: Select<Ctx> + 'static,
 {
     ///
-    pub fn select_list<const C: u64, const IN: bool, U, I>(
+    pub fn select_list<'de, const MC: u64, const IN: bool, U, I>(
         mut self,
         mut iter: I,
         // dag: Either<&T2, I>,
-    ) -> Result<(), Error>
+    ) -> Result<AstResult<T>, Error>
     where
-        U: Select<Ctx>,
-        I: ListIterator<U>,
+        'a: 'de,
+        Ctx: 'de,
+        U: Select<Ctx> + 'a,
+        I: ListIterator<'de, U>,
     {
-        // match self.selector {
-        //     Selector::Matcher(_) => self.match_list::<C, U, _>(iter),
-        //     Selector::ExploreIndex(s) => self.explore_list_range::<C, U, _, _>(iter, s.to_range()),
-        //     Selector::ExploreRange(s) => self.explore_list_range::<C, U, _, _>(iter, s.to_range()),
-        //     Selector::ExploreAll(s) => self.explore_list_range::<C, U, _, _>(iter, s.to_range()),
-        //     s => Err(Error::unsupported_selector::<List<T>>(s)),
+        match self.selector {
+            Selector::Matcher(_) => self.match_list::<MC, U, _>(iter),
+            Selector::ExploreIndex(s) => self.explore_list_range::<MC, U, _, _>(iter, s.to_range()),
+            Selector::ExploreRange(s) => self.explore_list_range::<MC, U, _, _>(iter, s.to_range()),
+            Selector::ExploreAll(s) => self.explore_list_range::<MC, U, _, _>(iter, s.to_range()),
+            s => Err(Error::unsupported_selector::<T>(s)),
+        }
+
+        // self.cover_node(SelectedNode::List)?;
+        // loop {
+        //     if self.handle_index::<MC, U>(&mut iter, None)? {
+        //         break;
+        //     }
         // }
 
-        self.handle_node(SelectedNode::List)?;
-        loop {
-            if self.handle_index::<C, U>(&mut iter, None)? {
-                break;
-            }
-        }
-        Ok(())
+        // Ok(AstResult::Ok)
     }
 
-    ///
-    pub fn patch_list<const C: u64, const FLUSH: bool, U, I>(
-        mut self,
-        mut iter: I,
-        // dag: Either<&T2, I>,
-    ) -> Result<(), Error>
-    where
-        U: Select<Ctx>,
-        I: ListIterator<U>,
-    {
-        unimplemented!()
-    }
-
-    /*
     /// Executes a [`Matcher`] selector against a list (data model) type.
     /// todo could probably use a collection trait instead of multiple Fns
-    pub fn match_list<const C: u64, U, I>(
+    pub fn match_list<'de, const MC: u64, U, I>(
         mut self,
         mut iter: I,
         // init_new_dag: F1,
         // mut match_cb: F2,
         // into_dag: F3,
-    ) -> Result<(), Error>
+    ) -> Result<AstResult<T>, Error>
     where
-        U: Select<Ctx>,
-        I: ListIterator<U>,
+        'a: 'de,
+        Ctx: 'de,
+        U: Select<Ctx> + 'a,
+        I: ListIterator<'de, U>,
         // T2: Default,
         // F1: FnOnce(&I) -> T2,
         // for<'b> F2: FnMut(&'b T2) -> Box<dyn MatchDagOp<U, Ctx> + 'b>,
@@ -184,17 +182,34 @@ where
         // }
 
         // select the matched list node, or setup the list
-        self.handle_node(SelectedNode::List)?;
+        // self.handle_node(SelectedNode::List)?;
         // let new_dag = self
         //     .is_dag_select()
         //     .then(|| init_new_dag(&iter))
         //     .unwrap_or_default();
 
         // select against each child
-        loop {
-            if self.handle_index::<C, U>(&mut iter, None)? {
-                break;
-            }
+        // while let Some(_) = self.handle_index::<MC, U>(&mut iter)? {
+        //     break;
+        // }
+        let (selector, mut state, cb, mut ctx) = self.into_parts();
+        for index in 0usize.. {
+            let field = Field::Index(index);
+            let seed =
+                Self::to_field_select_seed::<U>(&selector, &mut state, cb.clone(), ctx, &field)?;
+            let res = match seed {
+                None => (&mut iter).next_ignored::<MC>()?,
+                Some(seed) => (&mut iter).next_element_seed::<MC, Ctx>(seed)?,
+            };
+
+            match res {
+                None => break,
+                Some(AstResult::Value(v)) => {}
+                _ => {}
+                // Some(AstResult::Continue) => Ok(Some(AstResult::Continue)),
+                // Some(AstResult::Break) => Ok(Some(AstResult::Break)),
+                _ => unimplemented!(),
+            };
         }
 
         // finally, select the dag itself (if applicable)
@@ -202,18 +217,21 @@ where
         //     self.handle_dag(into_dag(new_dag))?;
         // }
 
-        Ok(())
+        Ok(AstResult::Ok)
     }
 
     /// explore index, range, or all
-    pub fn explore_list_range<const C: u64, U, I, R>(
+    fn explore_list_range<'de, const MC: u64, U, I, R>(
         mut self,
         mut iter: I,
         range: R,
-    ) -> Result<(), Error>
+    ) -> Result<AstResult<T>, Error>
     where
+        'a: 'de,
+        // 'b: 'c,
+        Ctx: 'de,
         U: Select<Ctx>,
-        I: ListIterator<U>,
+        I: ListIterator<'de, U>,
         R: RangeBounds<usize> + Iterator<Item = usize>,
     {
         let range_copy = (range.start_bound().cloned(), range.end_bound().cloned());
@@ -226,47 +244,60 @@ where
         };
         let is_unbounded = ignore_end_idx.is_none();
 
-        // select the list node
-        self.handle_node(SelectedNode::List)?;
+        // // select the list node
+        // self.handle_node(SelectedNode::List)?;
 
         // ignore everything before the start (unless 0)
         // if empty, return an err
         if start_idx > 0 {
             for index in 0usize..start_idx {
-                if iter.next_ignored()? {
+                if iter.next_ignored::<MC>()?.is_none() {
                     return Err(Error::explore_list_failure::<U>(self.selector, index));
                 }
             }
         }
 
         // explore any/all indices in the range
+        let (selector, mut state, cb, mut ctx) = self.into_parts();
         for index in range {
-            // TODO: should be iter.next_element_seed(self.to_field_select_seed())
-            let is_empty = self.handle_index::<C, U>(&mut iter, None)?;
+            let field = Field::Index(index);
+            let res = if selector.next(Some(&field)).is_none() {
+                (&mut iter).next_ignored::<MC>()?
+            } else {
+                let iter = &mut iter;
+                let res = iter.next_element_seed::<MC, Ctx>(SelectorSeed::from_parts(
+                    &selector,
+                    state.descend::<U>(&field)?,
+                    cb.clone(),
+                    ctx,
+                ))?;
+                state.ascend::<U>();
+                res
+            };
 
             // if unbounded and empty, then we're done exploring
             // if bounded and empty, then we failed to explore everything
-            if is_unbounded && is_empty {
-                return Ok(());
-            } else if is_empty && range_copy.contains(&index) {
-                return Err(Error::explore_list_failure::<U>(&self.selector, index));
+            if is_unbounded && res.is_none() {
+                return Ok(AstResult::Ok);
+            } else if res.is_none() && range_copy.contains(&index) {
+                return Err(Error::explore_list_failure::<U>(&selector, index));
             }
         }
 
         // finish ignoring the remainder of the list
         if !is_unbounded {
             for _ in ignore_end_idx.unwrap().. {
-                if iter.next_ignored()? {
+                if iter.next_ignored::<MC>()?.is_none() {
                     break;
                 }
             }
         }
 
-        Ok(())
+        Ok(AstResult::Ok)
     }
-     */
 }
 
+// #[cfg(feature = "skipped")]
 mod iterators {
     use super::*;
     use serde::de::IntoDeserializer;
@@ -282,7 +313,7 @@ mod iterators {
     // }
 
     // impl<'de, const C: u64, A> SerdeListIterator2<'de, C, A> {
-    //     pub const fn ignored(seq: A) -> Self {
+    //     pub const fn ignored( A) -> Self {
     //         SerdeListIterator2 {
     //             seq,
     //             seed: DeserializeWrapper::<C, IgnoredAny>::new(),
@@ -328,43 +359,57 @@ mod iterators {
     /// A [`Select`]able list iterator over a serde sequence representation.
     #[doc(hidden)]
     #[derive(Debug)]
-    pub struct SerdeListIterator<'de, A> {
-        inner: A,
+    pub struct SeqAccessIterator<'de, A> {
+        seq: A,
         index: usize,
         _t: PhantomData<&'de ()>,
     }
-    impl<'de, A> From<A> for SerdeListIterator<'de, A> {
-        fn from(inner: A) -> Self {
+    impl<'de, A> From<A> for SeqAccessIterator<'de, A> {
+        fn from(seq: A) -> Self {
             Self {
-                inner,
+                seq,
                 index: 0,
                 _t: PhantomData,
             }
         }
     }
-    impl<'de, T, A> ListIterator<T> for SerdeListIterator<'de, A>
+    impl<'de: 'a, 'a, T, A> ListIterator<'a, T> for SeqAccessIterator<'de, A>
     where
         T: Representation,
         A: SeqAccess<'de>,
     {
         fn size_hint(&self) -> Option<usize> {
-            self.inner.size_hint()
+            self.seq.size_hint()
         }
-        /*
-        fn next_ignored(&mut self) -> Result<bool, Error> {
-            let is_empty = self
-                .inner
+
+        fn index(&self) -> usize {
+            self.index
+        }
+
+        fn next_ignored<const MC: u64>(&mut self) -> Result<Option<AstResult<T>>, Error>
+where
+            // 'a: 'b,
+            // 'b: 'de,
+            // Ctx: Context,
+            // T: Select<Ctx>,
+        {
+            let res = self
+                .seq
                 .next_element::<IgnoredAny>()
-                .map_err(|_| Error::explore_index_failure::<IgnoredAny>(self.index))?
-                .is_none();
-            if !is_empty {
-                self.index += 1;
+                .map_err(|_| Error::explore_index_failure::<IgnoredAny>(self.index))?;
+            match res {
+                None => Ok(None),
+                Some(_) => {
+                    self.index += 1;
+                    Ok(Some(AstResult::Ok))
+                }
             }
-            Ok(is_empty)
         }
+
+        /*
         fn next<const C: u64>(&mut self) -> Result<Option<T>, Error> {
             let dag = self
-                .inner
+                .seq
                 .next_element_seed(DeserializeRepr::<C, T>::new())
                 .map_err(|_| Error::explore_index_failure::<T>(self.index))?;
 
@@ -375,15 +420,15 @@ mod iterators {
                 Ok(dag)
             }
         }
-        fn next_seed<'a, const C: u64, Ctx: Context>(
+        fn next_seed<'de, const C: u64, Ctx: Context>(
             &mut self,
-            seed: SelectorSeed<'a, Ctx, T>,
+            seed: SelectorSeed<'de, Ctx, T>,
         ) -> Result<bool, Error>
         where
             T: Select<Ctx>,
         {
             let is_empty = self
-                .inner
+                .seq
                 .next_element_seed(DeserializeSelect::<C, Ctx, _, T>::from(seed))
                 .map_err(|_| Error::explore_index_failure::<T>(self.index))?
                 .is_none();
@@ -394,42 +439,27 @@ mod iterators {
         }
          */
 
-        fn next_element_seed<'a, const C: u64, Ctx: Context + 'a, F>(
+        fn next_element_seed<'b, const MC: u64, Ctx>(
             &mut self,
-            seeder: F,
-        ) -> Result<bool, Error>
+            seed: SelectorSeed<'b, Ctx, T>,
+        ) -> Result<Option<AstResult<T>>, Error>
         where
-            T: Select<Ctx>,
-            F: FnOnce(usize) -> Result<Option<SelectorSeed<'a, Ctx, T>>, Error>,
+            // 'a: 'b,
+            // 'b: 'de,
+            'de: 'b,
+            Ctx: Context + 'de,
+            T: Select<Ctx> + 'de,
         {
-            let was_empty = match seeder(self.index)? {
-                None => self
-                    .inner
-                    .next_element::<IgnoredAny>()
-                    .map(|opt| opt.map(|_| ())),
-                Some(seed) => self
-                    .inner
-                    .next_element_seed(DeserializeSelect::<C, Ctx, _, T>::from(seed)),
-            }
-            .map_err(|_| Error::explore_index_failure::<T>(self.index))?
-            .is_none();
-
-            if !was_empty {
+            let res = self
+                .seq
+                .next_element_seed(<T as Select<_>>::Walker::<'b, MC>::from(seed))
+                .map_err(|_| Error::explore_index_failure::<T>(self.index))?;
+            if res.is_some() {
                 self.index += 1;
             }
-            Ok(was_empty)
+            Ok(res)
         }
     }
-
-    // impl<'de, A> IntoDeserializer<'de, A::Error> for SerdeListIterator<'de, A>
-    // where
-    //     A: SeqAccess<'de>,
-    // {
-    //     type Deserializer = SeqAccessDeserializer<A>;
-    //     fn into_deserializer(self) -> Self::Deserializer {
-    //         SeqAccessDeserializer::new(self.inner)
-    //     }
-    // }
 
     /*
     /// A [`Select`]able list iterator over an underlying iterator.

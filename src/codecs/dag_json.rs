@@ -111,7 +111,9 @@ impl DagJson {
         R: Read,
     {
         let mut de = JsonDeserializer::from_reader(reader);
-        T::__select_de::<{ <Self as Codec>::CODE }, _>(seed, &mut de).map_err(Error::decoder)
+        // T::__select_de::<{ <Self as Codec>::CODE }, _>(seed, &mut de).map_err(Error::decoder)
+
+        unimplemented!()
     }
 }
 

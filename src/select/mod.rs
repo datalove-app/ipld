@@ -26,20 +26,23 @@ use crate::dev::*;
 use macros::derive_more::{Display, From};
 use maybestd::{
     cell::RefCell,
+    future::{self, IntoFuture},
     path::{Path, PathBuf},
     str::FromStr,
+    task::Poll,
     vec::IntoIter,
 };
 
 ///
 /// TODO: + 'static?
-///     - Selectable?
-pub trait Select<Ctx: Context = ()>: Representation {
-    // ///
-    // #[doc(hidden)]
-    // type Seed<'a, 'de, const C: u64>: From<SelectorSeed<'a, Ctx, Self>> + DeserializeSeed<'de> = CodedSelectorSeed<'a, C, false, Ctx, Self>;
+pub trait Select<Ctx: Context = ()>: Representation + 'static {
+    ///
+    #[doc(hidden)]
+    type Walker<'a, const MC: u64>: Walk<'a, MC, Self> + From<SelectorSeed<'a, Ctx, Self>>
+    where
+        Ctx: 'a;
 
-    /// Produces a stream of [`Selection`]s of some type `T`.
+    /// ...
     ///
     /// Under the hood, this serves as the entrypoint for deserialization of a
     /// block via a typed `ContextSeed`: a type that implements
@@ -49,97 +52,173 @@ pub trait Select<Ctx: Context = ()>: Representation {
     ///
     ///
     /// TODO: update this interface, since SelectorSeed is doing the work and it should be refactored a bit (borrow state, )
-    fn select(params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<(), Error> {
+    ///
+    /// todo: 1. build seed, fetch deserializer => seed.deserialize(de)
+    /// todo: 2. should maybe accept a deserializer + params + ctx
+    fn select_in<'a, P>(params: P, ctx: Ctx) -> Result<(), Error>
+    where
+        P: Into<Params<'a, Ctx>>,
+        Self: 'a,
+    {
         let Params {
             selector,
             mut state,
             callback,
-        } = params;
+        } = params.into();
+        let seed = SelectorSeed::from_parts(&selector, &mut state, callback, ctx);
 
-        let default_selector = Selector::DEFAULT;
-        let seed = SelectorSeed::from_parts(
-            &selector.unwrap_or(&default_selector),
-            &mut state,
-            callback,
-            ctx,
-        );
+        // todo:
+        // if matcher, Repr::deserialize and call callback (match_val)
+        // if explore_union, read block for each (? in parallel?)
+        // if explore_interpret_as, ...
+        // if let Some(matcher) = seed.selector.as_matcher() {
+        //     // params.callback(self.as_ref())
+        //     return Ok(());
+        // }
 
-        // TODO: put this block here
-        // let cid = &seed.state.current_block;
-        // let block = seed.ctx.block_reader(cid)?;
-        // cid.multicodec()?.read_with_seed(Self::Walker::from(seed), block)
-        Self::__select(seed)
+        Self::__select_in(seed)
     }
 
     #[doc(hidden)]
-    fn __select<'a>(seed: SelectorSeed<'a, Ctx, Self>) -> Result<(), Error> {
-        let cid = &seed.state.current_block;
-        let block = seed.ctx.block_reader(cid)?;
-        cid.multicodec()?.read_with_seed(seed, block)
+    // fn __select<'a, W: Into<Self::Walk<'a, Ctx>>>(walker: W) -> Result<(), Error> {
+    fn __select_in<'a>(mut seed: SelectorSeed<'a, Ctx, Self>) -> Result<(), Error> {
+        match seed.selector {
+            // if exploreunion, call select on each (? in parallel?)
+            Selector::ExploreUnion(_) => todo!(),
+            _ => {
+                let cid = &seed.state.current_block;
+                let block = seed.ctx.block_reader(cid)?;
+                cid.multicodec()?.read_with_seed(seed, block)
+            }
+        }
     }
 
-    #[doc(hidden)]
-    fn __select_de<'a, 'de, const C: u64, D>(
-        seed: SelectorSeed<'a, Ctx, Self>,
-        deserializer: D,
-    ) -> Result<(), D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Err(D::Error::custom("__select_de not yet implemented"))
-        // TODO: default impl should use GAT for CodedSeed
-        // Self::Seed::<'a, 'de, C>::from(seed).deserialize(deserializer)
-    }
+    // #[doc(hidden)]
+    // fn __select_de<'a, 'de, const MC: u64, D>(
+    //     seed: SelectorSeed<'a, Ctx, Self>,
+    //     deserializer: D,
+    // ) -> Result<(), D::Error>
+    // where
+    //     D: Deserializer<'de>,
+    // {
+    //     Err(D::Error::custom("__select_de not yet implemented"))
+    //     // TODO: default impl should use GAT for CodedSeed
+    //     // Self::Seed::<'a, 'de, C>::from(seed).deserialize(deserializer)
+    // }
 
     /// Selects against the dag, loading more blocks from `Ctx` if required.
     ///
-    /// TODO
+    /// todo: 1. build seed,
+    ///     if match, call selectdagrefop on ref (match_ref)
+    ///     otherwise, create XAccessDeserializer => seed.visit_XX(accessor)
+    ///     * select_in and select share same code path b/c ... callbacks on refs have indeterminate lifetimes?
     #[doc(hidden)]
-    fn select_in(&self, params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<(), Error> {
+    fn select<'a, P>(&'a self, params: P, ctx: Ctx) -> Result<(), Error>
+    where
+        P: Into<Params<'a, Ctx>>,
+    {
         let Params {
             selector,
             mut state,
             callback,
-        } = params;
+        } = params.into();
+        let seed = SelectorSeed::from_parts(&selector, &mut state, callback, ctx);
 
-        let default_selector = Selector::DEFAULT;
-        let seed = SelectorSeed::from_parts(
-            &selector.unwrap_or(&default_selector),
-            &mut state,
-            callback,
-            ctx,
-        );
-
-        self.__select_in(seed)
+        self.__select(seed)
     }
 
     #[doc(hidden)]
-    fn __select_in<'a>(&self, seed: SelectorSeed<'a, Ctx, Self>) -> Result<(), Error> {
-        unimplemented!()
+    fn __select<'a>(&'a self, mut seed: SelectorSeed<'a, Ctx, Self>) -> Result<(), Error> {
+        match seed.selector {
+            // if matcher, call selectdagop on self
+            Selector::Matcher(_) => {
+                seed.select_ref(self)?;
+                return Ok(());
+            }
+            // if exploreunion, call select on each (? in parallel?)
+            Selector::ExploreUnion(_) => todo!(),
+            _ => unreachable!(),
+        }
+
+        // let mut de = self.[into_access().]into_deserializer();
+        // Self::Walk::<'a, IDENTITY>::from(seed).deserialize(&mut de)
     }
 
     /// Patches the dag according to the selector, loading more blocks from
     /// `Ctx` if required. Returns `true` if any patch operation was executed
     /// and subsequently mutated a part of the dag.
     ///
-    /// TODO
+    /// todo: 1. build seed,
+    ///     if match, call patchdagop on ref_mut (match_ref_mut)
+    ///     if exploreunion, patch one at a time
+    ///     otherwise, create self+seed [+ iterator] => seed.patch_list/map(..)
     #[doc(hidden)]
-    fn patch(&mut self, params: Params<'_, Ctx, Self>, ctx: &mut Ctx) -> Result<bool, Error> {
-        unimplemented!()
+    fn patch<'a, P>(&'a mut self, params: P, ctx: Ctx) -> Result<(), Error>
+    where
+        P: Into<Params<'a, Ctx>>,
+    {
+        let Params {
+            selector,
+            mut state,
+            callback,
+        } = params.into();
+        let seed = SelectorSeed::<'_, Ctx, Self>::from_parts(&selector, &mut state, callback, ctx);
+
+        self.__patch(seed)
     }
 
-    // /// Flushes the dag according to the selector, writing blocks to `Ctx` if
-    // /// flushing linked dags.
-    // ///
-    // /// TODO
-    // #[doc(hidden)]
-    // fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Error> {
-    //     unimplemented!()
-    // }
+    #[doc(hidden)]
+    fn __patch<'a>(&'a mut self, mut seed: SelectorSeed<'a, Ctx, Self>) -> Result<(), Error> {
+        // if matcher, call selectdagop on self
+        // if exploreunion, call select on each (? in parallel?)
+        match seed.selector {
+            Selector::Matcher(_) => {
+                seed.patch_dag(self)?;
+                return Ok(());
+            }
+            Selector::ExploreUnion(_) => todo!(),
+            _ => self.__patch(seed),
+        }
+    }
+
+    /// Flushes the dag according to the selector, writing blocks to `Ctx` if
+    /// flushing linked dags.
+    ///
+    /// TODO
+    #[doc(hidden)]
+    fn flush(&mut self, params: Params<'_, Ctx>, ctx: &mut Ctx) -> Result<(), Error> {
+        unimplemented!()
+    }
 
     // fn patch<S: Select<C>>(seed: ContextSeed<'_, C, Self, S>) -> Result<(), Error> {
     //     unimplemented!()
     // }
+}
+
+fn select_async<Ctx, T>(
+    params: Params<'_, Ctx>,
+    ctx: &mut Ctx,
+) -> impl IntoFuture<Output = Result<(), Error>>
+where
+    Ctx: Context,
+    T: Select<Ctx>,
+{
+    enum SM {
+        Waiting,
+        Selecting,
+        Done,
+    }
+    // let first = future::poll_fn(|cx|
+    // 1. poll block_reader; SM::Waiting -> SM::Selecting
+    // Poll::Pending);
+
+    // let next = future::poll_fn(|cx|
+    // 2. begin selection
+    //  - every subsequent block_reader call
+    // Poll::Pending);
+    // 3. await ... ?
+
+    future::pending()
 }
 
 // impl<C, T> Select<C> for T
@@ -193,21 +272,21 @@ mod params {
 
     ///
     #[derive(Debug)]
-    pub struct Params<'a, C, T = Any>
+    pub struct Params<'a, Ctx>
     where
-        C: Context,
-        T: Representation,
+        Ctx: Context,
+        // T: Representation,
     {
-        pub(crate) selector: Option<&'a Selector>,
+        pub(crate) selector: &'a Selector,
         pub(crate) state: State,
         // pub(crate) max_path_depth: Option<usize>,
         // pub(crate) max_link_depth: Option<usize>,
-        pub(crate) callback: Callback<'a, C, T>,
+        pub(crate) callback: Option<Callback<'a, Ctx>>,
     }
 
-    // impl<'a, C, T> Default for Params<'a, C, T>
+    // impl<'a, Ctx, T> Default for Params<'a, Ctx, T>
     // where
-    //     C: Context,
+    //     Ctx: Context,
     //     T: Representation,
     // {
     //     fn default() -> Self {
@@ -216,24 +295,21 @@ mod params {
     //             state: Default::default(),
     //             // max_path_depth: None,
     //             // max_link_depth: None,
-    //             callback: Default::default(),
+    //             callback: None,
     //         }
     //     }
     // }
 
-    impl<'a, C, T> Params<'a, C, T>
+    impl<'a, Ctx> Params<'a, Ctx>
     where
-        C: Context,
-        T: Representation,
+        Ctx: Context,
+        // T: Representation,
     {
         ///
-        pub fn new_select(cid: Cid) -> Self {
+        pub fn new(selector: &'a Selector) -> Self {
             Self {
-                selector: None,
-                state: State {
-                    current_block: cid,
-                    ..Default::default()
-                },
+                selector,
+                state: Default::default(),
                 callback: Default::default(),
             }
         }
@@ -244,11 +320,11 @@ mod params {
         //     self
         // }
 
-        ///
-        pub fn with_selector(mut self, selector: &'a Selector) -> Self {
-            self.selector.replace(selector);
-            self
-        }
+        // ///
+        // pub fn with_selector(mut self, selector: &'a Selector) -> Self {
+        //     self.selector.replace(selector);
+        //     self
+        // }
 
         ///
         pub fn with_max_path_depth(mut self, max_path_depth: usize) -> Self {
@@ -262,49 +338,53 @@ mod params {
             self
         }
 
-        ///
-        pub fn into_node_iter(
-            self,
-            only_results: bool,
-            ctx: &mut C,
-        ) -> Result<IntoIter<NodeSelection>, Error>
-        where
-            T: Select<C>,
-        {
-            let vec = RefCell::new(Vec::new());
-            let params = Params {
-                callback: Callback::SelectNode {
-                    only_results,
-                    cb: Box::new(|node, _| {
-                        vec.borrow_mut().push(node);
-                        Ok(())
-                    }),
-                },
-                ..self
-            };
+        // ///
+        // pub fn into_node_iter<T>(
+        //     self,
+        //     only_results: bool,
+        //     ctx: &mut Ctx,
+        // ) -> Result<IntoIter<NodeSelection>, Error>
+        // where
+        //     T: Select<Ctx>,
+        // {
+        //     let vec = RefCell::new(Vec::new());
+        //     let params = Params {
+        //         callback: Some(Callback::SelectNode {
+        //             only_matched: only_results,
+        //             cb: Box::new(|node, _| {
+        //                 vec.borrow_mut().push(node);
+        //                 Ok(())
+        //             }),
+        //         }),
+        //         ..self
+        //     };
 
-            T::select(params, ctx)?;
-            Ok(vec.into_inner().into_iter())
-        }
+        //     T::select_in(params, ctx)?;
+        //     Ok(vec.into_inner().into_iter())
+        // }
 
         ///
         /// TODO: make this more like an actual iterator, that can pause across links
-        pub fn into_dag_iter(self, ctx: &mut C) -> Result<IntoIter<DagSelection>, Error>
+        pub fn select_in<T>(self, cid: Cid, ctx: Ctx) -> Result<IntoIter<DagSelection>, Error>
         where
-            T: Select<C>,
+            T: Select<Ctx>,
         {
             let vec = RefCell::new(Vec::new());
             let params = Params {
-                callback: Callback::SelectDag {
+                state: State {
+                    current_block: cid,
+                    ..self.state
+                },
+                callback: Some(Callback::SelectDag {
                     cb: Box::new(|node, _| {
                         vec.borrow_mut().push(node);
                         Ok(())
                     }),
-                },
+                }),
                 ..self
             };
 
-            T::select(params, ctx)?;
+            T::select_in(params, ctx)?;
             Ok(vec.into_inner().into_iter())
         }
 
@@ -380,24 +460,88 @@ mod dag_selection {
     use super::*;
 
     ///
-    pub struct DagSelection {
-        pub path: PathBuf,
-        pub dag: AnyRepresentation,
-        pub label: Option<std::string::String>,
+    pub struct DagRefSelection<'a> {
+        pub path: &'a Path,
+        pub dag: &'a dyn ErasedRepresentation,
+        pub label: Option<&'a str>,
     }
 
-    impl<P, T> From<(P, T, Option<&str>)> for DagSelection
-    where
-        P: Into<PathBuf>,
-        T: Representation + 'static,
-    {
-        fn from((path, dag, label): (P, T, Option<&str>)) -> Self {
+    impl<'a> DagRefSelection<'a> {
+        ///
+        pub fn new<T>(path: &'a Path, dag: &'a T, label: Option<&'a str>) -> Self
+        where
+            T: Representation + 'static,
+        {
             Self {
-                path: path.into(),
-                dag: dag.into(),
-                label: label.map(|s| s.to_string()),
+                path,
+                dag: dag,
+                label,
             }
         }
+
+        ///
+        #[inline]
+        pub fn is<T>(&self) -> bool
+        where
+            T: Representation + 'static,
+        {
+            (*self.dag).as_any().is::<T>()
+        }
+
+        ///
+        #[inline]
+        pub fn downcast_ref<T>(&self) -> Option<&T>
+        where
+            T: Representation + 'static,
+        {
+            (*self.dag).as_any().downcast_ref()
+        }
+    }
+
+    ///
+    pub struct DagRefMutSelection<'a> {
+        pub path: &'a Path,
+        pub dag: &'a mut dyn ErasedRepresentation,
+        pub label: Option<&'a str>,
+    }
+
+    impl<'a> DagRefMutSelection<'a> {
+        ///
+        pub fn new<T>(path: &'a Path, dag: &'a mut T, label: Option<&'a str>) -> Self
+        where
+            T: Representation + 'static,
+        {
+            Self {
+                path,
+                dag: dag,
+                label,
+            }
+        }
+
+        ///
+        #[inline]
+        pub fn is<T>(&self) -> bool
+        where
+            T: Representation + 'static,
+        {
+            (*self.dag).as_any().is::<T>()
+        }
+
+        ///
+        #[inline]
+        pub fn downcast_mut<T>(&mut self) -> Option<&mut T>
+        where
+            T: Representation + 'static,
+        {
+            (*self.dag).as_any_mut().downcast_mut()
+        }
+    }
+
+    ///
+    pub struct DagSelection {
+        pub path: PathBuf,
+        pub dag: Box<dyn ErasedRepresentation>,
+        pub label: Option<std::string::String>,
     }
 
     impl DagSelection {
@@ -408,9 +552,48 @@ mod dag_selection {
         {
             Self {
                 path: path.to_owned(),
-                dag: dag.into(),
+                dag: Box::new(dag),
                 label: label.map(str::to_string),
             }
+        }
+
+        ///
+        #[inline]
+        pub fn is<T>(&self) -> bool
+        where
+            T: Representation + 'static,
+        {
+            (*self.dag).as_any().is::<T>()
+        }
+
+        ///
+        #[inline]
+        pub fn downcast_ref<T>(&self) -> Option<&T>
+        where
+            T: Representation + 'static,
+        {
+            (*self.dag).as_any().downcast_ref()
+        }
+
+        ///
+        #[inline]
+        pub fn downcast_mut<T>(&mut self) -> Option<&mut T>
+        where
+            T: Representation + 'static,
+        {
+            (*self.dag).as_any_mut().downcast_mut()
+        }
+
+        ///
+        #[inline]
+        pub fn downcast<T>(self) -> Result<T, Error>
+        where
+            T: Representation + 'static,
+        {
+            self.dag
+                .downcast()
+                .map(|dag| *dag)
+                .map_err(|_| Error::downcast_failure::<T>("incorrect type"))
         }
     }
 
@@ -470,88 +653,115 @@ mod dag_selection {
     // }
 
     ///
-    #[derive(Clone, Debug, From, Deserialize, Serialize)]
+    #[derive(
+        Clone,
+        Debug,
+        From,
+        Deserialize,
+        Serialize,
+        // Representation
+    )]
     // #[from(forward)]
+    // #[ipld(internal)]
     pub enum SelectedNode {
         ///
         #[serde(rename = "null")]
+        // #[ipld(rename = "null")]
         Null,
 
         ///
         #[serde(rename = "bool")]
+        // #[ipld(rename = "bool")]
         Bool(bool),
 
         ///
         #[serde(rename = "int8")]
+        // #[ipld(rename = "int8")]
         Int8(i8),
 
         ///
         #[serde(rename = "int16")]
+        // #[ipld(rename = "int16")]
         Int16(i16),
 
         ///
         #[serde(rename = "int32")]
+        // #[ipld(rename = "int32")]
         Int32(i32),
 
         ///
         #[serde(rename = "int64")]
+        // #[ipld(rename = "int64")]
         Int64(i64),
 
         ///
         #[serde(rename = "int")]
+        // #[ipld(rename = "int")]
         Int128(i128),
 
         ///
         #[serde(rename = "uint8")]
+        // #[ipld(rename = "uint8")]
         Uint8(u8),
 
         ///
         #[serde(rename = "uint16")]
+        // #[ipld(rename = "uint16")]
         Uint16(u16),
 
         ///
         #[serde(rename = "uint32")]
+        // #[ipld(rename = "uint32")]
         Uint32(u32),
 
         ///
         #[serde(rename = "uint64")]
+        // #[ipld(rename = "uint64")]
         Uint64(u64),
 
         ///
         #[serde(rename = "uint128")]
+        // #[ipld(rename = "uint128")]
         Uint128(u128),
 
         ///
         #[serde(rename = "float32")]
+        // #[ipld(rename = "float32")]
         Float32(f32),
 
         ///
         #[serde(rename = "float64")]
+        // #[ipld(rename = "float64")]
         Float64(f64),
 
         ///
         #[serde(skip)] // TODO
         #[serde(rename = "string")]
+        // #[ipld(rename = "string")]
         String(String),
 
         ///
         #[serde(skip)] // TODO
         #[serde(rename = "bytes")]
+        // #[ipld(rename = "bytes")]
         Bytes(Bytes),
 
         ///
         #[serde(rename = "list")]
+        // #[ipld(rename = "list")]
         #[from(ignore)]
         List,
 
         ///
         #[serde(rename = "map")]
+        // #[ipld(rename = "map")]
         #[from(ignore)]
         Map,
 
         ///
         #[serde(skip)] // TODO
         #[serde(rename = "link")]
+        // #[ipld(rename = "link")]
         Link(Cid),
     }
 
@@ -653,7 +863,7 @@ mod field {
 
     /// Wrapper type for types that can be used as dag keys or indices.
     #[doc(hidden)]
-    #[derive(Clone, Debug, Display, From)]
+    #[derive(Clone, Debug, Display, From, Hash, Eq, PartialEq, PartialOrd, Ord)]
     // #[from(forward)]
     pub enum Field<'a> {
         Key(Cow<'a, str>),
@@ -663,6 +873,7 @@ mod field {
 
     impl<'a> Field<'a> {
         pub fn append_to_path(&self, path: &mut PathBuf) {
+            // todo: escaping to prevent hijacking root?
             match self {
                 Self::Key(s) => path.push(s.as_ref()),
                 // Self::CidKey(c) => path.push(c.to_string()),

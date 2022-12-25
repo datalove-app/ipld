@@ -80,19 +80,19 @@ where
                 //     new_map.insert(key, iter.next_value::<C, K, V>()?)
                 // }
 
-                let mut iter = SerdeMapIterator::<'de, A>::from(map);
-                while let Some(key) = <_ as MapIterator<K, V>>::next_key::<C>(&mut iter, None)
-                    .map_err(A::Error::custom)?
-                {
-                    let val = key
-                        .as_field()
-                        .ok_or_else(|| Error::explore_key_failure::<K>(None))
-                        .and_then(|field| {
-                            <_ as MapIterator<K, V>>::next_value::<C>(&mut iter, &field)
-                        })
-                        .map_err(A::Error::custom)?;
-                    new_map.insert(key, val);
-                }
+                // let mut iter = SerdeMapIterator::<'de, A>::from(map);
+                // while let Some(key) = <_ as MapIterator<K, V>>::next_key::<C>(&mut iter, None)
+                //     .map_err(A::Error::custom)?
+                // {
+                //     let val = key
+                //         .as_field()
+                //         .ok_or_else(|| Error::explore_key_failure::<K>(None))
+                //         .and_then(|field| {
+                //             <_ as MapIterator<K, V>>::next_value::<C>(&mut iter, &field)
+                //         })
+                //         .map_err(A::Error::custom)?;
+                //     new_map.insert(key, val);
+                // }
 
                 Ok(new_map)
             }
@@ -123,14 +123,17 @@ repr_serde! { @visitors for Map<K, V>
         if let Some(s) = self.as_ref().selector.as_explore_union() {
             if s.matches_first() {
                 // TODO: transform the seed to a phantom seed, then recurse
-                let map = <Map<K, V>>::deserialize::<MC, _>(MapAccessDeserializer::new(map))?;
-                return map.__select_in(self.into_inner()).map_err(A::Error::custom);
+                let map: Map<K, V> = Representation::deserialize::<MC, _>(MapAccessDeserializer::new(map))?;
+                // map.__select_in(self.into_inner()).map_err(A::Error::custom)?;
+                return Ok(AstResult::Ok);
             }
         }
 
         self.into_inner()
             .select_map::<MC, false, K, V, _>(SerdeMapIterator::from(map))
-            .map_err(A::Error::custom)
+            .map_err(A::Error::custom)?;
+        Ok(AstResult::Ok)
+
         /*
         match self.as_ref().selector {
             Selector::Matcher(_) => {
@@ -164,13 +167,19 @@ mod iterators {
     ///
     #[doc(hidden)]
     #[derive(Debug)]
-    pub struct SerdeMapIterator<'de, A>(A, PhantomData<&'de ()>);
+    pub struct SerdeMapIterator<'de, A> {
+        map: A,
+        _t: PhantomData<&'de ()>,
+    }
     impl<'de, A> From<A> for SerdeMapIterator<'de, A> {
-        fn from(inner: A) -> Self {
-            Self(inner, PhantomData)
+        fn from(map: A) -> Self {
+            Self {
+                map,
+                _t: PhantomData,
+            }
         }
     }
-    impl<'de, K, V, A> MapIterator<K, V> for SerdeMapIterator<'de, A>
+    impl<'de, K, V, A> MapIterator<'de, K, V> for SerdeMapIterator<'de, A>
     where
         K: StringRepresentation,
         <K as FromStr>::Err: fmt::Display,
@@ -178,41 +187,41 @@ mod iterators {
         A: MapAccess<'de>,
     {
         fn size_hint(&self) -> Option<usize> {
-            self.0.size_hint()
+            self.map.size_hint()
         }
 
-        fn next_key<const C: u64>(
+        fn next_key<const MC: u64>(
             &mut self,
-            expected_field_name: Option<&'static str>,
-        ) -> Result<Option<K>, Error> {
+            expected: Option<&Field<'static>>,
+        ) -> Result<Option<AstResult<K>>, Error> {
             let key = self
-                .0
-                .next_key_seed(DeserializeRepr::<C, K>::new())
-                .or_else(|_| Err(Error::explore_key_failure::<K>(expected_field_name)))?;
+                .map
+                .next_key_seed(DeserializeRepr::<MC, K>::new())
+                .map_err(|_| Error::explore_key_failure::<K>(expected))?;
 
-            // TODO: assert that key == expected_field_name
-            Ok(key)
+            match (key, expected) {
+                (None, None) => Ok(None),
+                (Some(k), Some(e)) if k.as_field().as_ref() == Some(e) => {
+                    Ok(Some(AstResult::Value(k)))
+                }
+                (_, _) => Err(Error::explore_key_failure::<K>(expected)),
+            }
         }
 
-        fn next_value_ignored(&mut self, field: &Field<'_>) -> Result<(), Error> {
-            self.0
-                .next_value::<IgnoredAny>()
-                .or_else(|_| Err(Error::explore_value_failure::<IgnoredAny>(field)))?;
-            Ok(())
-        }
-
-        fn next_value<const C: u64>(&mut self, field: &Field<'_>) -> Result<V, Error> {
-            self.0
-                .next_value_seed(DeserializeRepr::<C, V>::new())
-                .or_else(|_| Err(Error::explore_value_failure::<V>(field)))
-        }
-
-        fn next_value_seed<'a, const C: u64, Ctx: Context>(
-            &mut self,
-            seed: SelectorSeed<'a, Ctx, V>,
-            // field: &Field<'_>,
-        ) -> Result<(), Error>
+        fn next_value_ignored<const MC: u64, Ctx>(&mut self) -> Result<AstResult<V>, Error>
         where
+            Ctx: Context + 'de,
+            V: Select<Ctx>,
+        {
+            unimplemented!()
+        }
+
+        fn next_value_seed<const MC: u64, Ctx>(
+            &mut self,
+            seed: SelectorSeed<'de, Ctx, V>,
+        ) -> Result<AstResult<V>, Error>
+        where
+            Ctx: Context + 'de,
             V: Select<Ctx>,
         {
             // let key = <Self as MapIterator<K, V>>::key(self);
@@ -329,7 +338,7 @@ where
         K: Select<Ctx> + StringRepresentation,
         <K as FromStr>::Err: fmt::Display,
         V: Select<Ctx>,
-        I: MapIterator<K, V>,
+        I: for<'b> MapIterator<'b, K, V>,
     {
         unimplemented!()
     }
@@ -344,42 +353,43 @@ where
         K: Select<Ctx> + StringRepresentation,
         <K as FromStr>::Err: fmt::Display,
         V: Select<Ctx>,
-        I: MapIterator<K, V>,
+        I: for<'b> MapIterator<'b, K, V>,
     {
         unimplemented!()
     }
 
     ///
-    pub fn match_map<const C: u64, K, V, I, T2, F1, F2, F3>(
+    pub fn match_map<const MC: u64, K, V, I, T2, F1, F2, F3>(
         mut self,
         mut iter: I,
-        init_new_dag: F1,
-        mut match_cb: F2,
-        into_dag: F3,
+        // init_new_dag: F1,
+        // mut match_cb: F2,
+        // into_dag: F3,
     ) -> Result<(), Error>
     where
         K: Select<Ctx> + StringRepresentation,
         <K as FromStr>::Err: fmt::Display,
         V: Select<Ctx>,
-        I: MapIterator<K, V>,
-        T2: Default + 'static,
-        F1: FnOnce(&I) -> T2,
-        for<'b> F2: FnMut(&'b K, &'b T2) -> Box<dyn MatchDagOp<V, Ctx> + 'b>,
-        F3: FnOnce(T2) -> T,
+        I: for<'b> MapIterator<'b, K, V>,
+        // T2: Default + 'static,
+        // F1: FnOnce(&I) -> T2,
+        // for<'b> F2: FnMut(&'b K, &'b T2) -> Box<dyn MatchDagOp<V, Ctx> + 'b>,
+        // F3: FnOnce(T2) -> T,
     {
         // select the matched node, or set up the dag
-        self.handle_node(SelectedNode::Map)?;
-        let new_dag = self
-            .is_dag_select()
-            .then(|| init_new_dag(&iter))
-            .unwrap_or_default();
+        // self.select_node(SelectedNode::Map)?;
+        // let new_dag = self
+        //     .is_select_dag()
+        //     .then(|| init_new_dag(&iter))
+        //     .unwrap_or_default();
+        // self.select_ref(&new_dag)?;
 
         // select against each child
-        while let Some(key) = iter.next_key::<C>(None)? {
-            self.handle_field::<C, K, V>(
-                &mut iter,
-                self.is_dag_select().then(|| match_cb(&key, &new_dag)),
-            )?;
+        while let Some(key) = iter.next_key::<MC>(None)? {
+            // self.select_field::<MC, K, V>(
+            //     &mut iter,
+            //     // self.is_select_dag().then(|| match_cb(&key, &new_dag)),
+            // )?;
         }
 
         // // let mut seed = self;
@@ -403,9 +413,9 @@ where
         // while !iter.next_entry_seed::<C, T, Ctx>(&mut self)? {}
 
         // finally, select the matched dag
-        if self.is_dag_select() {
-            self.handle_dag(into_dag(new_dag))?;
-        }
+        // if self.is_select_dag() {
+        //     self.select_dag(into_dag(new_dag))?;
+        // }
 
         Ok(())
     }
@@ -416,7 +426,7 @@ where
         K: Select<Ctx> + StringRepresentation + 'static,
         <K as FromStr>::Err: fmt::Display,
         V: Select<Ctx> + 'static,
-        I: MapIterator<K, V>,
+        I: for<'b> MapIterator<'b, K, V>,
     {
         unimplemented!()
     }

@@ -46,6 +46,31 @@ schema! {
     } representation kinded;
 }
 
+// #[derive(
+//     Clone,
+//     Debug,
+//     // From,
+//     PartialEq,
+//     // TryInto,
+//     // IsVariant, Unwrap
+//     Representation,
+//     Select,
+// )]
+// #[ipld(internal)]
+// // #[from(forward)]
+// // #[try_into(owned, ref, ref_mut)]
+// pub enum Any {
+//     Null(Null),
+//     Bool(Bool),
+//     Int(Int),
+//     Float(Float),
+//     String(String),
+//     Bytes(Bytes),
+//     List(List<Any>),
+//     Map(Map<String, Any>),
+//     Link(Link<Rc<Any>>),
+// }
+
 // impl FromIterator for Any, (T: StringRepresentation, Any)
 
 #[cfg(feature = "dep:rkyv")]

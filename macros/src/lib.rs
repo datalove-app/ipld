@@ -7,7 +7,8 @@
 extern crate proc_macro;
 
 use ipld_macros_internals::{
-    schema2::DeriveRepresentation, RootSelectorDefinition, SchemaDefinition,
+    schema2::{DeriveRepresentation, DeriveSelect},
+    RootSelectorDefinition, SchemaDefinition,
 };
 use proc_macro::TokenStream;
 use syn::parse_macro_input;
@@ -47,11 +48,11 @@ pub fn derive_representation(input: TokenStream) -> TokenStream {
         .into()
 }
 
-// #[proc_macro_derive(Select, attributes(ipld))]
-// pub fn derive_select(input: TokenStream) -> TokenStream {
-//     parse_macro_input!(input as DeriveSelect).expand().into()
-// }
-//
+#[proc_macro_derive(Select, attributes(ipld))]
+pub fn derive_select(input: TokenStream) -> TokenStream {
+    parse_macro_input!(input as DeriveSelect).expand().into()
+}
+
 // #[proc_macro_derive(Patch, attributes(ipld))]
 // pub fn derive_patch(input: TokenStream) -> TokenStream {
 //     parse_macro_input!(input as DerivePatch).expand().into()

@@ -281,48 +281,27 @@ mod iterators {
 
         ///
         /// if name is provided
-        fn next_key<const C: u64>(
-            &mut self,
-            expected_field_name: Option<&'static str>,
-        ) -> Result<Option<K>, Error> {
+        fn next_key<'a, const MC: u64>(
+            &'a mut self,
+            expected: Option<&Field<'static>>,
+        ) -> Result<Option<AstResult<'a, K>>, Error> {
             unimplemented!()
         }
 
-        fn next_value_ignored(&mut self, field: &Field<'_>) -> Result<(), Error> {
-            unimplemented!()
-        }
+        // fn next_value_ignored(&mut self, field: &Field<'_>) -> Result<(), Error> {
+        //     unimplemented!()
+        // }
 
-        fn next_value_seed<'a, const C: u64, Ctx: Context>(
-            &mut self,
-            seed: SelectorSeed<'a, Ctx, V>,
-            // field: &Field<'_>,
-        ) -> Result<(), Error>
-        where
-            V: Select<Ctx>,
-        {
-            unimplemented!()
-        }
-
-        fn next_entry_seed<'a, const C: u64, Ctx: Context + 'a, F>(
-            &mut self,
+        fn next_value_seed<'a: 'b, 'b, const MC: u64, Ctx, F>(
+            &'a mut self,
             seeder: F,
-        ) -> Result<bool, Error>
+        ) -> Result<AstResult<'a, V>, Error>
         where
+            Ctx: Context + 'b,
             V: Select<Ctx>,
-            F: FnOnce(&str) -> Result<Option<SelectorSeed<'a, Ctx, V>>, Error>,
+            F: FnOnce(&Field<'_>) -> Result<Option<SelectorSeed<'b, Ctx, V>>, Error>,
         {
-            //
-
             unimplemented!()
-            // let key = <Self as MapIterator<K, V>>::key(self);
-            // let field = Representation::as_field(key);
-            // let field = self.field();
-            // let err = || Error::explore_value_failure::<V>(field);
-
-            // V::__select_map::<C, _>(seed, &mut self.inner, false)
-            //     .ok()
-            //     .flatten()
-            //     .ok_or_else(|| Error::explore_value_failure::<V>(field))
         }
     }
 

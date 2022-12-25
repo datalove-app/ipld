@@ -76,29 +76,29 @@ where
     }
 }
 
-/// Wrapper type to connect [`serde::DeserializeSeed`]s to the underlying type's
-/// [`Select::__select_de`] codec-specific implementation.
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct DeserializeSelect<const C: u64, Ctx, S, T>(S, PhantomData<(Ctx, T)>);
-impl<const C: u64, Ctx, S, T> DeserializeSelect<C, Ctx, S, T> {
-    pub const fn from(seed: S) -> Self {
-        Self(seed, PhantomData)
-    }
-}
-impl<'a, 'de, const C: u64, Ctx, T> DeserializeSeed<'de>
-    for DeserializeSelect<C, Ctx, SelectorSeed<'a, Ctx, T>, T>
-where
-    Ctx: Context,
-    // S: SeedType<T>, TODO:
-    T: Select<Ctx>,
-{
-    type Value = ();
-    #[inline(always)]
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        T::__select_de::<C, D>(self.0, deserializer)
-    }
-}
+// /// Wrapper type to connect [`serde::DeserializeSeed`]s to the underlying type's
+// /// [`Select::__select_de`] codec-specific implementation.
+// #[doc(hidden)]
+// #[derive(Debug)]
+// pub struct DeserializeSelect<const C: u64, Ctx, S, T>(S, PhantomData<(Ctx, T)>);
+// impl<const C: u64, Ctx, S, T> DeserializeSelect<C, Ctx, S, T> {
+//     pub const fn from(seed: S) -> Self {
+//         Self(seed, PhantomData)
+//     }
+// }
+// impl<'a, 'de, const C: u64, Ctx, T> DeserializeSeed<'de>
+//     for DeserializeSelect<C, Ctx, SelectorSeed<'a, Ctx, T>, T>
+// where
+//     Ctx: Context,
+//     // S: SeedType<T>, TODO:
+//     T: Select<Ctx>,
+// {
+//     type Value = ();
+//     #[inline(always)]
+//     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         T::__select_de::<C, D>(self.0, deserializer)
+//     }
+// }

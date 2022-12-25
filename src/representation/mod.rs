@@ -131,6 +131,12 @@ pub trait Representation: Sized {
     // #[doc(hidden)]
     // type ReprKind: TypedKind;
 
+    // ///
+    // #[doc(hidden)]
+    // type Walker<'de, const MC: u64>: Walk<'de, MC, Self>
+    // where
+    //     Self: 'de;
+
     /// The type's `Select`able static field names and their IPLD Schema kinds.
     #[doc(hidden)]
     const FIELDS: &'static [&'static str] = &[];
@@ -205,18 +211,18 @@ pub trait Representation: Sized {
         // <Self as Deserialize<'de>>::deserialize(deserializer)
         // <Self as Select>::__select_de::<MC, D>(EmptySeed, deserializer)
 
-        // deserialize_with_visitor::<MC, D, _, Self>(
+        // let res = deserialize_with_visitor::<MC, D, _, Self>(
         //     deserializer,
         //     Self::Walker::<'de, '_, MC>::default(),
-        // )
+        // )?;
+        // Ok(res.unwrap_val())
 
         unimplemented!()
     }
 
-    // AstWalk<'a, Ctx, Self>
-    // ///
-    // #[doc(hidden)]
-    // type Walker<'de, 'a: 'de, const MC: u64>: Walk<'de, 'a, MC, Self>;
+    // type Walker<'de, const MC: u64>: Walk<'de, MC, Self>
+    // where
+    //     Self: 'de;
 
     #[inline]
     #[doc(hidden)]
@@ -325,7 +331,7 @@ pub trait Representation: Sized {
 
 #[inline]
 #[doc(hidden)]
-fn deserialize_with_visitor<'de, const MC: u64, D, V, T>(
+pub fn deserialize_with_visitor<'de, const MC: u64, D, V, T>(
     deserializer: D,
     visitor: V,
 ) -> Result<V::Value, D::Error>
@@ -409,7 +415,7 @@ pub trait AdvancedRepresentation<Ctx: Context>: Representation + Select<Ctx> {}
 
 ///
 /// TODO: possibly look at erased-serde to complete this "hack"
-pub(crate) trait ErasedRepresentation: Downcast {
+pub trait ErasedRepresentation: Downcast {
     // /// The underlying [`Representation`] type this type will downcast to.
     // type Representation: Representation = Self;
 
@@ -418,6 +424,10 @@ pub(crate) trait ErasedRepresentation: Downcast {
 
     ///
     fn has_links(&self) -> bool;
+
+    // fn is<T: Representation>(&self) -> bool {
+    //     self.as_any().is::<T>()
+    // }
 }
 
 // impl_downcast!(sync ErasedRepresentation assoc Representation

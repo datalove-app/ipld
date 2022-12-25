@@ -179,6 +179,27 @@ pub trait LinkVisitor<'de, const MC: u64 = IDENTITY>: Visitor<'de> {
         Err(E::invalid_type(de::Unexpected::Other("Cid"), &self))
     }
 
+    // fn visit_dag<E>(self, _: T) -> Result<Self::Value, E>
+    // where
+    //     E: serde::de::Error,
+    // {
+    //     unimplemented!()
+    // }
+
+    // fn visit_ref<E>(self, _: &T) -> Result<Self::Value, E>
+    // where
+    //     E: serde::de::Error,
+    // {
+    //     unimplemented!()
+    // }
+
+    // fn visit_ref_mut<E>(self, _: &T) -> Result<Self::Value, E>
+    // where
+    //     E: serde::de::Error,
+    // {
+    //     unimplemented!()
+    // }
+
     ////////////////////////////////////////////////////////////////////////
     // Visitor API from serde
     ////////////////////////////////////////////////////////////////////////

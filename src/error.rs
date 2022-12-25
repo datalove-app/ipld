@@ -1,7 +1,8 @@
 use crate::dev::*;
 use cid::Error as CidError;
 use maybestd::{
-    error::Error as StdError, fmt::Display, num::TryFromIntError, string::FromUtf8Error,
+    borrow::Cow, error::Error as StdError, fmt::Display, num::TryFromIntError,
+    string::FromUtf8Error,
 };
 #[cfg(feature = "multiaddr")]
 use multiaddr::Error as MultiaddrError;
@@ -60,6 +61,9 @@ pub enum Error {
     //////////////////////////////////////////////////////////////////////
     // selector
     //////////////////////////////////////////////////////////////////////
+    #[error("General selection failure: {0}")]
+    SelectionFailure(String),
+
     #[error("Selector Context error: {0}")]
     Context(#[from] anyhow::Error),
 
@@ -102,7 +106,7 @@ pub enum Error {
     #[error("Failed to explore field key `{field_name}` of type `{key_type_name}`")]
     ExploreFieldKeyFailure {
         key_type_name: &'static str,
-        field_name: &'static str,
+        field_name: String,
     },
 
     #[error("Failed to explore field value of type `{value_type_name}` for key `{key}`")]
@@ -197,10 +201,15 @@ impl Error {
     }
 
     #[doc(hidden)]
-    pub fn explore_key_failure<K: Representation>(field_name: Option<&'static str>) -> Self {
+    pub fn explore_key_failure<K: Representation>(field_name: Option<&Field<'static>>) -> Self {
+        const ANONYMOUS: Field<'static> = Field::Key(Cow::Borrowed("anonymous key"));
         Self::ExploreFieldKeyFailure {
             key_type_name: K::NAME,
-            field_name: field_name.unwrap_or("anonymous key"),
+            field_name: field_name
+                .or(Some(&ANONYMOUS))
+                .and_then(|f| f.as_key())
+                .unwrap()
+                .into(),
         }
     }
 

@@ -1,14 +1,12 @@
-pub extern crate derive_more;
-// #[macro_use]
-// pub extern crate static_assertions;
-
 pub mod common;
 pub mod schema;
+pub mod schema2;
 pub mod selector;
 
 pub use schema::SchemaDefinition;
 pub use selector::{RootSelectorDefinition, SelectorDefinition};
 
+/// Convenient re-exports for development.
 pub mod dev {
     pub use crate::common::*;
     pub use crate::derive_newtype;
@@ -18,7 +16,6 @@ pub mod dev {
     pub use crate::selector::*;
     pub use crate::*;
 
+    pub use darling;
     pub use derive_more;
-    // pub use static_assertions;
-    // pub use tylift;
 }

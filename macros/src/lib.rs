@@ -4,26 +4,61 @@
 //! - support pub/pub(crate) and additional #[derive(...)] statements
 //! - anything can have an advanced representation, so add support to all types
 
-use proc_macro_hack::proc_macro_hack;
+extern crate proc_macro;
 
-// pub use ipld_macros_internals::{};
-
-///
-/// todo: docs
-pub use ipld_macros_hack::schema;
-
-///
-/// todo: docs
-#[proc_macro_hack]
-pub use ipld_macros_hack::selector;
+use ipld_macros_internals::{
+    schema2::{DeriveRepresentation, DeriveSelect},
+    RootSelectorDefinition, SchemaDefinition,
+};
+use proc_macro::TokenStream;
+use syn::parse_macro_input;
 
 ///
-/// todo: docs
-pub use ipld_macros_hack::ipld_attr;
+///
+/// TODO: rename attrs to ipld_macros(), add a `wrap = Box/Rc/etc` attr
+#[proc_macro]
+pub fn schema(input: TokenStream) -> TokenStream {
+    parse_macro_input!(input as SchemaDefinition)
+        .expand()
+        .into()
+}
 
-// def_attributes!(
-//     #[doc(hidden)]
-//     ipld_macros_internal
-// );
-// def_attributes!(try_from);
-// def_attributes!(wrap);
+/// An attribute macro, used to help the `schema!` and `selector!` macros
+/// capture relevant arguments.
+#[proc_macro_attribute]
+pub fn ipld_attr(_attr: TokenStream, items: TokenStream) -> TokenStream {
+    items
+}
+
+///
+#[proc_macro]
+pub fn selector(input: TokenStream) -> TokenStream {
+    parse_macro_input!(input as RootSelectorDefinition)
+        .expand()
+        .into()
+}
+
+// derive API
+
+///
+#[proc_macro_derive(Representation, attributes(ipld))]
+pub fn derive_representation(input: TokenStream) -> TokenStream {
+    parse_macro_input!(input as DeriveRepresentation)
+        .expand()
+        .into()
+}
+
+#[proc_macro_derive(Select, attributes(ipld))]
+pub fn derive_select(input: TokenStream) -> TokenStream {
+    parse_macro_input!(input as DeriveSelect).expand().into()
+}
+
+// #[proc_macro_derive(Patch, attributes(ipld))]
+// pub fn derive_patch(input: TokenStream) -> TokenStream {
+//     parse_macro_input!(input as DerivePatch).expand().into()
+// }
+//
+// #[proc_macro_derive(Merge, attributes(ipld))]
+// pub fn derive_merge(input: TokenStream) -> TokenStream {
+//     parse_macro_input!(input as DeriveMerge).expand().into()
+// }

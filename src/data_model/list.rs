@@ -1,23 +1,32 @@
 use crate::dev::*;
-use macros::impl_selector_seed_serde;
-use std::{
+use macros::repr_serde;
+use maybestd::{
     cell::RefCell,
-    fmt,
+    fmt, iter,
     marker::PhantomData,
     ops::{Bound, RangeBounds},
+    vec::Vec,
 };
 
+pub use iterators::*;
+
+/// A list type, implemented as a [`Vec`].
 ///
+/// [`Vec`]: crate::maybestd::vec::Vec
 pub type List<T = Any> = Vec<T>;
 
 impl<T: Representation> Representation for List<T> {
     const NAME: &'static str = "List";
-    const SCHEMA: &'static str = concat!("type List [", stringify!(T::NAME), "]");
+    const SCHEMA: &'static str = "type List [Any]";
     const DATA_MODEL_KIND: Kind = Kind::List;
     const HAS_LINKS: bool = T::HAS_LINKS;
 
     fn has_links(&self) -> bool {
         self.iter().any(Representation::has_links)
+    }
+
+    fn to_selected_node(&self) -> SelectedNode {
+        SelectedNode::List
     }
 
     #[inline]
@@ -26,440 +35,485 @@ impl<T: Representation> Representation for List<T> {
     where
         S: Serializer,
     {
+        // #[cfg(feature = "dag-rkyv")]
+
         use ser::SerializeSeq;
 
         let mut seq = serializer.serialize_seq(Some(self.len()))?;
         for elem in self {
-            seq.serialize_element(&EncoderElem::<'_, C, _>(elem))?;
+            seq.serialize_element(&SerializeRepr::<'_, C, _>(elem))?;
         }
         seq.end()
     }
 
     #[inline]
     #[doc(hidden)]
-    fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct ListVisitor<const C: u64, T>(PhantomData<T>);
-        impl<const C: u64, T> Default for ListVisitor<C, T> {
-            fn default() -> Self {
-                Self(PhantomData)
-            }
-        }
-        impl<'de, const C: u64, T: Representation> Visitor<'de> for ListVisitor<C, T> {
+        struct ListVisitor<const MC: u64, T>(PhantomData<T>);
+        impl<'de, const MC: u64, T> Visitor<'de> for ListVisitor<MC, T>
+        where
+            T: Representation,
+        {
             type Value = List<T>;
             #[inline]
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "A list of `{}`", T::NAME)
             }
-
             #[inline]
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
             where
                 A: SeqAccess<'de>,
             {
                 let mut list = List::with_capacity(seq.size_hint().unwrap_or(8));
-                while let Some(elem) = seq.next_element_seed(DecoderElem::<C, T>::default())? {
-                    list.push(elem);
+                // let mut iter = SerdeListIterator::<'de, A>::from(seq);
+                // while let Some(dag) = iter.next::<MC>().map_err(A::Error::custom)? {
+                //     list.push(dag);
+                // }
+
+                while let Some(dag) = seq.next_element_seed(DeserializeRepr::<MC, T>::new())? {
+                    list.push(dag);
                 }
                 Ok(list)
             }
         }
 
-        deserializer.deserialize_seq(ListVisitor::<C, T>::default())
+        deserializer.deserialize_seq(ListVisitor::<MC, T>(PhantomData))
     }
 }
 
-impl_selector_seed_serde! { @codec_seed_visitor
-    { T: Representation + 'static }
-    { for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()> }
-    List<T>
-{
+repr_serde! { @select for List<T> { T } { T: Select<Ctx> + 'static }}
+repr_serde! { @visitors for List<T> { T } { T: Select<Ctx> + 'static } @serde {
     #[inline]
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "A list of `{}`", T::NAME)
+        write!(f, "A list of type {} of {}", <List<T>>::NAME, T::NAME)
     }
-
     #[inline]
     fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
     where
         A: SeqAccess<'de>,
     {
-        match self.0.selector {
-            Selector::Matcher(_) => self.match_list(seq),
-            Selector::ExploreIndex(s) => self.explore_list_range(s.index as usize..s.index as usize, seq),
-            Selector::ExploreRange(s) => self.explore_list_range(s.start as usize..s.end as usize, seq),
-            Selector::ExploreAll(_) => self.explore_list_range(0.., seq),
-            _ => Err(A::Error::custom(Error::unsupported_selector::<List<T>>(
-                self.0.selector,
-            ))),
+        use de::value::SeqAccessDeserializer as De;
+
+        match (self.mode(), self.selector()) {
+            (SelectionMode::Decode, _) => {
+                let list = <List<T>>::deserialize::<MC, _>(De::new(seq))?;
+                Ok(AstResult::Value(list))
+                // self.into_inner()
+                //     .match_list::<MC, T, _>(SerdeListIterator::from(seq))
+                //     .map_err(A::Error::custom)
+
+            }
+            // (SelectionMode::Patch, _) => {}
+            (_, Selector::ExploreUnion(s)) if s.matches_first() => {
+                let list = <List<T>>::deserialize::<MC, _>(De::new(seq))?;
+                // todo: for each selector, List<T>::select
+                // list.__select_in(self.into_inner()).map_err(A::Error::custom)?;
+                Ok(AstResult::Ok)
+            }
+            _ => {
+                self.into_inner()
+                    .select_list::<MC, false, T, _>(SeqAccessIterator::from(seq))
+                    .map_err(A::Error::custom)
+            }
         }
     }
 }}
 
-impl_selector_seed_serde! { @codec_seed_visitor_ext
-    { T: Representation + 'static }
-    { for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()> }
-    List<T> {}
-}
-
-impl_selector_seed_serde! { @selector_seed_codec_deseed
-    { T: Representation + 'static }
-    { for<'b> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de> }
-    List<T>
-{
-    #[inline]
-    fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(CodecSeed::<C, _>(self))
-    }
-}}
-
-impl_selector_seed_serde! { @selector_seed_select
-    { T: Representation + 'static }
-    { for<'b, 'de> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de> }
-    List<T>
-}
-
-/*
-impl<'a, 'de, Ctx, T> Visitor<'de> for ContextSeed<'a, C, List<T>>
-where
-    C: Context,
-    T: Representation + 'static,
-    for<'b> ContextSeed<'b, Ctx, T>: DeserializeSeed<'de, Value = ()>,
-{
-    type Value = ();
-
-    #[inline]
-    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{}", <List<T>>::NAME)
-    }
-
-    #[inline]
-    fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
-    where
-        A: SeqAccess<'de>,
-    {
-        match self.selector {
-            Selector::Matcher(matcher) => self.match_list(matcher, seq),
-            Selector::ExploreIndex(s) => self.explore_list(s.index as usize..s.index as usize, seq),
-            Selector::ExploreRange(s) => self.explore_list(s.start as usize..s.end as usize, seq),
-            Selector::ExploreAll(s) => self.explore_list(0.., seq),
-            _ => Err(A::Error::custom(Error::unsupported_selector::<List<T>>(
-                self.selector,
-            ))),
-        }
-    }
-}
-
-impl<'a, 'de, Ctx, T> DeserializeSeed<'de> for ContextSeed<'a, C, List<T>>
-where
-    C: Context,
-    T: Representation + 'static,
-    for<'b> ContextSeed<'b, Ctx, T>: DeserializeSeed<'de, Value = ()>,
-{
-    type Value = ();
-
-    #[inline]
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(self)
-    }
-}
-
-// TODO replace with impl_selector_seed_serde
-impl<'a, Ctx, T> Select<C> for List<T>
-where
-    C: Context,
-    T: Representation + Send + Sync + 'static,
-{
-    fn select(params: SelectionParams<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
-        unimplemented!()
-    }
-}
- */
-
-// match impl
-impl<'a, const C: u64, Ctx, T> CodecSeed<C, SelectorSeed<'a, Ctx, List<T>>>
+impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
 where
     Ctx: Context,
-    T: Representation + 'static,
+    // T: Representation<ReprKind = type_kinds::List>,
+    T: Select<Ctx> + 'static,
 {
-    /// match
-    fn match_list<'de, A>(mut self, mut seq: A) -> Result<(), A::Error>
+    ///
+    pub fn select_list<'de, const MC: u64, const IN: bool, U, I>(
+        mut self,
+        mut iter: I,
+        // dag: Either<&T2, I>,
+    ) -> Result<AstResult<T>, Error>
     where
-        A: SeqAccess<'de>,
-        for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()>,
+        'a: 'de,
+        Ctx: 'de,
+        U: Select<Ctx> + 'a,
+        I: ListIterator<'de, U>,
     {
-        let matcher = self
-            .0
-            .selector
-            .as_matcher()
-            .expect("should know that this is a matcher");
-
-        // select list node, or set up list
-        let mode = self.0.mode();
-        let mut dag: RefCell<List<T>> = Default::default();
-
-        match mode {
-            SelectionMode::SelectNode => {
-                self.0
-                    .select_matched_node(SelectedNode::List, matcher.label.as_deref())
-                    .map_err(A::Error::custom)?;
-            }
-            SelectionMode::SelectDag => {
-                // set up the dag
-                *dag.get_mut() = List::<T>::with_capacity(seq.size_hint().unwrap_or(8));
-            }
-            _ => unimplemented!(),
+        match self.selector {
+            Selector::Matcher(_) => self.match_list::<MC, U, _>(iter),
+            Selector::ExploreIndex(s) => self.explore_list_range::<MC, U, _, _>(iter, s.to_range()),
+            Selector::ExploreRange(s) => self.explore_list_range::<MC, U, _, _>(iter, s.to_range()),
+            Selector::ExploreAll(s) => self.explore_list_range::<MC, U, _, _>(iter, s.to_range()),
+            s => Err(Error::unsupported_selector::<T>(s)),
         }
 
-        let (selector, state, mut params, ctx) = self.0.into_parts();
+        // self.cover_node(SelectedNode::List)?;
+        // loop {
+        //     if self.handle_index::<MC, U>(&mut iter, None)? {
+        //         break;
+        //     }
+        // }
+
+        // Ok(AstResult::Ok)
+    }
+
+    /// Executes a [`Matcher`] selector against a list (data model) type.
+    /// todo could probably use a collection trait instead of multiple Fns
+    pub fn match_list<'de, const MC: u64, U, I>(
+        mut self,
+        mut iter: I,
+        // init_new_dag: F1,
+        // mut match_cb: F2,
+        // into_dag: F3,
+    ) -> Result<AstResult<T>, Error>
+    where
+        'a: 'de,
+        Ctx: 'de,
+        U: Select<Ctx> + 'a,
+        I: ListIterator<'de, U>,
+        // T2: Default,
+        // F1: FnOnce(&I) -> T2,
+        // for<'b> F2: FnMut(&'b T2) -> Box<dyn MatchDagOp<U, Ctx> + 'b>,
+        // F3: FnOnce(T2) -> T,
+    {
+        // if self.is_dag_select() {
+        //     self.handle_dag(T::deserialize(deserializer))
+        // }
+
+        // select the matched list node, or setup the list
+        // self.handle_node(SelectedNode::List)?;
+        // let new_dag = self
+        //     .is_dag_select()
+        //     .then(|| init_new_dag(&iter))
+        //     .unwrap_or_default();
 
         // select against each child
+        // while let Some(_) = self.handle_index::<MC, U>(&mut iter)? {
+        //     break;
+        // }
+        let (selector, mut state, cb, mut ctx) = self.into_parts();
         for index in 0usize.. {
-            let is_empty = SelectorSeed::field_select_seed::<T>(
-                selector,
-                state,
-                &mut params,
-                ctx,
-                index.into(),
-                match mode {
-                    SelectionMode::SelectNode => None,
-                    SelectionMode::SelectDag => {
-                        Some(Box::new(|child, _| Ok(dag.borrow_mut().push(child))))
-                    }
-                    _ => unreachable!(),
-                },
-            )
-            .map_err(A::Error::custom)
-            .and_then(|seed| Ok(seq.next_element_seed(CodecSeed(seed))?.is_none()))?;
-            state.ascend::<T>().map_err(A::Error::custom)?;
+            let field = Field::Index(index);
+            let seed =
+                Self::to_field_select_seed::<U>(&selector, &mut state, cb.clone(), ctx, &field)?;
+            let res = match seed {
+                None => (&mut iter).next_ignored::<MC>()?,
+                Some(seed) => (&mut iter).next_element_seed::<MC, Ctx>(seed)?,
+            };
 
-            if is_empty {
-                break;
-            }
+            match res {
+                None => break,
+                Some(AstResult::Value(v)) => {}
+                _ => {}
+                // Some(AstResult::Continue) => Ok(Some(AstResult::Continue)),
+                // Some(AstResult::Break) => Ok(Some(AstResult::Break)),
+                _ => unimplemented!(),
+            };
         }
 
-        // finally, select the matched dag
-        if mode == SelectionMode::SelectDag {
-            let mut original_seed = SelectorSeed::from(selector, state, params, ctx);
-            original_seed
-                .select_matched_dag(dag.into_inner(), matcher.label.as_deref())
-                .map_err(A::Error::custom)?;
-        }
+        // finally, select the dag itself (if applicable)
+        // if self.is_dag_select() {
+        //     self.handle_dag(into_dag(new_dag))?;
+        // }
 
-        Ok(())
+        Ok(AstResult::Ok)
     }
 
     /// explore index, range, or all
-    fn explore_list_range<'de, A, R>(mut self, range: R, mut seq: A) -> Result<(), A::Error>
+    fn explore_list_range<'de, const MC: u64, U, I, R>(
+        mut self,
+        mut iter: I,
+        range: R,
+    ) -> Result<AstResult<T>, Error>
     where
-        A: SeqAccess<'de>,
+        'a: 'de,
+        // 'b: 'c,
+        Ctx: 'de,
+        U: Select<Ctx>,
+        I: ListIterator<'de, U>,
         R: RangeBounds<usize> + Iterator<Item = usize>,
-        for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()>,
     {
-        // select the list node
-        if self.0.is_node() {
-            self.0
-                .select_node(SelectedNode::List)
-                .map_err(A::Error::custom)?;
-        }
+        let range_copy = (range.start_bound().cloned(), range.end_bound().cloned());
 
-        let is_unbounded = range.end_bound() == Bound::Unbounded;
-        let start = match range.start_bound() {
-            Bound::Included(start) => *start,
+        let (start_idx, ignore_end_idx) = match range_copy {
+            (Bound::Included(start), Bound::Unbounded) => (start, None),
+            (Bound::Included(start), Bound::Included(i)) => (start, Some(i + 1)),
+            (Bound::Included(start), Bound::Excluded(i)) => (start, Some(i)),
             _ => unreachable!(),
         };
+        let is_unbounded = ignore_end_idx.is_none();
+
+        // // select the list node
+        // self.handle_node(SelectedNode::List)?;
 
         // ignore everything before the start (unless 0)
         // if empty, return an err
-        let (selector, state, mut params, ctx) = self.0.into_parts();
-        if start > 0 {
-            for index in 0usize..start {
-                if seq.next_element::<IgnoredAny>()?.is_none() {
-                    return Err(A::Error::custom(Error::explore_list_failure(
-                        selector, index,
-                    )));
+        if start_idx > 0 {
+            for index in 0usize..start_idx {
+                if iter.next_ignored::<MC>()?.is_none() {
+                    return Err(Error::explore_list_failure::<U>(self.selector, index));
                 }
             }
         }
 
         // explore any/all indices in the range
+        let (selector, mut state, cb, mut ctx) = self.into_parts();
         for index in range {
-            let is_empty = SelectorSeed::field_select_seed::<T>(
-                &selector,
-                state,
-                &mut params,
-                ctx,
-                index.into(),
-                None,
-            )
-            .map_err(A::Error::custom)
-            .and_then(|seed| Ok(seq.next_element_seed(CodecSeed(seed))?.is_none()))?;
-            state.ascend::<T>().map_err(A::Error::custom)?;
+            let field = Field::Index(index);
+            let res = if selector.next(Some(&field)).is_none() {
+                (&mut iter).next_ignored::<MC>()?
+            } else {
+                let iter = &mut iter;
+                let res = iter.next_element_seed::<MC, Ctx>(SelectorSeed::from_parts(
+                    &selector,
+                    state.descend::<U>(&field)?,
+                    cb.clone(),
+                    ctx,
+                ))?;
+                state.ascend::<U>();
+                res
+            };
 
             // if unbounded and empty, then we're done exploring
             // if bounded and empty, then we failed to explore everything
-            if is_unbounded && is_empty {
-                return Ok(());
-            } else if is_empty {
-                return Err(A::Error::custom(Error::explore_list_failure(
-                    &selector, index,
-                )));
+            if is_unbounded && res.is_none() {
+                return Ok(AstResult::Ok);
+            } else if res.is_none() && range_copy.contains(&index) {
+                return Err(Error::explore_list_failure::<U>(&selector, index));
             }
         }
 
         // finish ignoring the remainder of the list
-        for _ in 0usize.. {
-            if seq.next_element::<IgnoredAny>()?.is_none() {
-                break;
+        if !is_unbounded {
+            for _ in ignore_end_idx.unwrap().. {
+                if iter.next_ignored::<MC>()?.is_none() {
+                    break;
+                }
             }
         }
 
-        Ok(())
+        Ok(AstResult::Ok)
     }
 }
 
-/*
-impl<'a, Ctx, T> ContextSeed<'a, C, List<T>>
+// #[cfg(feature = "skipped")]
+mod iterators {
+    use super::*;
+    use serde::de::IntoDeserializer;
+
+    /*
+    // /// A [`Select`]able list iterator over a serde sequence representation.
+    // #[doc(hidden)]
+    // #[derive(Debug)]
+    // struct SerdeListIterator2<'de, const C: u64, A, T = IgnoredAny, S = DeserializeWrapper<C, T>> {
+    //     seq: A,
+    //     seed: S,
+    //     _de: PhantomData<&'de T>,
+    // }
+
+    // impl<'de, const C: u64, A> SerdeListIterator2<'de, C, A> {
+    //     pub const fn ignored( A) -> Self {
+    //         SerdeListIterator2 {
+    //             seq,
+    //             seed: DeserializeWrapper::<C, IgnoredAny>::new(),
+    //             _de: PhantomData,
+    //         }
+    //     }
+    // }
+
+    // impl<'de, const C: u64, A, T, S> SerdeListIterator2<'de, C, A, T, S> {
+    //     pub const fn from(seq: A) -> SerdeListIterator2<'de, C, A, T> {
+    //         SerdeListIterator2 {
+    //             seq,
+    //             seed: DeserializeWrapper::<C, T>::new(),
+    //             _de: PhantomData,
+    //         }
+    //     }
+
+    //     pub fn take(self) -> (S, SerdeListIterator2<'de, C, A, IgnoredAny>) {
+    //         SerdeListIterator2 {
+    //             seq: self.seq,
+    //             seed: DeserializeWrapper::<C, IgnoredAny>::new(),
+    //             _de: PhantomData,
+    //         }
+    //     }
+    // }
+
+    // impl<'de, const C: u64, A, T, S> Iterator for SerdeListIterator2<'de, C, A, T, S>
+    // where
+    //     A: SeqAccess<'de>,
+    //     S: DeserializeSeed<'de, Value = T>,
+    // {
+    //     type Item = Result<T, A::Error>;
+    //     fn next(&mut self) -> Option<Self::Item> {
+    //         match self.seq.next_element_seed(seed) {
+    //             Ok(Some(val)) => Some(Ok(val)),
+    //             Ok(None) => None,
+    //             Err(err) => Some(Err(err)),
+    //         }
+    //     }
+    // }
+     */
+
+    /// A [`Select`]able list iterator over a serde sequence representation.
+    #[doc(hidden)]
+    #[derive(Debug)]
+    pub struct SeqAccessIterator<'de, A> {
+        seq: A,
+        index: usize,
+        _t: PhantomData<&'de ()>,
+    }
+    impl<'de, A> From<A> for SeqAccessIterator<'de, A> {
+        fn from(seq: A) -> Self {
+            Self {
+                seq,
+                index: 0,
+                _t: PhantomData,
+            }
+        }
+    }
+    impl<'de: 'a, 'a, T, A> ListIterator<'a, T> for SeqAccessIterator<'de, A>
+    where
+        T: Representation,
+        A: SeqAccess<'de>,
+    {
+        fn size_hint(&self) -> Option<usize> {
+            self.seq.size_hint()
+        }
+
+        fn index(&self) -> usize {
+            self.index
+        }
+
+        fn next_ignored<const MC: u64>(&mut self) -> Result<Option<AstResult<T>>, Error>
 where
-    C: Context,
-    T: Representation + Send + Sync + 'static,
-{
-    /// exploreindex
-    fn visit_list_index<'de, A>(
-        mut self,
-        explore_index: &ExploreIndex,
-        mut seq: A,
-    ) -> Result<(), A::Error>
-    where
-        A: SeqAccess<'de>,
-        for<'b> ContextSeed<'b, Ctx, T>: DeserializeSeed<'de, Value = ()>,
-    {
-        // select the list node
-        if self.params.is_node() {
-            self.select_node(Node::List).map_err(A::Error::custom)?;
-        }
-
-        // ignore elements until index
-        let target_index = explore_index.index as usize;
-        for _ in 0usize..target_index {
-            if let None = seq.next_element::<IgnoredAny>()? {
-                return Err(A::Error::custom(Error::ExploreIndexFailure(
-                    "too few nodes to explore index",
-                    explore_index.index as usize,
-                )));
+            // 'a: 'b,
+            // 'b: 'de,
+            // Ctx: Context,
+            // T: Select<Ctx>,
+        {
+            let res = self
+                .seq
+                .next_element::<IgnoredAny>()
+                .map_err(|_| Error::explore_index_failure::<IgnoredAny>(self.index))?;
+            match res {
+                None => Ok(None),
+                Some(_) => {
+                    self.index += 1;
+                    Ok(Some(AstResult::Ok))
+                }
             }
         }
 
-        // create the child's seed, then select the index
-        let (_, state, mut params, ctx) = self.into_parts();
-        Self::select_at_index_seed::<T>(&explore_index.next, state, &mut params, ctx, target_index)
-            .map_err(A::Error::custom)
-            .and_then(|seed| seq.next_element_seed(seed))?;
-        state.ascend::<T>().map_err(A::Error::custom)?;
+        /*
+        fn next<const C: u64>(&mut self) -> Result<Option<T>, Error> {
+            let dag = self
+                .seq
+                .next_element_seed(DeserializeRepr::<C, T>::new())
+                .map_err(|_| Error::explore_index_failure::<T>(self.index))?;
 
-        // finish ignoring the remaining elements
-        for _ in 0usize.. {
-            if seq.next_element::<IgnoredAny>()?.is_none() {
-                break;
+            if dag.is_none() {
+                Ok(None)
+            } else {
+                self.index += 1;
+                Ok(dag)
             }
         }
+        fn next_seed<'de, const C: u64, Ctx: Context>(
+            &mut self,
+            seed: SelectorSeed<'de, Ctx, T>,
+        ) -> Result<bool, Error>
+        where
+            T: Select<Ctx>,
+        {
+            let is_empty = self
+                .seq
+                .next_element_seed(DeserializeSelect::<C, Ctx, _, T>::from(seed))
+                .map_err(|_| Error::explore_index_failure::<T>(self.index))?
+                .is_none();
+            if !is_empty {
+                self.index += 1;
+            }
+            Ok(is_empty)
+        }
+         */
 
-        Ok(())
+        fn next_element_seed<'b, const MC: u64, Ctx>(
+            &mut self,
+            seed: SelectorSeed<'b, Ctx, T>,
+        ) -> Result<Option<AstResult<T>>, Error>
+        where
+            // 'a: 'b,
+            // 'b: 'de,
+            'de: 'b,
+            Ctx: Context + 'de,
+            T: Select<Ctx> + 'de,
+        {
+            let res = self
+                .seq
+                .next_element_seed(<T as Select<_>>::Walker::<'b, MC>::from(seed))
+                .map_err(|_| Error::explore_index_failure::<T>(self.index))?;
+            if res.is_some() {
+                self.index += 1;
+            }
+            Ok(res)
+        }
     }
 
-    /// explorerange
-    fn visit_list_range<'de, A>(
-        mut self,
-        explore_range: &ExploreRange,
-        mut seq: A,
-    ) -> Result<(), A::Error>
-    where
-        A: SeqAccess<'de>,
-        for<'b> ContextSeed<'b, Ctx, T>: DeserializeSeed<'de, Value = ()>,
-    {
-        // select the list node
-        if self.params.is_node() {
-            self.select_node(Node::List).map_err(A::Error::custom)?;
-        }
-
-        // ignore elements until start
-        let start = explore_range.start as usize;
-        let end = explore_range.end as usize;
-        for _ in 0usize..start {
-            if let None = seq.next_element::<IgnoredAny>()? {
-                return Err(A::Error::custom(Error::ExploreRangeFailure(
-                    "too few nodes to explore range",
-                    explore_range.start as usize,
-                    explore_range.end as usize,
-                )));
-            }
-        }
-
-        // select the range
-        let (_, state, mut params, ctx) = self.into_parts();
-        for index in start..end {
-            Self::select_at_index_seed::<T>(&explore_range.next, state, &mut params, ctx, index)
-                .map_err(A::Error::custom)
-                .and_then(|seed| seq.next_element_seed(seed))?;
-            state.ascend::<T>().map_err(A::Error::custom)?;
-        }
-
-        // finish ignoring the remaining elements
-        for _ in 0usize.. {
-            if seq.next_element::<IgnoredAny>()?.is_none() {
-                break;
-            }
-        }
-
-        Ok(())
+    /*
+    /// A [`Select`]able list iterator over an underlying iterator.
+    pub struct MemoryListIterator<'a, T, I> {
+        iter: I,
+        index: usize,
+        len: usize,
+        _t: PhantomData<&'a T>,
     }
 
-    /// exploreall
-    fn visit_list_all<'de, A>(
-        mut self,
-        explore_all: &ExploreAll,
-        mut seq: A,
-    ) -> Result<(), A::Error>
+    impl<'a, T, I> ListIterator<T> for MemoryListIterator<'a, T, I>
     where
-        A: SeqAccess<'de>,
-        for<'b> ContextSeed<'b, Ctx, T>: DeserializeSeed<'de, Value = ()>,
+        T: Representation,
+        I: Iterator<Item = &'a T>,
     {
-        // select the list node
-        if self.params.is_node() {
-            self.select_node(Node::List).map_err(A::Error::custom)?;
+        fn field(&self) -> Field<'_> {
+            Field::Index(self.index)
         }
 
-        // select the range
-        let (_, state, mut params, ctx) = self.into_parts();
-        for index in 0usize.. {
-            let is_empty =
-                Self::select_at_index_seed::<T>(&explore_all.next, state, &mut params, ctx, index)
-                    .map_err(A::Error::custom)
-                    .and_then(|seed| Ok(seq.next_element_seed(seed)?.is_none()))?;
-            state.ascend::<T>().map_err(A::Error::custom)?;
-
-            if is_empty {
-                break;
-            }
+        fn size_hint(&self) -> Option<usize> {
+            Some(self.len)
         }
 
-        Ok(())
+        //
+        fn next_ignored(&mut self) -> Result<bool, Error> {
+            self.iter
+                .next()
+                .ok_or_else(|| Error::explore_index_failure::<T>(self.index))?;
+            self.index += 1;
+            Ok(self.len == self.index)
+        }
+
+        fn next_seed<'_a, const C: u64, Ctx: Context>(
+            &mut self,
+            seed: SelectorSeed<'_a, Ctx, T>,
+        ) -> Result<bool, Error>
+        where
+            T: Select<Ctx>,
+        {
+            self.iter
+                .next()
+                .ok_or_else(|| Error::explore_index_failure::<T>(self.index))?
+                .__select_in(seed)?;
+            self.index += 1;
+            Ok(self.len == self.index)
+        }
     }
+     */
 }
- */
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prelude::*;
+    use crate::*;
 
     #[test]
     fn test_match() {}

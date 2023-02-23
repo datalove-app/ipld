@@ -10,23 +10,37 @@
 mod ipfs;
 
 use crate::dev::*;
-use std::{
+use maybestd::{
     collections::HashMap,
-    io::{Cursor, Read, Write},
+    io::{empty, Cursor, Empty, Read, Sink, Write},
+    task,
 };
 
-/// Trait for providing blocks and additional logic required for selection.
+// trait BlockWriter: Write {}
+
+/// Trait for providing blocks and additional logic required for selection,
+/// patching, etc.
 pub trait Context: Sized {
     ///
-    type Reader: Read;
+    type Reader: Read; // ? BufRead?
 
     ///
-    type Writer: Write;
+    type Writer: Write; // ? BufWrite?
 
     // type Marker;
 
     ///
     fn block_reader(&mut self, cid: &Cid) -> Result<Self::Reader, Error>;
+
+    /// TODO:
+    fn block_writer(&mut self, cid_to_replace: Option<&Cid>) -> Result<Self::Writer, Error> {
+        unimplemented!()
+    }
+
+    // ///
+    // fn flush_writer(&mut self, cid_to_replace: Option<&Cid>, block: ) -> Result<Cid, Error> {
+
+    // }
 
     //
     // fn decoder<'de, 'a: 'de>(&mut self) -> Box<dyn ErasedDeserializer<'de> + 'a> {
@@ -99,6 +113,52 @@ impl<'a, C: Context + 'a> Context for &'a mut C {
     }
 }
 
+impl Context for () {
+    type Reader = Empty;
+    type Writer = Sink;
+
+    fn block_reader(&mut self, _: &Cid) -> Result<Self::Reader, Error> {
+        Err(Error::Context(anyhow::Error::msg("empty block")))
+    }
+}
+
+#[cfg(feature = "sync")]
+mod sync {
+    /// ! only 1 place where blocking hurts: `Context::block_reader/writer()`
+    ///     ! in Select/Patch API
+    ///     ! in Link::deserialize
+    /// if called within async fn,
+    ///     - ctx.block_reader/writer() cannot use `block_on`
+    ///     - ctx.block_reader/writer() cannot return SyncIoBridge
+    /// ?
+    ///
+    ///
+    /// struct SelectFuture<T>(recv, params<send>, Ctx);
+    ///
+    /// impl Future for SelectFuture<DagSelection> {
+    ///     type Output = Result<DagSelection, Error>;
+    ///     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    ///
+    ///     }
+    ///}
+    ///
+    use super::*;
+
+    pub struct AsyncContext<'a, C> {
+        inner: C,
+        waker: &'a task::Waker,
+    }
+
+    impl<'a, C: Context> Context for AsyncContext<'a, C> {
+        type Reader = C::Reader;
+        type Writer = C::Writer;
+
+        fn block_reader(&mut self, cid: &Cid) -> Result<Self::Reader, Error> {
+            self.inner.block_reader(cid)
+        }
+    }
+}
+
 ///
 #[derive(Clone, Debug, Default)]
 pub struct MemoryContext {
@@ -115,7 +175,7 @@ impl MemoryContext {
         multihash_code: u64,
         block: Vec<u8>,
     ) -> Result<Cid, Error> {
-        let cid = Cid::new(version, multicodec_code, multihash_code, block.as_ref())?;
+        let cid = Cid::from_reader(version, multicodec_code, multihash_code, block.as_slice())?;
         self.blocks.insert(cid, block);
         Ok(cid)
     }

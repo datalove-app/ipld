@@ -1,33 +1,66 @@
 use crate::dev::*;
-use macros::{derive_more::From, impl_selector_seed_serde};
-use std::fmt;
+use macros::{derive_more::From, repr_serde};
+use maybestd::fmt;
+
+///
+pub trait LinkRepresentation: Representation {
+    // const_assert <Self as Representation>::{DM_KIND, SCHEMA_KIND} == Link
+}
+// TODO
+impl LinkRepresentation for Cid {}
 
 ///
 #[derive(
+    Copy,
     Clone,
     Debug,
-    Eq,
+    Eq, // todo
     From,
     // Hash, Ord,
-    PartialEq,
-    // PartialOrd
+    PartialEq, // todo
+               // PartialOrd
 )]
-pub enum Link<T: Representation = Any> {
+pub enum Link<T: Representation = Any, I: LinkRepresentation = Cid> {
     ///
-    Cid(Cid),
+    Id(I),
 
     ///
     #[from(ignore)]
-    Inner { cid: Cid, t: T, dirty: bool },
+    Resolved {
+        ///
+        id: I,
+        ///
+        t: T,
+        ///
+        dirty: bool,
+    },
 }
 
-impl<T: Representation> Link<T> {
+impl<T: Representation, I: LinkRepresentation> Link<T, I> {
     ///
     #[inline]
-    pub const fn cid(&self) -> &Cid {
+    pub const fn id(&self) -> &I {
         match self {
-            Self::Cid(inner) => inner,
-            Self::Inner { cid, .. } => cid,
+            Self::Id(id) => id,
+            Self::Resolved { id, .. } => id,
+        }
+    }
+
+    ///
+    #[inline]
+    pub const fn is_dirty(&self) -> bool {
+        match self {
+            Self::Id(_) => false,
+            Self::Resolved { dirty, .. } => *dirty,
+        }
+    }
+
+    ///
+    #[inline]
+    pub const fn as_ref(&self) -> Option<&T> {
+        match self {
+            Self::Id(_) => None,
+            Self::Resolved { t, .. } => Some(t),
         }
     }
 
@@ -47,33 +80,43 @@ impl<T: Representation> Link<T> {
      */
 }
 
+// TODO: restrict to some I
 impl<T: Representation> Representation for Link<T> {
     const NAME: &'static str = "Link";
-    const SCHEMA: &'static str = concat!("type Link &", stringify!(T::NAME));
+    const SCHEMA: &'static str = "type Link &Any";
     const DATA_MODEL_KIND: Kind = Kind::Link;
 
     fn name(&self) -> &'static str {
         match self {
-            Self::Cid(_) => Self::NAME,
-            Self::Inner { t, .. } => t.name(),
+            Self::Id(_) => Self::NAME,
+            Self::Resolved { t, .. } => t.name(),
         }
     }
 
     fn has_links(&self) -> bool {
         match self {
-            Self::Cid(_) => T::HAS_LINKS,
-            Self::Inner { t, .. } => t.has_links(),
+            Self::Id(_) => T::HAS_LINKS,
+            Self::Resolved { t, .. } => t.has_links(),
         }
     }
 
+    fn to_selected_node(&self) -> SelectedNode {
+        SelectedNode::Link(*self.id())
+    }
+
     ///
-    /// TODO: dirty links?
     #[inline]
     fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        Representation::serialize::<C, _>(self.cid(), serializer)
+        if self.is_dirty() {
+            Err(S::Error::custom(
+                "cannot serialize dirty links; flush changes first",
+            ))
+        } else {
+            Representation::serialize::<C, _>(self.id(), serializer)
+        }
     }
 
     ///
@@ -82,208 +125,108 @@ impl<T: Representation> Representation for Link<T> {
     where
         D: Deserializer<'de>,
     {
-        Ok(Self::Cid(Representation::deserialize::<C, _>(
-            deserializer,
-        )?))
+        Ok(Self::Id(Cid::deserialize::<C, _>(deserializer)?))
     }
 }
 
-impl_selector_seed_serde! { @codec_seed_visitor
-    { T: Representation + 'static }
-    { for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()>, }
-    Link<T>
-{
-    #[inline]
-    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "A link to a `{}`", T::NAME)
-    }
-}}
-
-impl_selector_seed_serde! { @codec_seed_visitor_ext
-    { T: Representation + 'static }
-    { for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()>, }
-    Link<T>
-{
-    #[inline]
-    fn visit_link_str<E>(self, cid_str: &str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        let cid = Cid::try_from(cid_str).map_err(E::custom)?;
-        self.visit_link(cid)
-    }
-
-    #[inline]
-    fn visit_link_bytes<E>(self, cid_bytes: &[u8]) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        let cid = Cid::try_from(cid_bytes).map_err(E::custom)?;
-        self.visit_link(cid)
-    }
-}}
-
-impl_selector_seed_serde! { @selector_seed_codec_deseed
-    { T: Representation + 'static }
-    { for<'b> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de> }
-    Link<T>
-{
-    #[inline]
-    fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        // deserializer.deserialize_link(self)
-        // (&mut &mut &mut Decoder(deserializer)).deserialize_link(self)
-
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "dag-json")] {
-                if C == DagJson::CODE {
-                    return DagJson::deserialize_link(deserializer, CodecSeed::<C, _>(self));
-                }
-            }
+repr_serde! { @select for Link<T> { T } { T: Select<Ctx> + 'static }}
+repr_serde! { @visitors for Link<T> { T } { T: Select<Ctx> + 'static }
+    @serde {
+        #[inline]
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "A link of type {} to a {}", <Link<T>>::NAME, T::NAME)
         }
-        cfg_if::cfg_if!{
-            if #[cfg(feature = "dag-cbor")] {
-                if C == DagCbor::CODE {
-                    return DagCbor::deserialize_link(deserializer, CodecSeed::<C, _>(self));
-                }
-            }
+        #[inline]
+        fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            self.visit_link_bytes(bytes)
         }
-
-        // TODO:
-        Deserialize::deserialize(deserializer)
+        #[inline]
+        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            self.visit_link_str(s)
+        }
     }
-}}
-
-impl_selector_seed_serde! { @selector_seed_select
-    { T: Representation + 'static }
-    { for<'b, 'de> SelectorSeed<'b, Ctx, T>: CodecDeserializeSeed<'de> }
-    Link<T>
+    @link {
+        #[inline]
+        fn visit_cid<E>(self, cid: Cid) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            // self.0.select_link::<C>(cid).map_err(E::custom)
+            unimplemented!()
+        }
+    }
 }
 
-impl<'a, const C: u64, Ctx, T> CodecSeed<C, SelectorSeed<'a, Ctx, Link<T>>>
+impl<'a, Ctx, T> SelectorSeed<'a, Ctx, Link<T>>
 where
     Ctx: Context,
-    T: Representation + 'static,
+    T: Select<Ctx> + 'static,
 {
-    ///
-    /// TODO: continue selection if the current selector is not a matcher
-    fn visit_link<'de, E>(mut self, cid: Cid) -> Result<(), E>
-    where
-        E: de::Error,
-        for<'b> CodedSeed<'b, C, Ctx, T>: DeserializeSeed<'de, Value = ()>,
-    {
-        if let Some(matcher) = self.0.selector.as_matcher() {
-            match self.0.mode() {
-                SelectionMode::SelectNode => {
-                    self.0
-                        .select_matched_node(cid.into(), matcher.label.as_deref())
-                        .map_err(E::custom)?;
-                }
-                SelectionMode::SelectDag => {
-                    self.0
-                        .select_matched_dag(Link::Cid(cid), matcher.label.as_deref())
-                        .map_err(E::custom)?;
-                }
-                _ => unimplemented!(),
-            };
+    fn select_link<'de, const C: u64>(mut self, link: Link<T>) -> Result<AstResult<T>, Error> {
+        // TODO: handle "blocks encoded with raw codec are valid Bytes kinds"
 
-            return Ok(());
-        }
+        // if self.selector.is_matcher() {
+        //     if self.is_select_dag() {
+        //         self.handle_dag(Link::Id(cid))?;
+        //     } else {
+        //         self.handle_node(cid.into())?;
+        //     }
 
+        //     return Ok(());
+        // }
+        // self.match_dag(link)
+
+        /// TODO: continue selection if the current selector is not a matcher
         unimplemented!()
     }
 }
 
-// impl<'a, 'de, C, T> Visitor<'de> for ContextSeed<'a, C, Link<T>>
-// where
-//     C: Context,
-//     T: Representation + 'static,
-//     for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
-// {
-//     type Value = ();
-//
-//     #[inline]
-//     fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         write!(formatter, "{}", Link::<T>::NAME)
-//     }
-// }
-
-// impl<'a, 'de, C, T> IpldVisitorExt<'de> for ContextSeed<'a, C, Link<T>>
-// where
-//     C: Context,
-//     T: Representation + 'static,
-//     for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
-// {
-//     // TODO:
-// }
-
-// impl<'a, 'de, C, T> DeserializeSeed<'de> for ContextSeed<'a, C, Link<T>>
-// where
-//     C: Context,
-//     T: Representation + 'static,
-//     for<'b> ContextSeed<'b, C, T>: DeserializeSeed<'de, Value = ()>,
-// {
-//     type Value = ();
-//
-//     #[inline]
-//     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         deserializer.deserialize_link(self)
-//     }
-// }
-
-// impl<'a, 'de, C, T> Select<C> for Link<T>
-// where
-//     C: Context,
-//     T: Representation + Send + Sync + 'static,
-//     // ContextSeed<'a, C, T>: DeserializeSeed<'de, Value = ()>,
-// {
-//     fn select(params: SelectionParams<'_, C, Self>, ctx: &mut C) -> Result<(), Error> {
-//         unimplemented!()
-//     }
-// }
-
 impl<T: Representation> Into<Cid> for Link<T> {
     fn into(self) -> Cid {
         match self {
-            Self::Cid(cid) => cid,
-            Self::Inner { cid, .. } => cid,
+            Self::Id(cid) => cid,
+            Self::Resolved { id: cid, .. } => cid,
         }
     }
 }
 
-// TODO: dirty links?
-impl<T> Serialize for Link<T>
-where
-    T: Representation,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // <S as Encoder>::serialize_link(serializer, self.cid())
-        // (&mut &mut &mut Encoder(serializer)).serialize_link(self.cid())
-        // self.cid().serialize(serializer)
-        Serialize::serialize(self.cid(), serializer)
-    }
-}
+#[cfg(feature = "dep:rkyv")]
+mod rkyv {}
 
-impl<'de, T> Deserialize<'de> for Link<T>
-where
-    T: Representation,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        // Ok(Self::Cid(Cid::deserialize(deserializer)?))
-        Ok(Self::Cid(Deserialize::deserialize(deserializer)?))
-    }
-}
+// // TODO: dirty links?
+// impl<T> Serialize for Link<T>
+// where
+//     T: Representation,
+// {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         // <S as Encoder>::serialize_link(serializer, self.cid())
+//         // (&mut &mut &mut Encoder(serializer)).serialize_link(self.cid())
+//         // self.cid().serialize(serializer)
+//         Serialize::serialize(self.cid(), serializer)
+//     }
+// }
+
+// impl<'de, T> Deserialize<'de> for Link<T>
+// where
+//     T: Representation,
+// {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         // Ok(Self::Cid(Cid::deserialize(deserializer)?))
+//         Ok(Self::Cid(Deserialize::deserialize(deserializer)?))
+//     }
+// }
 
 ////////////////////////////////////////////////////////////////////////////////
 // additional implementations
@@ -305,7 +248,7 @@ where
 //     fn from(link: Link<T>) -> Self {
 //         match link {
 //             Link::Cid(Cid::Generic(inner)) => inner,
-//             Link::Inner { cid, .. } => cid,
+//             Link::Resolved { cid, .. } => cid,
 //         }
 //     }
 // }

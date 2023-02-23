@@ -31,7 +31,7 @@ impl Parse for SchemaMeta {
         let generics = input.parse::<Generics>().map_or(None, Some);
 
         Ok(Self {
-            lib: Self::lib(internal),
+            lib: Default::default(),
             // TODO: fix this
             typedef_str: String::default(),
             internal,
@@ -118,7 +118,7 @@ impl Parse for ReprDefinition {
             _ if input.peek(kw::string) => {
                 parse_kw!(input, kw::string => String StringReprDefinition)
             }
-            // bytes
+            // bytes TODO:
             _ if input.peek(kw::bytes) => {
                 input.parse::<kw::bytes>()?;
                 Self::Bytes(input.parse::<BytesReprDefinition>()?)
@@ -219,9 +219,7 @@ impl Parse for SchemaKind {
             _ if input.peek(kw::list) => parse_kw!(input, kw::list => List),
             _ if input.peek(kw::map) => parse_kw!(input, kw::map => Map),
             _ if input.peek(kw::link) => parse_kw!(input, kw::link => Link),
-            _ => Err(input.error(
-                "invalid IPLD union kinded representation definition: invalid data model kind",
-            )),
+            _ => Err(input.error("invalid data model kind")),
         }
     }
 }
@@ -258,6 +256,7 @@ pub(crate) fn parse_rest(input: ParseStream) -> ParseResult<TokenStream> {
     Ok(args.parse::<TokenStream>()?)
 }
 
+// TODO: move somewhere else
 pub(crate) fn parse_stringpair_args(input: ParseStream) -> ParseResult<(LitStr, LitStr)> {
     let args;
     braced!(args in input);
@@ -289,7 +288,6 @@ fn try_parse_stringpair_args(
             ));
         }
         inner_delim.replace(parse_kwarg!(input, innerDelim => LitStr));
-        Ok(())
     } else if input.peek(kw::entryDelim) {
         if entry_delim.is_some() {
             return Err(input.error(
@@ -297,10 +295,9 @@ fn try_parse_stringpair_args(
             ));
         }
         entry_delim.replace(parse_kwarg!(input, entryDelim => LitStr));
-        Ok(())
-    } else {
-        Ok(())
     }
+
+    Ok(())
 }
 
 // impl Parse for super::Methods {

@@ -17,12 +17,14 @@ impl Parse for StructReprDefinition {
     fn parse(input: ParseStream) -> ParseResult<Self> {
         let typedef_stream;
         braced!(typedef_stream in input);
-        let fields: StructFields = typedef_stream.parse_terminated(StructField::parse)?;
+        let fields = typedef_stream.parse::<StructFields>()?;
 
+        // map
         if !input.peek(kw::representation) {
             return Ok(Self::Map(BasicStructReprDefinition { fields }));
         }
 
+        // defined representation
         input.parse::<kw::representation>()?;
         let struct_repr = match input {
             // map
@@ -39,6 +41,7 @@ impl Parse for StructReprDefinition {
             // TODO? assert that any fields do not have optional + implicit?
             _ if input.peek(kw::tuple) => {
                 input.parse::<kw::tuple>()?;
+
                 if input.is_empty() | input.peek(Token![;]) {
                     Self::Tuple(TupleStructReprDefinition {
                         fields,
@@ -58,8 +61,8 @@ impl Parse for StructReprDefinition {
             // stringpairs
             _ if input.peek(kw::stringpairs) => {
                 input.parse::<kw::stringpairs>()?;
-                let (inner_delim, entry_delim) = parse_stringpair_args(input)?;
 
+                let (inner_delim, entry_delim) = parse_stringpair_args(input)?;
                 Self::Stringpairs(StringpairsStructReprDefinition {
                     fields,
                     inner_delim,
@@ -69,6 +72,7 @@ impl Parse for StructReprDefinition {
             // stringjoin
             _ if input.peek(kw::stringjoin) => {
                 input.parse::<kw::stringjoin>()?;
+
                 let args;
                 braced!(args in input);
                 let join = parse_kwarg!(args, join => LitStr);
@@ -117,6 +121,11 @@ impl Parse for StructField {
 
         if optional && implicit.is_some() {
             return Err(input.error("invalid IPLD struct representation definition: field cannot have `optional` and `implicit` directives"));
+        }
+
+        // parse optional comma
+        if input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
         }
 
         Ok(StructField {

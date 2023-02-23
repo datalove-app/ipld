@@ -1,15 +1,15 @@
 use ipld::dev::MemoryContext;
-use ipld::prelude::*;
+use ipld::*;
 use std::{
     env,
     fs::{self, DirEntry},
     path::PathBuf,
 };
 
-const DEFAULT_CID_VERSION: Version = Version::V1;
-const DEFAULT_MH: u64 = Multihash::SHA2_256;
-
-static CODEC_SKIPLIST: &[&str] = &[];
+static CODEC_SKIPLIST: &[&str] = &[
+    // "dag-cbor",
+    // "dag-json",
+];
 static FIXTURE_SKIPLIST: &[(&str, &str)] = &[
     // unfamiliar, or incorrectly/confusingly labeled
     ("bytes-a1", "unsupported multibase"),
@@ -216,6 +216,9 @@ impl Fixture {
 
     /// Sets up a `MemoryContext` to provide the fixture's block.
     fn setup_ctx(&self) -> MemoryContext {
+        const DEFAULT_CID_VERSION: Version = Version::V1;
+        const DEFAULT_MH: u64 = Multihasher::SHA2_256;
+
         let mut ctx = MemoryContext::default();
         let cid = ctx
             .add_block(
@@ -226,18 +229,19 @@ impl Fixture {
             )
             .expect("should not fail to add block");
 
-        assert_eq!(&self.cid, &cid, "generated Cid should equal fixture Cid");
+        assert_eq!(&self.cid, &cid, "generated Cid should match fixture Cid");
         ctx
     }
 
     fn run(&mut self) {
+        // TODO: create copy types, test those too
         let did_run = match self.r#type() {
             FixtureType::Null => self.run_for::<Null>(),
             FixtureType::Bool => self.run_for::<Bool>(),
             FixtureType::Int => self.run_for::<Int>(),
-            // FixtureType::Float => self.run_for::<Float>(),
-            // FixtureType::Bytes => self.run_for::<Bytes>(), // none of the fixtures have the right multibase...
-            FixtureType::String => self.run_for::<IpldString>(),
+            // FixtureType::Float => self.run_for::<Float>(), // floats arent round-tripping with dag-cbor correctly...
+            // FixtureType::Bytes => self.run_for::<Bytes>(), // none of the fixtures match the multibase...
+            FixtureType::String => self.run_for::<String>(),
             // FixtureType::Array => self.run_for::<List<Any>>(),
             // FixtureType::Map => self.run_for::<Map<IpldString, Any>>(),
             // FixtureType::Cid => self.run_for::<Link<Any>>(),
@@ -264,7 +268,7 @@ impl Fixture {
                 .expect(&self.format_err::<T>("should not fail to encode dag"));
             let new_cid = self
                 .cid
-                .derive_new(block.as_ref())
+                .derive_from_reader(block.as_slice())
                 .expect(&"should not fail to generate a Cid for a block of bytes");
 
             if self.codec.name() == "dag-json" {
@@ -297,8 +301,8 @@ impl Fixture {
         {
             // next, decode the concrete type using the Matcher selector
             let mut ctx = self.setup_ctx();
-            let matched_dag: T = Params::<'_, _, T>::new_select(self.cid)
-                .into_dag_iter(&mut ctx)
+            let matched_dag: T = Params::<'_, _>::new(&Selector::DEFAULT)
+                .select_in::<T>(self.cid, &mut ctx)
                 .expect(&self.format_err::<T>("should not fail selection"))
                 .next()
                 .expect("should produce at least one dag")
@@ -312,7 +316,7 @@ impl Fixture {
                 .expect(&self.format_err::<T>("should not fail to encode dag"));
             let new_cid = self
                 .cid
-                .derive_new(block.as_ref())
+                .derive_from_reader(block.as_slice())
                 .expect(&"should not fail to generate a Cid for a block of bytes");
 
             if self.codec.name() == "dag-json" {

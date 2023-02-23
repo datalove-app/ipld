@@ -12,6 +12,7 @@ mod union;
 
 pub use compound::*;
 pub use expand::*;
+pub use kind::SchemaKind;
 pub use parse::*;
 pub use primitive::*;
 pub use r#enum::*;
@@ -22,7 +23,7 @@ use crate::{common::*, dev::*};
 use proc_macro2::{Span, TokenStream};
 use proc_macro_crate::{crate_name, FoundCrate};
 use quote::quote;
-use std::ops::Deref;
+use std::ops::{BitOr, Deref};
 use syn::{parse_str, Attribute, Generics, Ident, LitStr, Path, Type, Visibility};
 
 ///
@@ -47,6 +48,23 @@ pub struct SchemaMeta {
 
 impl SchemaMeta {
     /// Creates a `TokenStream` of the `ipld` lib used (either `crate` or the `ipld` crate name).
+    pub fn imports(is_internal: bool) -> TokenStream {
+        let lib = Self::lib(is_internal);
+        let r#extern = if is_internal {
+            quote!(use #lib as __ipld;)
+        } else {
+            quote!(extern crate #lib as __ipld;)
+        };
+
+        quote! {
+            #r#extern
+            #[allow(clippy::useless_attribute)]
+            use __ipld::dev::*;
+            __ipld::repr_serde!(@def_walk);
+        }
+    }
+
+    /// Creates a `TokenStream` of the `ipld` lib used (either `crate` or the `ipld` crate name).
     pub fn lib(is_internal: bool) -> TokenStream {
         if is_internal {
             return quote!(crate);
@@ -62,16 +80,7 @@ impl SchemaMeta {
                 .expect("`ipld` is not present in Cargo.toml")
             },
         );
-
         quote!(#path)
-    }
-
-    /// Returns the `Ident` of the `Visitor` generated for this type.
-    pub fn visitor_name(&self) -> Ident {
-        Ident::new(
-            &format!("_{}Visitor", &self.name.to_string()),
-            Span::call_site(),
-        )
     }
 
     pub fn generics_tokens(&self) -> TokenStream {
@@ -79,6 +88,10 @@ impl SchemaMeta {
             .as_ref()
             .map(|g| quote!(#g))
             .unwrap_or(TokenStream::default())
+    }
+
+    pub fn name_str(&self) -> String {
+        self.name.to_string()
     }
 
     // fn to_try_from_meta(&self) -> Self {
@@ -135,34 +148,266 @@ impl ReprDefinition {
     }
 }
 
-///
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub enum SchemaKind {
-    Null,
-    Bool,
-    Int, // same as Int128
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Int128,
-    Uint8,
-    Uint16,
-    Uint32,
-    Uint64,
-    Uint128,
-    Float, // same as Float64
-    Float32,
-    Float64,
-    Bytes,
-    String,
-    List,
-    Map,
-    Link,
-    Struct,
-    Enum,
-    Union,
-    Copy,
+// #[macro_use]
+pub mod kind {
+    // use super::*;
+
+    /*
+    ///
+    /// TODO: BitAnd/BitOr dont work without fully-qualified syntax
+    pub trait TypedKind<Rhs: TypedKind = Self>
+    where
+        // TODO: replace with And<Self, All>: IsEqual<All>
+        Self: NonZero + Unsigned + IsLessOrEqual<All>,
+    {
+        const KIND: SchemaKind = SchemaKind::from_bits_truncate(Self::U32);
+        // const IS_SCALAR: bool = SchemaKind::Scalar.contains(Self::KIND);
+        // const IS_RECURSIVE: bool = SchemaKind::Recursive.contains(Self::KIND);
+        // const IS_DATA_MODEL: bool = SchemaKind::Any.contains(Self::KIND);
+        // const IS_SCHEMA: bool = SchemaKind::Schema.contains(Self::KIND) || Self::IS_TYPED_NUM;
+        // const IS_TYPED_NUM: bool = SchemaKind::TypedNum.contains(Self::KIND) && !Self::IS_VARIOUS;
+        // const IS_VARIOUS: bool = !is_unary::<Self>();
+    }
+
+    impl<T> TypedKind for T where
+        T: NonZero + Unsigned + IsLessOrEqual<All> // + BitAnd<Self>
+                                                   // + BitAnd<All>
+                                                   // + BitAnd<Scalar>
+                                                   // + BitAnd<Recursive>
+                                                   // + BitAnd<Any>
+                                                   // + BitAnd<Schema>
+                                                   // + BitAnd<TypedInt>
+                                                   // + BitAnd<TypedFloat>
+                                                   // + BitOr<Null>,
+    {
+    }
+     */
+
+    macro_rules! def_kind { (
+        $($name:ident = $b:expr;)*) => {
+            bitflags::bitflags! {
+                /// Bitflag of possible [Data Model](), [Schema]() and [Representation]() kinds.
+                ///
+                // #[derive(Debug)]
+                #[repr(transparent)]
+                pub struct SchemaKind: u32 {
+                    $(
+                        const $name = $b;
+                    )*
+
+                    /// Marker flag for scalar data model kinds.
+                    const Scalar = Self::Null.bits
+                        | Self::Bool.bits
+                        | Self::Int.bits
+                        | Self::Float.bits
+                        | Self::String.bits
+                        | Self::Bytes.bits
+                        | Self::Link.bits;
+
+                    /// Marker flag for recursive data model kinds.
+                    const Recursive = Self::List.bits | Self::Map.bits;
+
+                    /// Marker flag for any and all valid data model kinds.
+                    const Any = Self::Scalar.bits | Self::Recursive.bits;
+
+                    /// Marker flag for any data model or schema kind.
+                    const Schema = Self::Struct.bits
+                        | Self::Enum.bits
+                        | Self::Union.bits
+                        | Self::Copy.bits
+                        | Self::Advanced.bits;
+
+                    /// Marker flag for lib-specific schema types for integers.
+                    const TypedInt = Self::Int8.bits
+                        | Self::Int16.bits
+                        | Self::Int32.bits
+                        | Self::Int64.bits
+                        | Self::Int128.bits
+                        | Self::Uint8.bits
+                        | Self::Uint16.bits
+                        | Self::Uint32.bits
+                        | Self::Uint64.bits
+                        | Self::Uint128.bits;
+
+                    /// Marker flag for lib-specific schema types for
+                    /// floating-point numbers.
+                    const TypedFloat = Self::Float32.bits | Self::Float64.bits;
+
+                    const AnyInt = Self::Int.bits | Self::TypedInt.bits;
+                    const AnyFloat = Self::Float.bits | Self::TypedFloat.bits;
+
+                    const TypedNum = Self::TypedInt.bits | Self::TypedFloat.bits;
+
+                    const Num = Self::AnyInt.bits | Self::AnyFloat.bits;
+
+                    ///
+                    const TypedScalar = Self::Scalar.bits | Self::TypedNum.bits;
+                }
+            }
+
+            /*
+            /// [`typenum`] types representing known [`SchemaKind`]s.
+            ///
+            /// [`typenum`]: typenum
+            mod type_kinds {
+                use super::*;
+
+                $(pub type $name = tyuint!($b);)*
+
+                // pub type Optional<T> = typenum::op!(Null | T);
+
+                pub type Scalar = op!(Null | Bool | Int | Float | String | Bytes | Link);
+                pub type Recursive = op!(List | Map);
+
+                // hack around type checking limitations that thwart blanket
+                // impls of Visitor for Any representations
+                pub type Any = U511;
+                assert_type_eq!(Any, op!(Scalar | Recursive));
+
+                pub type Schema = op!(Struct | Enum | Union | Copy | Advanced);
+
+                type TypedInt = op!(Int8 | Int16 | Int32 | Int64 | Int128 | Uint8 | Uint16 | Uint32 | Uint64 | Uint128);
+                type TypedFloat = op!(Float32 | Float64);
+                pub type TypedScalar = op!(Scalar | TypedInt | TypedFloat);
+
+                #[doc(hidden)]
+                pub type All = op!(Any | Schema | TypedScalar);
+                #[doc(hidden)]
+                pub type Empty = U0;
+            }
+             */
+        };
+    }
+
+    def_kind! {
+        Null =      0b0001;
+        Bool =      0b0010;
+        Int =       0b0100;
+        Float =     0b1000;
+        String =    0b0001_0000;
+        Bytes =     0b0010_0000;
+        List =      0b0100_0000;
+        Map =       0b1000_0000;
+        Link =      0b0001_0000_0000;
+        //
+        Struct =    0b0010_0000_0000;
+        Enum =      0b0100_0000_0000;
+        Union =     0b1000_0000_0000;
+        Copy =      0b0001_0000_0000_0000;
+        Advanced =  0b0010_0000_0000_0000;
+        //
+        Int8 =      0b0100_0000_0000_0000;
+        Int16 =     0b1000_0000_0000_0000;
+        Int32 =     0b0001_0000_0000_0000_0000;
+        Int64 =     0b0010_0000_0000_0000_0000;
+        Int128 =    0b0100_0000_0000_0000_0000;
+        Uint8 =     0b1000_0000_0000_0000_0000;
+        Uint16 =    0b0001_0000_0000_0000_0000_0000;
+        Uint32 =    0b0010_0000_0000_0000_0000_0000;
+        Uint64 =    0b0100_0000_0000_0000_0000_0000;
+        Uint128 =   0b1000_0000_0000_0000_0000_0000;
+        Float32 =   0b0001_0000_0000_0000_0000_0000_0000;
+        Float64 =   0b0010_0000_0000_0000_0000_0000_0000;
+    }
+
+    impl SchemaKind {
+        /// Const function for determining equality between [`Kind`]s.
+        #[doc(hidden)]
+        pub const fn eq(&self, other: &Self) -> bool {
+            self.bits == other.bits
+            // match (*self, *other) {
+            //     (Self::Null, Self::Null)
+            //     | (Self::Bool, Self::Bool)
+            //     | (Self::Int, Self::Int)
+            //     | (Self::Int8, Self::Int8)
+            //     | (Self::Int16, Self::Int16)
+            //     | (Self::Int32, Self::Int32)
+            //     | (Self::Int64, Self::Int64)
+            //     | (Self::Int128, Self::Int128)
+            //     | (Self::Uint8, Self::Uint8)
+            //     | (Self::Uint16, Self::Uint16)
+            //     | (Self::Uint32, Self::Uint32)
+            //     | (Self::Uint64, Self::Uint64)
+            //     | (Self::Uint128, Self::Uint128)
+            //     | (Self::Float, Self::Float)
+            //     | (Self::Float32, Self::Float32)
+            //     | (Self::Float64, Self::Float64)
+            //     | (Self::String, Self::String)
+            //     | (Self::Bytes, Self::Bytes)
+            //     | (Self::List, Self::List)
+            //     | (Self::Map, Self::Map)
+            //     | (Self::Link, Self::Link)
+            //     | (Self::Struct, Self::Struct)
+            //     | (Self::Enum, Self::Enum)
+            //     | (Self::Union, Self::Union)
+            //     | (Self::Copy, Self::Copy) => true,
+            //     _ => false,
+            // }
+        }
+
+        pub const fn is_nary<const N: u32>(&self) -> bool {
+            N == self.bits.count_ones()
+        }
+
+        /// dm
+        pub const fn is_option(&self) -> bool {
+            self.is_nary::<2>() && self.contains(Self::Null)
+        }
+
+        // pub const fn is_int(&self) -> bool {
+        //     self.is_nary::<1>() && (Self::Int.eq(self) || Self::TypedInt.contains(*self))
+        // }
+
+        // pub const fn is_num(&self) -> bool {
+        //     self.is_nary::<1>() && Self::Num.contains(*self)
+        // }
+
+        // pub const fn is_typed(&self) -> bool {
+        //     self.is_nary::<1>() && Self::TypedNum.contains(*self)
+        // }
+
+        ///
+        pub const fn is_link(&self) -> bool {
+            self.eq(&Self::Link)
+        }
+
+        // ///
+        // pub const fn is_enum(&self) -> bool {
+        //     match *self {
+        //         Self::Enum | Self::String => true,
+        //         s if s.is_nary::<1>() && Self::TypedInt.contains(s) => true,
+        //         _ => false,
+        //     }
+        //     // self.is_nary::<1>() && (self.eq(&Self::String) || Self::TypedInt.contains(*self))
+        // }
+
+        pub const fn is_copy(&self) -> Option<Self> {
+            if self.contains(Self::Copy) {
+                Some(self.difference(Self::Copy))
+            } else {
+                None
+            }
+        }
+
+        ///
+        pub const fn is_dm(&self) -> bool {
+            Self::Any.contains(*self)
+        }
+
+        pub const fn from<const K: u32>() -> Self {
+            Self::from_bits_truncate(K)
+        }
+
+        // ///
+        // pub const fn is_
+    }
+
+    // const fn is_unary<T: TypedKind>() -> bool {
+    //     T::KIND.is_nary::<1>()
+    // }
+
+    // pub trait BitOps<U = Self>: BitAnd<U> + BitOr<U> {}
+    // impl<T, U> BitOps<U> for T where T: BitAnd<U> + BitOr<U> {}
 }
 
 // #[derive(Debug)]

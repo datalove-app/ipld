@@ -3,7 +3,7 @@ use crate::dev::{
     schema::expand::{self, ExpandAdvancedRepresentation, ExpandBasicRepresentation},
     SchemaKind, SchemaMeta,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::{parse_quote, Type};
 
@@ -18,36 +18,14 @@ impl ExpandBasicRepresentation for StructReprDefinition {
             Self::Advanced(_) => unreachable!(),
         }
     }
-    fn derive_serde(&self, meta: &SchemaMeta) -> TokenStream {
-        match self {
-            Self::Map(repr) => repr.derive_serde(meta),
-            Self::Listpairs(repr) => repr.derive_serde(meta),
-            Self::Tuple(repr) => repr.derive_serde(meta),
-            Self::Stringpairs(repr) => repr.derive_serde(meta),
-            Self::Stringjoin(repr) => repr.derive_serde(meta),
-            Self::Advanced(_) => unreachable!(),
-        }
-    }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        let name = &meta.name;
-        // let lib = &meta.ipld_schema_lib;
-        // let repr_body = quote! {
-        //     const KIND: Kind = Kind::Struct;
-        // };
-        // expand::impl_repr(meta, repr_body)
-        let repr = match self {
+        match self {
             Self::Map(repr) => repr.derive_repr(meta),
             Self::Listpairs(repr) => repr.derive_repr(meta),
             Self::Tuple(repr) => repr.derive_repr(meta),
             Self::Stringpairs(repr) => repr.derive_repr(meta),
             Self::Stringjoin(repr) => repr.derive_repr(meta),
             Self::Advanced(_) => unreachable!(),
-        };
-
-        // TODO:
-        quote! {
-            #repr
-            // impl_root_select!(#name => Matcher);
         }
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
@@ -82,95 +60,97 @@ impl ExpandBasicRepresentation for BasicStructReprDefinition {
             .as_ref()
             .map(|g| quote!(#g))
             .unwrap_or(TokenStream::default());
-        let fields: Vec<TokenStream> = self.iter().map(field_def).collect();
+        let fields = self.iter().map(StructField::field_def);
 
         quote! {
             #(#attrs)*
-            #[derive(Deserialize, Serialize)]
             #vis struct #ident #generics {
                 #(#fields,)*
             }
         }
     }
     fn derive_repr(&self, meta: &SchemaMeta) -> TokenStream {
-        impl_repr(self.iter(), meta, SchemaKind::Map.data_model_kind())
+        impl_repr(self, meta, &Self::dm_kind(), None)
     }
     fn derive_select(&self, meta: &SchemaMeta) -> TokenStream {
         TokenStream::default()
     }
     fn derive_conv(&self, meta: &SchemaMeta) -> TokenStream {
-        quote!()
+        TokenStream::default()
     }
 }
 
-pub(super) fn impl_repr<'a>(
-    iter: impl Iterator<Item = &'a StructField>,
-    meta: &SchemaMeta,
-    repr_kind: Ident,
-) -> TokenStream {
-    let lib = &meta.lib;
-    let name = &meta.name;
-    let fields: Vec<TokenStream> = iter
-        .map(
-            |StructField {
-                 key, value, rename, ..
-             }| {
-                let key = key.to_string();
-                let rename = rename
-                    .as_ref()
-                    .map(|s| s.value())
-                    .unwrap_or_else(|| key.clone());
-                quote! {
-                    (#key, Field::new::<#value>(#rename))
-                }
-            },
-        )
-        .collect();
+impl BasicStructReprDefinition {
+    pub fn dm_kind() -> Ident {
+        SchemaKind::Map.data_model_kind()
+    }
+}
 
-    let repr_body = expand::impl_repr(
+impl StructField {
+    pub fn default_field_def(&self) -> TokenStream {
+        let attrs = &self.attrs;
+        let vis = &self.vis;
+        let key = &self.key;
+        let value = field_value(self);
+        let generics = &self.generics;
+
+        quote! {
+            #(#attrs)*
+            #vis #key: #value #generics
+        }
+    }
+
+    fn field_def(&self) -> TokenStream {
+        let attrs = &self.attrs;
+        let vis = &self.vis;
+        let key = &self.key;
+        let value = field_value(self);
+        let generics = &self.generics;
+
+        // let implicit_attr = self.implicit.as_ref().map(|_| quote!(#[serde(default)]));
+        // let rename_attr = self
+        //     .rename
+        //     .as_ref()
+        //     .map(|name| quote!(#[serde(rename = #name)]));
+
+        quote! {
+            #(#attrs)*
+            // #implicit_attr
+            // #rename_attr
+            #vis #key: #value #generics
+        }
+    }
+}
+
+pub(super) fn impl_repr<R: ExpandBasicRepresentation + Deref<Target = StructFields>>(
+    repr_def: &R,
+    meta: &SchemaMeta,
+    repr_kind: &Ident,
+    repr_strategy: Option<Ident>,
+) -> TokenStream {
+    let static_fields = repr_def.iter().map(|f| {
+        let name = f
+            .rename
+            .as_ref()
+            .map(|s| s.value())
+            .unwrap_or_else(|| f.key.to_string());
+        quote!(#name)
+    });
+
+    let strategy = repr_strategy.map(|s| quote!(#s)).unwrap_or(quote!(Basic));
+    repr_def.impl_repr(
         meta,
         quote! {
             const DATA_MODEL_KIND: Kind = Kind::Map;
             const SCHEMA_KIND: Kind = Kind::Struct;
             const REPR_KIND: Kind = Kind::#repr_kind;
-            // const FIELDS: Fields = Fields::Struct(&[#(#fields,)*]);
+            const REPR_STRATEGY: Strategy = Strategy::#strategy;
+            const FIELDS: &'static [&'static str] = &[
+                #(#static_fields,)*
+            ];
         },
-    );
-    let selector_bodies = quote! {};
-    repr_body
-}
-
-pub(crate) fn default_field_def(field: &StructField) -> TokenStream {
-    let attrs = &field.attrs;
-    let vis = &field.vis;
-    let key = &field.key;
-    let value = super::expand::field_value(field);
-
-    quote! {
-        #(#attrs)*
-        #vis #key: #value
-    }
-}
-
-fn field_def(field: &StructField) -> TokenStream {
-    let attrs = &field.attrs;
-    let vis = &field.vis;
-    let key = &field.key;
-    let value = field_value(field);
-    let generics = field.generics.as_ref().map(|g| quote!(#g));
-
-    let implicit_attr = field.implicit.as_ref().map(|_| quote!(#[serde(default)]));
-    let rename_attr = field
-        .rename
-        .as_ref()
-        .map(|name| quote!(#[serde(rename = #name)]));
-
-    quote! {
-        #(#attrs)*
-        #implicit_attr
-        #rename_attr
-        #vis #key: #value #generics
-    }
+        Default::default(),
+    )
 }
 
 pub(super) fn field_value(field: &StructField) -> TokenStream {

@@ -1,113 +1,128 @@
 use crate::dev::*;
 use macros::{
     derive_more::{AsMut, AsRef, Deref, DerefMut, From, Index, IndexMut, Into, IntoIterator},
-    impl_selector_seed_serde,
+    repr_serde,
 };
-use serde::de::IntoDeserializer;
-use std::{borrow::Cow, fmt, ops::RangeBounds, str::FromStr};
+use maybestd::{borrow::Cow, fmt, ops, str::FromStr};
 
 pub use self::bool::Bool;
 pub use self::bytes::Bytes;
 pub use self::null::Null;
 pub use self::num::*;
-pub use self::string::IpldString;
+// pub use self::string::IpldString;
 
-/// Type alias for integers, which are represented as `i128`s.
-pub type Int = Int64;
-/// Type alias for floats, which are represented as `f64`s.
-pub type Float = Float64;
+/// Default type for IPLD integers, which aliases to [`i64`].
+pub type Int = i64;
+
+/// Default type for IPLD floats, which aliases to [`f64`].
+pub type Float = f64;
 
 mod null {
     use super::*;
 
     /// A nothing type.
-    #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, Deserialize, Serialize)]
+    #[derive(Copy, Clone, Debug, Default, Eq, Hash, Ord, PartialOrd, PartialEq, Representation)]
+    #[ipld(internal)]
     pub struct Null;
 
-    impl Representation for Null {
-        const NAME: &'static str = "Null";
-        const SCHEMA: &'static str = "type Null null";
-        const DATA_MODEL_KIND: Kind = Kind::Null;
-    }
+    impl<'a, 'de, const MC: u64, Ctx> Visitor<'de> for AstWalk<'a, MC, Ctx, Null>
+    where
+        'a: 'de,
+        Ctx: Context,
+    {
+        type Value = AstResult<Null>;
 
-    impl_selector_seed_serde! { @codec_seed_visitor {} {} Null {
         #[inline]
-        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(formatter, "Null")
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "A nothing type `{}`", <Null>::NAME)
         }
-
         #[inline]
-        fn visit_none<E>(self) -> Result<Self::Value, E>
+        fn visit_none<Er>(self) -> Result<Self::Value, Er>
         where
-            E: de::Error,
+            Er: de::Error,
         {
-            self.match_primitive(Null)
+            self.into_inner()
+                .select_scalar::<MC>(Null)
+                .map_err(Er::custom)
         }
-
         #[inline]
-        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        fn visit_unit<Er>(self) -> Result<Self::Value, Er>
         where
-            E: de::Error,
+            Er: de::Error,
         {
             self.visit_none()
         }
-    }}
+    }
+    impl<'a, 'de, const MC: u64, Ctx> LinkVisitor<'de, MC> for AstWalk<'a, MC, Ctx, Null>
+    where
+        'a: 'de,
+        Ctx: Context,
+    {
+    }
+    impl<Ctx: Context> Select<Ctx> for Null {
+        type Walker<'a, const MC: u64> = AstWalk<'a, MC, Ctx, Self> where Ctx: 'a;
+    }
 
-    impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Null {} }
-
-    impl_selector_seed_serde! { @selector_seed_codec_deseed {} {} Null {
+    impl From<()> for Null {
         #[inline]
-        fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            deserializer.deserialize_unit(CodecSeed::<C, _>(self))
+        fn from(_: ()) -> Self {
+            Self
         }
-    }}
-
-    impl_selector_seed_serde! { @selector_seed_select {} {} Null }
+    }
 }
 
 mod bool {
     use super::*;
 
-    /// A boolean type.
+    /// Type alias for [`bool`].
+    ///
+    /// [`bool`]: crate::maybestd::primitive::bool
     pub type Bool = bool;
 
     impl Representation for bool {
         const NAME: &'static str = "Bool";
         const SCHEMA: &'static str = "type Bool bool";
         const DATA_MODEL_KIND: Kind = Kind::Bool;
-    }
 
-    impl_selector_seed_serde! { @codec_seed_visitor {} {} Bool {
-        #[inline]
-        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "A boolean type")
+        fn to_selected_node(&self) -> SelectedNode {
+            SelectedNode::Bool(*self)
         }
 
+        #[doc(hidden)]
         #[inline]
-        fn visit_bool<E>(self, v : bool) -> Result<Self::Value, E>
+        fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
-            E: de::Error,
+            S: Serializer,
         {
-            self.match_primitive(v)
+            Serialize::serialize(self, serializer)
         }
-    }}
 
-    impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Bool {} }
-
-    impl_selector_seed_serde! { @selector_seed_codec_deseed {} {} Bool {
+        #[doc(hidden)]
         #[inline]
-        fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
+        fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {
-            deserializer.deserialize_bool(CodecSeed::<C, _>(self))
+            let res = AstWalk::<'de, MC, (), Self>::default().deserialize(deserializer)?;
+            Ok(res.unwrap_val())
+        }
+    }
+
+    repr_serde! { @select for bool }
+    repr_serde! { @visitors for bool {
+        #[inline]
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("A boolean type")
+        }
+
+        #[inline]
+        fn visit_bool<Er>(self, v : bool) -> Result<Self::Value, Er>
+        where
+            Er: de::Error,
+        {
+            self.into_inner().select_scalar::<MC>(v).map_err(Er::custom)
         }
     }}
-
-    impl_selector_seed_serde! { @selector_seed_select {} {} Bool }
 }
 
 mod num {
@@ -115,347 +130,292 @@ mod num {
 
     /// Implements IPLD traits for native number types.
     macro_rules! impl_ipld_num {
-        (   $doc_str:expr ;
-            $ty:ident : $name:ident $kind:ident $ipld_type:ident {
-                $deserialize_fn:ident
+        (   $ty:ident : $name:ident $dm_kind:ident {
+                // $deserialize_fn:ident
                 $visit_fn:ident
                 @conv { $($other_ty:ty : $other_visit_fn:ident)* }
             }
         ) => {
-            #[doc = $doc_str]
+            #[doc = concat!("Type alias for [`", stringify!($ty), "`]s.")]
+            ///
+            #[doc = concat!("[`", stringify!($ty), "`]: ")]
+            #[doc = concat!("crate::maybestd::primitive::", stringify!($ty))]
             pub type $name = $ty;
 
             impl Representation for $ty {
                 const NAME: &'static str = stringify!($name);
-                const SCHEMA: &'static str =
-                    concat!("type ", stringify!($name), " ", stringify!($ipld_type));
-                const DATA_MODEL_KIND: Kind = Kind::$kind;
-            }
+                const SCHEMA: &'static str = concat!("type ", stringify!($name), " int");
+                const DATA_MODEL_KIND: Kind = Kind::$dm_kind;
+                const SCHEMA_KIND: Kind = Kind::$name;
+                const REPR_KIND: Kind = Kind::$name;
 
-            impl_selector_seed_serde! { @codec_seed_visitor {} {} $ty {
-                #[inline]
-                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    write!(f, $doc_str)
+                impl_ipld_num!(@field $dm_kind $ty);
+
+                fn to_selected_node(&self) -> SelectedNode {
+                    SelectedNode::$name(*self)
                 }
 
+                #[doc(hidden)]
                 #[inline]
-                fn $visit_fn<E>(self, v: $ty) -> Result<Self::Value, E>
+                fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                 where
-                    E: de::Error,
+                    S: Serializer,
                 {
-                    self.match_primitive(v)
+                    Serialize::serialize(self, serializer)
                 }
 
-                $(
-                    #[inline]
-                    fn $other_visit_fn<E>(self, v: $other_ty) -> Result<Self::Value, E>
-                    where
-                        E: de::Error,
-                    {
-                        let n = <$ty as Deserialize<'_>>::deserialize(v.into_deserializer())?;
-                        self.match_primitive(n)
-                    }
-                )*
-            }}
-
-            impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} $ty {} }
-
-            impl_selector_seed_serde! { @selector_seed_codec_deseed {} {} $ty {
+                #[doc(hidden)]
                 #[inline]
-                fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
+                fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
                 where
                     D: Deserializer<'de>,
                 {
-                    deserializer.$deserialize_fn(CodecSeed::<C, _>(self))
+                    // Deserialize::deserialize(deserializer)
+                    let res = AstWalk::<'de, MC, (), Self>::default().deserialize(deserializer)?;
+                    Ok(res.unwrap_val())
                 }
-            }}
+            }
 
-            impl_selector_seed_serde! { @selector_seed_select {} {} $ty }
+            repr_serde! { @select for $ty }
+            repr_serde! { @visitors for $ty {
+                #[inline]
+                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    write!(f,
+                        "`{}`, a fixed-length number type represented as a(n) {}",
+                        stringify!($name), stringify!($ty),
+                    )
+                }
+                #[inline]
+                fn $visit_fn<Er>(self, v: $ty) -> Result<Self::Value, Er>
+                where
+                    Er: de::Error,
+                {
+                    // if self.mode() == SelectionMode::Decode {
+                    //     return Ok(AstResult::Value(v));
+                    // }
+
+                    self.into_inner().select_scalar::<MC>(v).map_err(Er::custom)
+                }
+
+                $(  #[inline]
+                    fn $other_visit_fn<Er>(self, v: $other_ty) -> Result<Self::Value, Er>
+                    where
+                        Er: de::Error,
+                    {
+                        let de = v.into_deserializer();
+                        let n: $ty = Representation::deserialize::<MC, _>(de)?;
+                        self.$visit_fn(n)
+                    }
+                )*
+            }}
         };
+        (@field Int $ty:ty) => {
+            fn as_field(&self) -> Option<Field<'_>> {
+                usize::try_from(*self).ok().map(Field::Index)
+            }
+        };
+        (@field Float $ty:ty) => {};
     }
 
-    impl_ipld_num! (
-        "A fixed-length number type represented as a int8";
-        i8 : Int8 Int int {
-            deserialize_i8
-            visit_i8
-            @conv {
-                i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        "A fixed-length number type represented as a int16" ;
-        i16 : Int16 Int int {
-            deserialize_i16
-            visit_i16
-            @conv {
-                i8:visit_i8 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        "A fixed-length number type represented as a int32" ;
-        i32 : Int32 Int int {
-            deserialize_i32
-            visit_i32
-            @conv {
-                i8:visit_i8 i16:visit_i16 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        "A fixed-length number type represented as a int64" ;
-        i64 : Int64 Int int {
-            deserialize_i64
-            visit_i64
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        "A fixed-length number type represented as a int128" ;
-        i128 : Int128 Int int {
-            deserialize_i128
-            visit_i128
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        "A fixed-length number type represented as a uint8" ;
-        u8 : Uint8 Int int {
-            deserialize_u8
-            visit_u8
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        "A fixed-length number type represented as a uint16" ;
-        u16 : Uint16 Int int {
-            deserialize_u16
-            visit_u16
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u32:visit_u32 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        "A fixed-length number type represented as a uint32" ;
-        u32 : Uint32 Int int {
-            deserialize_u32
-            visit_u32
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u64:visit_u64 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        "A fixed-length number type represented as a uint64" ;
-        u64 : Uint64 Int int {
-            deserialize_u64
-            visit_u64
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u128:visit_u128
-            }
-        }
-    );
-    impl_ipld_num! (
-        "A fixed-length number type represented as a uint128" ;
-        u128 : Uint128 Int int {
-            deserialize_u128
-            visit_u128
-            @conv {
-                i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
-                u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64
-            }
-        }
-    );
-    impl_ipld_num! (
-        "A fixed-length number type represented as a float32" ;
-        f32 : Float32 Float float {
-            deserialize_f32
-            visit_f32
-            @conv { f64:visit_f64 }
-        }
-    );
-    impl_ipld_num! (
-        "A fixed-length number type represented as a float64" ;
-        f64 : Float64 Float float {
-            deserialize_f64
-            visit_f64
-            @conv { f32:visit_f32 }
-        }
-    );
+    impl_ipld_num! (i8 : Int8 Int { visit_i8 @conv {
+        i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (i16 : Int16 Int { visit_i16 @conv {
+        i8:visit_i8 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (i32 : Int32 Int { visit_i32 @conv {
+        i8:visit_i8 i16:visit_i16 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (i64 : Int64 Int { visit_i64 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (i128 : Int128 Int { visit_i128 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (u8 : Uint8 Int { visit_u8 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u16:visit_u16 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (u16 : Uint16 Int { visit_u16 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u32:visit_u32 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (u32 : Uint32 Int { visit_u32 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u64:visit_u64 u128:visit_u128
+    }});
+    impl_ipld_num! (u64 : Uint64 Int { visit_u64 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u128:visit_u128
+    }});
+    impl_ipld_num! (u128 : Uint128 Int { visit_u128 @conv {
+        i8:visit_i8 i16:visit_i16 i32:visit_i32 i64:visit_i64 i128:visit_i128
+        u8:visit_u8 u16:visit_u16 u32:visit_u32 u64:visit_u64
+    }});
+    impl_ipld_num! (f32 : Float32 Float { visit_f32 @conv { f64:visit_f64 } });
+    impl_ipld_num! (f64 : Float64 Float { visit_f64 @conv { f32:visit_f32 } });
 }
 
 // TODO: unicode normalization? https://ipld.io/docs/data-model/kinds/#string-kind
 mod string {
     use super::*;
-    use unicode_normalization::UnicodeNormalization;
+    use unicode_normalization::*;
 
-    ///
-    #[derive(
-        AsRef,
-        AsMut,
-        Clone,
-        Debug,
-        Default,
-        Deref,
-        DerefMut,
-        Eq,
-        Hash,
-        Into,
-        Index,
-        IndexMut,
-        // IntoIterator,
-        Ord,
-        PartialEq,
-        PartialOrd,
-    )]
-    #[as_ref(forward)]
-    #[as_mut(forward)]
-    #[deref(forward)]
-    #[deref_mut(forward)]
-    pub struct IpldString(String);
+    // ? Cow<'a, str>
+    // struct NfcChars<'a>(Recompositions<Chars<'a>>);
+    // impl<'a> ToOwned for <'a> {
+    //     type Owned = String;
+    //     fn to_owned(&self) -> Self::Owned {
+    //
+    //     }
+    // }
+    //
+    // ///
+    // #[derive(
+    //     AsRef,
+    //     AsMut,
+    //     Clone,
+    //     Debug,
+    //     Default,
+    //     Deref,
+    //     DerefMut,
+    //     Eq,
+    //     Hash,
+    //     Into,
+    //     Index,
+    //     IndexMut,
+    //     // IntoIterator,
+    //     Ord,
+    //     PartialEq,
+    //     PartialOrd,
+    // )]
+    // #[as_ref(forward)]
+    // #[as_mut(forward)]
+    // #[deref(forward)]
+    // #[deref_mut(forward)]
+    // pub struct IpldString(String);
+    //
+    // impl IpldString {
+    //     ///
+    //     pub fn as_str(&self) -> &str {
+    //         self.0.as_str()
+    //     }
+    // }
 
-    impl IpldString {
-        pub fn as_str(&self) -> &str {
-            self.0.as_str()
-        }
-    }
-
-    impl Representation for IpldString {
+    impl Representation for String {
         const NAME: &'static str = "String";
         const SCHEMA: &'static str = "type String string";
         const DATA_MODEL_KIND: Kind = Kind::String;
-    }
 
-    // TODO:
-    impl_selector_seed_serde! { @codec_seed_visitor {} {} IpldString {
+        fn as_field(&self) -> Option<Field<'_>> {
+            Some(self.as_str().into())
+        }
+
+        fn to_selected_node(&self) -> SelectedNode {
+            SelectedNode::String(self.nfc().collect())
+        }
+
+        #[doc(hidden)]
         #[inline]
-        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "An IPLD string")
-        }
-
-        #[inline]
-        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            self.match_primitive(IpldString::from(s))
-        }
-
-        // TODO:
-        #[inline]
-        fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            self.match_primitive(IpldString::from(s))
-        }
-    }}
-
-    impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} IpldString {} }
-
-    impl_selector_seed_serde! { @selector_seed_codec_deseed {} {} IpldString {
-        #[inline]
-        fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            deserializer.deserialize_string(CodecSeed::<C, _>(self))
-        }
-    }}
-
-    impl_selector_seed_serde! { @selector_seed_select {} {} IpldString }
-
-    impl<'a> From<&'a str> for IpldString {
-        #[inline]
-        fn from(s: &'a str) -> Self {
-            Self(s.nfc().collect::<String>())
-        }
-    }
-    impl<'a> From<&'a mut str> for IpldString {
-        fn from(s: &'a mut str) -> Self {
-            Self::from(&*s)
-        }
-    }
-    impl From<Box<str>> for IpldString {
-        fn from(s: Box<str>) -> Self {
-            Self::from(s.as_ref())
-        }
-    }
-    impl<'a> From<Cow<'a, str>> for IpldString {
-        fn from(s: Cow<'a, str>) -> Self {
-            Self::from(s.as_ref())
-        }
-    }
-    impl From<String> for IpldString {
-        fn from(s: String) -> Self {
-            Self::from(s.as_str())
-        }
-    }
-
-    impl FromStr for IpldString {
-        type Err = Error;
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            Ok(Self::from(s))
-        }
-    }
-
-    impl fmt::Display for IpldString {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "{}", self.as_str())
-        }
-    }
-
-    // TODO:
-    impl Serialize for IpldString {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
-            serializer.collect_str(&self.0.nfc())
+            serializer.collect_str(&self.as_str().nfc())
         }
-    }
 
-    // TODO:
-    impl<'de> Deserialize<'de> for IpldString {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        #[doc(hidden)]
+        #[inline]
+        fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {
-            // struct IpldStringVisitor;
-            // impl<'de> Visitor<'de> for IpldStringVisitor {
-            //     type Value = IpldString;
-            //     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            //         write!(f, "A string or sequence of chars")
-            //     }
-            //     fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
-            //         where
-            //             A: SeqAccess<'de>, {
-            //         let iter = SeqAccessDeserializer::new(seq);
-
-            //     }
-            // }
-
-            Ok(Self::from(String::deserialize(deserializer)?))
+            // let s = <Cow<'_, str>>::deserialize(deserializer)?;
+            // Ok(s.nfc().collect())
+            let res = AstWalk::<'de, MC, (), Self>::default().deserialize(deserializer)?;
+            Ok(res.unwrap_val())
         }
     }
+
+    repr_serde! { @select for String }
+    repr_serde! { @visitors for String {
+        #[inline]
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("A string of UTF-8 characters")
+        }
+
+        #[inline]
+        fn visit_str<Er>(self, s: &str) -> Result<Self::Value, Er>
+        where
+            Er: de::Error,
+        {
+
+            // if self.mode() == SelectionMode::Decode {
+            //     return Ok(AstResult::Value(s.nfc().collect()));
+            // }
+
+            self.into_inner()
+                .select_scalar::<MC>(s.nfc().collect())
+                .map_err(Er::custom)
+        }
+
+        #[inline]
+        fn visit_string<Er>(self, s: String) -> Result<Self::Value, Er>
+        where
+            Er: de::Error,
+        {
+            if self.mode() == SelectionMode::Decode {
+                return Ok(AstResult::Value(s));
+            }
+
+            self.visit_str(s.as_ref())
+        }
+    }}
+
+    // impl From<&str> for IpldString {
+    //     #[inline]
+    //     fn from(s: &str) -> Self {
+    //         Self(s.nfc().collect::<String>())
+    //     }
+    // }
+    // impl From<&mut str> for IpldString {
+    //     fn from(s: &mut str) -> Self {
+    //         Self::from(&*s)
+    //     }
+    // }
+    // impl From<Box<str>> for IpldString {
+    //     fn from(s: Box<str>) -> Self {
+    //         Self::from(s.as_ref())
+    //     }
+    // }
+    // impl<'a> From<Cow<'a, str>> for IpldString {
+    //     fn from(s: Cow<'a, str>) -> Self {
+    //         Self::from(s.as_ref())
+    //     }
+    // }
+    // impl From<String> for IpldString {
+    //     fn from(s: String) -> Self {
+    //         Self::from(s.as_str())
+    //     }
+    // }
+    //
+    // impl FromStr for IpldString {
+    //     type Err = Error;
+    //     fn from_str(s: &str) -> Result<Self, Self::Err> {
+    //         Ok(Self::from(s))
+    //     }
+    // }
+    //
+    // impl fmt::Display for IpldString {
+    //     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    //         self.0.fmt(f)
+    //     }
+    // }
 }
 
 mod bytes {
@@ -464,10 +424,11 @@ mod bytes {
 
     /// A `bytes` type, which thinly wraps [`bytes::Bytes`].
     ///
-    /// [`Bytes`]: bytes::Bytes
+    /// TODO: mutability
+    /// [`bytes::Bytes`]: bytes::Bytes
     #[derive(
         AsRef,
-        AsMut,
+        // AsMut,
         Clone,
         Debug,
         Default,
@@ -475,17 +436,15 @@ mod bytes {
         Eq,
         From,
         Hash,
-        Index,
-        IndexMut,
+        // Index,
+        Into,
         IntoIterator,
         Ord,
         PartialOrd,
         PartialEq,
     )]
     #[as_ref(forward)]
-    #[as_mut(forward)]
     #[deref(forward)]
-    #[from(forward)]
     pub struct Bytes(InnerBytes);
 
     impl Bytes {
@@ -510,7 +469,7 @@ mod bytes {
         }
 
         ///
-        pub fn slice(&self, range: impl RangeBounds<usize>) -> Self {
+        pub fn slice(&self, range: impl ops::RangeBounds<usize>) -> Self {
             Self(self.0.slice(range))
         }
 
@@ -520,309 +479,306 @@ mod bytes {
         }
     }
 
+    impl From<&[u8]> for Bytes {
+        fn from(bytes: &[u8]) -> Self {
+            Self::copy_from_slice(bytes)
+        }
+    }
+    impl From<Vec<u8>> for Bytes {
+        fn from(bytes: Vec<u8>) -> Self {
+            Self(InnerBytes::from(bytes))
+        }
+    }
+
+    // impl<R: ops::RangeBounds<usize>> ops::Index<R> for Bytes {
+    //     type Output = InnerBytes;
+    //     fn index(&self, index: R) -> &Self::Output {
+    //         self.0.slice(index)
+    //     }
+    // }
+
     impl Representation for Bytes {
         const NAME: &'static str = "Bytes";
         const SCHEMA: &'static str = "type Bytes bytes";
         const DATA_MODEL_KIND: Kind = Kind::Bytes;
 
-        ///
-        #[inline]
-        fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        fn to_selected_node(&self) -> SelectedNode {
+            SelectedNode::Bytes(self.clone())
+        }
+
+        #[doc(hidden)]
+        fn serialize<const MC: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
-            cfg_if::cfg_if! {
-                if #[cfg(feature = "dag-json")] {
-                    if C == DagJson::CODE {
-                        return DagJson::serialize_bytes(self.as_ref(), serializer);
-                    }
-                }
-            }
-
-            Serialize::serialize(self.as_ref(), serializer)
+            Multicodec::serialize_bytes::<MC, S>(self.as_ref(), serializer)
         }
 
-        ///
-        #[inline]
-        fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+        #[doc(hidden)]
+        fn deserialize<'de, const MC: u64, D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {
-            cfg_if::cfg_if! {
-                if #[cfg(feature = "dag-json")] {
-                    if C == DagJson::CODE {
-                        return DagJson::deserialize_bytes(deserializer, BytesVisitor);
-                    }
-                }
-            }
+            // struct BytesVisitor;
+            // impl<'de> Visitor<'de> for BytesVisitor {
+            //     type Value = Bytes;
+            //     #[inline]
+            //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            //         write!(f, "A slice of bytes of type {}", Self::Value::NAME)
+            //     }
+            //     #[inline]
+            //     fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
+            //     where
+            //         E: de::Error,
+            //     {
+            //         Ok(Self::Value::copy_from_slice(bytes))
+            //     }
+            //     #[inline]
+            //     fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
+            //     where
+            //         E: de::Error,
+            //     {
+            //         Ok(Self::Value::from(bytes))
+            //     }
+            // }
+            // impl<'de, const MC: u64> LinkVisitor<'de, MC> for BytesVisitor {}
 
-            Deserialize::deserialize(deserializer)
+            // Multicodec::deserialize_bytes::<MC, D, _>(deserializer, BytesVisitor)
+
+            let res = Multicodec::deserialize_bytes(
+                deserializer,
+                AstWalk::<'de, MC, (), Self>::default(),
+            )?;
+            Ok(res.unwrap_val())
         }
     }
 
-    impl_selector_seed_serde! { @codec_seed_visitor {} {} Bytes {
+    repr_serde! { @select for Bytes }
+    repr_serde! { @visitors for Bytes {
         #[inline]
-        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(formatter, "A slice of bytes")
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "bytes of type `{}`", <Bytes>::NAME)
         }
-
         #[inline]
         fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
         where
             E: de::Error,
         {
-            self.select_bytes(bytes)
-        }
+            if self.mode() == SelectionMode::Decode {
+                return Ok(AstResult::Value(Bytes::copy_from_slice(bytes)));
+            }
 
+            // let bytes = T::try_from(bytes).map_err(E::custom)?;
+            // self.0.select_bytes::<C>(bytes).map_err(E::custom)
+            unimplemented!()
+        }
         #[inline]
         fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
         where
             E: de::Error,
         {
-            self.select_bytes(&bytes)
+            // let bytes = T::try_from(bytes).map_err(E::custom)?;
+            // self.0.select_bytes::<C>(bytes).map_err(E::custom)
+            unimplemented!()
         }
     }}
 
-    impl_selector_seed_serde! { @codec_seed_visitor_ext {} {} Bytes {} }
+    // impl<const N: usize> Representation for [u8; N] {
+    //     const NAME: &'static str = "Bytes";
+    //     const SCHEMA: &'static str = "type Bytes bytes";
+    //     const DATA_MODEL_KIND: Kind = Kind::Bytes;
+    //
+    //     fn to_selected_node(&self) -> SelectedNode {
+    //         SelectedNode::Bytes(self.clone())
+    //     }
+    //
+    //     #[doc(hidden)]
+    //     fn serialize<const C: u64, S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    //     where
+    //         S: Serializer,
+    //     {
+    //         Multicodec::serialize_bytes::<C, S>(self.as_ref(), serializer)
+    //     }
+    //
+    //     #[doc(hidden)]
+    //     fn deserialize<'de, const C: u64, D>(deserializer: D) -> Result<Self, D::Error>
+    //     where
+    //         D: Deserializer<'de>,
+    //     {
+    //         struct BytesVisitor;
+    //         impl<'de> Visitor<'de> for BytesVisitor {
+    //             type Value = Bytes;
+    //             #[inline]
+    //             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    //                 write!(f, "A slice of bytes of type {}", Self::Value::NAME)
+    //             }
+    //             #[inline]
+    //             fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
+    //             where
+    //                 E: de::Error,
+    //             {
+    //                 Ok(Self::Value::copy_from_slice(bytes))
+    //             }
+    //             #[inline]
+    //             fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
+    //             where
+    //                 E: de::Error,
+    //             {
+    //                 Ok(Self::Value::from(bytes))
+    //             }
+    //         }
+    //         impl<'de> LinkVisitor<'de> for BytesVisitor {}
+    //
+    //         Multicodec::deserialize_bytes::<C, D, _>(deserializer, BytesVisitor)
+    //     }
+    // }
+    //
+    // repr_serde! { @select for Bytes }
+    // repr_serde! { @visitors for Bytes {
+    //     #[inline]
+    //     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    //         write!(f, "bytes of type `{}`", <Bytes>::NAME)
+    //     }
+    //     #[inline]
+    //     fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
+    //     where
+    //         E: de::Error,
+    //     {
+    //         // let bytes = T::try_from(bytes).map_err(E::custom)?;
+    //         // self.0.select_bytes::<C>(bytes).map_err(E::custom)
+    //         unimplemented!()
+    //     }
+    //     #[inline]
+    //     fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
+    //     where
+    //         E: de::Error,
+    //     {
+    //         // let bytes = T::try_from(bytes).map_err(E::custom)?;
+    //         // self.0.select_bytes::<C>(bytes).map_err(E::custom)
+    //         unimplemented!()
+    //     }
+    // }}
 
-    impl_selector_seed_serde! { @selector_seed_codec_deseed {} {} Bytes {
-        #[inline]
-        fn deserialize<const C: u64, D>(self, deserializer: D) -> Result<(), D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            // <D as Decoder>::deserialize_bytes(deserializer, self)
-            // (&mut &mut &mut Decoder(deserializer)).deserialize_bytes(self)
-
-            cfg_if::cfg_if! {
-                if #[cfg(feature = "dag-json")] {
-                    if C == DagJson::CODE {
-                        return DagJson::deserialize_bytes(deserializer, CodecSeed::<C, _>(self));
-                    }
-                }
-            }
-
-            deserializer.deserialize_bytes(CodecSeed::<C, _>(self))
-        }
-    }}
-
-    impl_selector_seed_serde! { @selector_seed_select {} {} Bytes }
-
-    impl<'a, const C: u64, Ctx> CodecSeed<C, SelectorSeed<'a, Ctx, Bytes>>
+    // TODO: be generic over T
+    // impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
+    // where
+    //     Ctx: Context,
+    //     T: Select<Ctx>,
+    impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
     where
         Ctx: Context,
+        T: Representation,
     {
+        ///
         #[inline]
-        fn select_bytes<E>(mut self, bytes: &[u8]) -> Result<(), E>
+        // TODO: should accept a slice of bytes, then do conversion
+        pub fn select_bytes<'de, const MC: u64>(
+            mut self,
+            bytes: &[u8],
+        ) -> Result<AstResult<Bytes>, Error>
         where
-            E: de::Error,
+            T: TryFrom<&'de [u8]>,
         {
-            match self.0.selector {
-                Selector::Matcher(matcher) => {
-                    let bytes = matcher
-                        .subset
-                        .as_ref()
-                        .map(|Slice { from, to }| &bytes[*from as usize..*to as usize])
-                        .unwrap_or(bytes);
+            unimplemented!()
+        }
 
-                    match self.0.mode() {
-                        SelectionMode::SelectNode => {
-                            self.0
-                                .select_matched_node(bytes.into(), matcher.label.as_deref())
-                                .map_err(E::custom)?;
-                        }
-                        SelectionMode::SelectDag => {
-                            self.0
-                                .select_matched_dag(
-                                    Bytes::copy_from_slice(bytes),
-                                    matcher.label.as_deref(),
-                                )
-                                .map_err(E::custom)?;
-                        }
-                        _ => unimplemented!(),
-                    }
+        ///
+        #[inline]
+        // TODO: should accept a slice of bytes, then do conversion
+        pub fn select_byte_buf<'de, const MC: u64>(
+            mut self,
+            bytes: Vec<u8>,
+        ) -> Result<AstResult<Bytes>, Error>
+        where
+            T: TryFrom<Vec<u8>>,
+        {
+            // if let Some(s) = self.selector.as_explore_union() {
+            //     s.assert_matches_first::<Bytes>()?;
+            //     bytes.__select_in(self)
+            // } else {
+            //     self.match_scalar::<MC>(raw)
+            // }
 
-                    // self.nodes.push_back(NodeRow::Match {
-                    //     repr: Adl::Bytes,
-                    //     path: self.path.clone(),
-                    //     value: Value::Blob(bytes.into()),
-                    // });
+            if let Some(matcher) = self.selector.as_matcher() {
+                // let bytes = matcher
+                //     .subset
+                //     .as_ref()
+                //     .map(|slice| bytes.slice(slice.to_range()))
+                //     .unwrap_or(bytes);
 
-                    todo!();
+                // if self.is_select_node() {
+                //     self.handle_node(bytes.into())?;
+                // } else if self.is_select_dag() {
+                //     self.handle_dag(bytes)?;
+                // };
+                // return Ok(());
 
-                    Ok(())
-                }
-                Selector::ExploreInterpretAs(inner) => {
-                    todo!("what reprs and ADLs are interpreted from byte nodes?")
-                }
-                selector => Err(Error::unsupported_selector::<Bytes>(&selector)).map_err(E::custom),
+                // return self.cover_dag(bytes);
             }
-        }
-    }
 
-    impl Serialize for Bytes {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            serializer.serialize_bytes(self.as_ref())
-        }
-    }
-
-    struct BytesVisitor;
-    // impl<'de> IpldVisitorExt<'de> for BytesVisitor {}
-    impl<'de> Visitor<'de> for BytesVisitor {
-        type Value = Bytes;
-        #[inline]
-        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(formatter, "A slice of bytes")
-        }
-        #[inline]
-        fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(Self::Value::copy_from_slice(bytes))
-        }
-        #[inline]
-        fn visit_byte_buf<E>(self, bytes: Vec<u8>) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(Self::Value::from(bytes.into_boxed_slice()))
-        }
-    }
-
-    impl<'de> Deserialize<'de> for Bytes {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            deserializer.deserialize_bytes(BytesVisitor)
+            match self.selector {
+                Selector::ExploreInterpretAs(_) => {
+                    todo!("what reprs and ADLs are interpreted from bytes?")
+                }
+                selector => Err(Error::unsupported_selector::<Bytes>(&selector)),
+            }
         }
     }
 }
 
-impl<'a, const C: u64, Ctx, T> CodecSeed<C, SelectorSeed<'a, Ctx, T>>
+impl<'a, Ctx, T> SelectorSeed<'a, Ctx, T>
 where
     Ctx: Context,
-    T: Representation + 'static,
+    T: Select<Ctx> + 'static,
+    // TODO And<T::ReprKind, TypedScalar>: TypedScalar
 {
+    ///
     #[inline]
-    fn match_primitive<'de, E>(mut self, dag: T) -> Result<(), E>
-    where
-        T: Into<SelectedNode>,
-        E: de::Error,
-    {
-        let matcher = self
-            .0
-            .selector
-            .as_matcher()
-            .expect("should know that this is a matcher");
+    pub fn select_scalar<const MC: u64>(mut self, raw: T) -> Result<AstResult<T>, Error> {
+        match self.selector {
+            Selector::Matcher(_) => self.select_dag(raw),
+            Selector::ExploreUnion(s) => {
+                // todo: split into params + ctx, T::select for each
+                // raw.__select(self)
 
-        match self.0.mode() {
-            SelectionMode::SelectNode => {
-                self.0
-                    .select_matched_node(dag.into(), matcher.label.as_deref())
-                    .map_err(E::custom)?;
+                Ok(AstResult::Ok)
             }
-            SelectionMode::SelectDag => {
-                self.0
-                    .select_matched_dag(dag, matcher.label.as_deref())
-                    .map_err(E::custom)?;
-            }
-            _ => unimplemented!(),
+            s => Err(Error::unsupported_selector::<T>(s)),
         }
-
-        Ok(())
     }
+
+    #[inline]
+    pub fn patch_scalar<const MC: u64>(mut self, raw: &mut T) -> Result<AstResult<T>, Error> {
+        self.selector.try_as_matcher()?;
+
+        // todo
+        // self.
+
+        Ok(AstResult::Ok)
+    }
+
+    // #[inline]
+    // pub fn match_scalar<'de, const MC: u64>(mut self, dag: T) -> Result<(), Error> {
+    //     self.selector.try_as_matcher()?;
+
+    //     if self.is_node_select() {
+    //         self.handle_node(dag.to_selected_node())?;
+    //     } else if self.is_dag_select() {
+    //         self.handle_dag(dag)?;
+    //     };
+
+    //     Ok(())
+    // }
 }
-
-// /// Implements selection (matching) for primitive types.
-// #[inline]
-// pub fn primitive_select<'a, 'de, C, T, S>(
-//     selector: &Selector,
-//     state: SelectorState,
-//     ctx: &mut C
-// ) -> Result<Option<S>, Error>
-// where
-//     C: Context,
-//     T: Representation,
-//     S: Representation,
-//     ContextSeed<'a, C, S, S>: DeserializeSeed<'de, Value = Option<S>>,
-//     // Node: From<T>,
-// {
-//     // if type_eq::<T, S>() {
-//     //     T::r#match(selector, state, ctx)
-//     // } else {
-//     //     Err(Error::invalid_type_selection::<T, S>())
-//     // }
-//
-//     // const are_eq: bool = type_eq::<T, S>();
-//     // static_assertions::const_assert!(type_eq::<T, S>());
-//
-//     // unimplemented!()
-// }
-
-// /// Implements patch selection for primitive types.
-// #[inline]
-// pub fn primitive_patch<C, T>(
-//     self_: &mut T,
-//     selector: &Selector,
-//     _state: SelectorState,
-//     dag: T,
-//     _ctx: &mut C,
-// ) -> Result<(), Error>
-// where
-//     T: Select<C>,
-//     C: Context,
-//     Node: From<T>,
-// {
-//     match selector {
-//         Selector::Matcher(Matcher { .. }) => {
-//             *self_ = dag;
-//             Ok(())
-//         }
-//         _ => Err(Error::unsupported_selector::<T>(selector)),
-//     }
-// }
-
-// fn primitive_select_base<T, C, F, R>(
-//     seed: SelectorState,
-//     ctx: &mut C,
-//     on_matched: F,
-// ) -> Result<R, Error>
-// where
-//     T: Select<C, T>,
-//     C: Context,
-//     F: Fn(&SelectorState, T, &Option<String>) -> Result<R, Error>,
-//     Node: From<T>,
-// {
-//     let deserializer = ctx.path_decoder(seed.path())?;
-//     let selector = seed.as_selector();
-//
-//     match selector {
-//         Selector::Matcher(Matcher { ref label, .. }) => {
-//             let inner = <T>::deserialize(deserializer)
-//                 .map_err(|err| Error::Decoder(anyhow::anyhow!(err.to_string())))?;
-//
-//             on_matched(&seed, inner, label)
-//         }
-//         _ => Err(Error::UnsupportedSelector {
-//             type_name: T::NAME,
-//             selector_name: selector.name(),
-//         }),
-//     }
-// }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prelude::*;
+    use crate::*;
 
     fn setup<T: Representation>(dag: &T) -> MemoryContext {
-        const DEFAULT_MC: u64 = DagJson::CODE;
-        const DEFAULT_MH: u64 = Multihash::SHA2_256;
+        const DEFAULT_MC: u64 = Multicodec::DAG_JSON;
+        const DEFAULT_MH: u64 = Multihasher::SHA2_256;
 
         let mut ctx = MemoryContext::default();
         ctx.add_block(Version::V1, DEFAULT_MC, DEFAULT_MH, vec![])

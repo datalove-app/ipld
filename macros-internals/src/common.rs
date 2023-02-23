@@ -21,7 +21,6 @@ pub(crate) mod attr {
     pub(crate) const IPLD_CRATE_NAME: &'static str = "ipld";
     pub(crate) const ATTR: &'static str = "ipld_attr";
 
-    pub(crate) const INTERNAL: &'static str = "internal";
     pub(crate) const TRY_FROM: &'static str = "try_from";
     pub(crate) const WRAPPER: &'static str = "wrapper";
     pub(crate) const SERDE: &'static str = "serde";
@@ -153,11 +152,14 @@ pub fn is_end(input: ParseStream) -> bool {
     input.peek(Token![;])
 }
 
-/// Parses the ending semicolon, asserting that the token stream is empty.
+/// Parses on optional ending semicolon, then assert that the token stream is
+/// empty.
 pub fn parse_end(input: ParseStream) -> ParseResult<()> {
-    input.parse::<Token![;]>()?;
+    if input.peek(Token![;]) {
+        input.parse::<Token![;]>()?;
+    }
     if !input.is_empty() {
-        Err(input.error("must end IPLD schema definitions with a semicolon"))
+        Err(input.error("unexpected tokens at the end of the IPLD schema definition"))
     } else {
         Ok(())
     }
